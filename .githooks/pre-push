@@ -1,0 +1,5 @@
+#!/bin/sh
+# The second line of the publish scan (spec 2.12, risk 3.5). `pnpm release` is the gate; this hook
+# runs only where `git config core.hooksPath .githooks` enables it. It scans the new commits of each
+# pushed ref, and the whole tree and the tag object of a pushed tag, and refuses the push on a hit.
+exec node "$(git rev-parse --show-toplevel)/scripts/scan.mjs" --pre-push "$1"
