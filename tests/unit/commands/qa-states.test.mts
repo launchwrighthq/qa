@@ -33,7 +33,7 @@ describe('lw qa states', () => {
   it('prints the usage and exits 2 without a known action', async () => {
     const { err, opts } = io();
     expect(await createStatesCommand().run(['nope'], opts('/'))).toBe(2);
-    expect(err[0]).toBe('usage: lw qa states <scan|plan|infer|run|report> [options]');
+    expect(err[0]).toBe('usage: lw qa states <scan|plan|infer|forge|run|report> [options]');
   });
 
   it('scan writes the inventory with kinds, components and routes, and exits 0 when every union has a trigger', async () => {

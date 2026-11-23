@@ -345,9 +345,11 @@ describe('runManifest', () => {
 
 describe('runManifest fork isolation (spec 2.4, R3)', () => {
   const SECTIONS = { db: { driver: 'pglite' } };
+  /** The QA API of the default `qa.apiPort`. A surface on it moves to the fork server. */
+  const QA_API = 'http://127.0.0.1:9101';
 
   /** A fixture arming that holds one open giveaway per database: a second open on one database throws. */
-  function singleInstanceArming(opened: Map<string, string[]>, armedLog: string[]): (database: string) => FixtureArming {
+  function singleInstanceArming(opened: Map<string, string[]>, armedLog: string[], gate?: () => Promise<void>): (database: string) => FixtureArming {
     return (database) => ({
       arm: async (state) => {
         const open = opened.get(database) ?? [];
@@ -355,6 +357,7 @@ describe('runManifest fork isolation (spec 2.4, R3)', () => {
         open.push(state);
         opened.set(database, open);
         armedLog.push(`${database}:${state}`);
+        await gate?.();
       },
       disarm: async () => {
         opened.delete(database);
@@ -362,16 +365,37 @@ describe('runManifest fork isolation (spec 2.4, R3)', () => {
     });
   }
 
-  /** A fork runner on the PGlite QA database `app_qa` under `root`. `onCreate` records each fork name. */
-  function pgliteFork(root: string, arming?: (database: string) => FixtureArming, onCreate?: (name: string) => void): ForkRunner {
+  interface ForkLog {
+    created: string[];
+    served: string[];
+    closed: string[];
+  }
+
+  /** A fork runner on the PGlite QA database `app_qa` under `root`. Each fork server gets its own port. */
+  function pgliteFork(root: string, arming: (database: string) => FixtureArming, log: ForkLog = { created: [], served: [], closed: [] }): ForkRunner {
     return {
       create: async (label) => {
         const name = await createFork({ root, sections: SECTIONS, database: 'app_qa', label, out: () => undefined });
-        onCreate?.(name);
+        log.created.push(name);
         return name;
       },
       drop: (name) => dropFork({ root, sections: SECTIONS, database: 'app_qa', name, out: () => undefined }),
-      ...(arming ? { arming } : {}),
+      serve: async (database) => {
+        log.served.push(database);
+        return { url: `http://127.0.0.1:${20000 + log.served.length}`, arming: arming(database), close: async () => void log.closed.push(database) };
+      },
+    };
+  }
+
+  /** Resolves once `n` callers wait on it, so two fork groups prove they run at the same time. */
+  function barrier(n: number): () => Promise<void> {
+    let waiting = 0;
+    let open!: () => void;
+    const all = new Promise<void>((resolve) => (open = resolve));
+    return async () => {
+      waiting += 1;
+      if (waiting >= n) open();
+      await Promise.race([all, new Promise<void>((_, reject) => setTimeout(() => reject(new Error('the other fork group never armed')), 5000))]);
     };
   }
 
@@ -380,23 +404,64 @@ describe('runManifest fork isolation (spec 2.4, R3)', () => {
     return { ...shot({ id, fixture: { arm: ['giveaway-open'] }, ...over }), fork } as Shot;
   }
 
-  it('arms the single-instance state in a separate fork for each row', async () => {
-    const s = await setup([row('giveaway.a', 'row-a'), row('giveaway.b', 'row-b')]);
+  it('serves each fork group on its own fork server, two at a time, and drops each fork', async () => {
+    const s = await setup([row('giveaway.a', 'row-a'), row('giveaway.b', 'row-b')], { baseUrls: { web: `${QA_API}/app` } });
     await pgliteAdmin(s.dir, () => true).create('app_qa');
-    const opened = new Map<string, string[]>();
     const armedLog: string[] = [];
-    const fork = pgliteFork(s.dir, singleInstanceArming(opened, armedLog));
+    const log: ForkLog = { created: [], served: [], closed: [] };
+    const fork = pgliteFork(s.dir, singleInstanceArming(new Map(), armedLog, barrier(2)), log);
     const summary = await runManifest({ manifestPath: s.plan }, { ...s.deps, fork });
+    expect(summary.warnings).toEqual([]);
     expect(summary.results.map((r) => r.status)).toEqual(['passed', 'passed']);
     expect(summary.exitCode).toBe(0);
-    expect(armedLog).toEqual(['app_qa_fork_row_a:giveaway-open', 'app_qa_fork_row_b:giveaway-open']);
+    expect(armedLog.sort()).toEqual(['app_qa_fork_row_a:giveaway-open', 'app_qa_fork_row_b:giveaway-open']);
+    expect(log.closed.sort()).toEqual(['app_qa_fork_row_a', 'app_qa_fork_row_b']);
+    const opened = s.targets.fake.sessions.map((x) => x.opts.baseUrl).sort();
+    expect(opened).toEqual(['http://127.0.0.1:20001/app', 'http://127.0.0.1:20002/app']);
     expect(await pgliteAdmin(s.dir, () => true).list('app_qa_fork_')).toEqual([]);
     expect(await pgliteAdmin(s.dir, () => true).exists('app_qa')).toBe(true);
-    expect(summary.warnings).toEqual([]);
+  });
+
+  it('runs fork groups one after another with forkConcurrency 1', async () => {
+    const s = await setup([row('giveaway.a', 'row-a'), row('giveaway.b', 'row-b')], { baseUrls: { web: QA_API }, forkConcurrency: 1 });
+    await pgliteAdmin(s.dir, () => true).create('app_qa');
+    const order: string[] = [];
+    const fork = pgliteFork(s.dir, singleInstanceArming(new Map(), order));
+    const tracked: ForkRunner = { ...fork, drop: async (name) => void (order.push(`drop ${name}`), await fork.drop(name)) };
+    const summary = await runManifest({ manifestPath: s.plan }, { ...s.deps, fork: tracked });
+    expect(summary.results.map((r) => r.status)).toEqual(['passed', 'passed']);
+    expect(order).toEqual(['app_qa_fork_row_a:giveaway-open', 'drop app_qa_fork_row_a', 'app_qa_fork_row_b:giveaway-open', 'drop app_qa_fork_row_b']);
+  });
+
+  it('runs no row of a fork group on a surface that does not reach the QA API, and says why', async () => {
+    const s = await setup([row('giveaway.phone', 'row-a', { legs: ['web', 'phone'] })], { baseUrls: { web: QA_API, miniapp: 'http://127.0.0.1:5173/mini' } });
+    await pgliteAdmin(s.dir, () => true).create('app_qa');
+    const fork = pgliteFork(s.dir, singleInstanceArming(new Map(), []));
+    const summary = await runManifest({ manifestPath: s.plan }, { ...s.deps, fork });
+    expect(summary.results.map((r) => [r.leg, r.status])).toEqual([
+      ['web', 'passed'],
+      ['phone', 'not-run'],
+    ]);
+    expect(summary.results[1]?.reason).toBe(
+      'the miniapp base URL http://127.0.0.1:5173/mini is not the QA API on port 9101, so its client reads the shared QA database and cannot show fork row-a. ' +
+        'Serve the miniapp surface from the QA app (qa.baseUrls.miniapp = http://127.0.0.1:9101), or run the row without a fork',
+    );
+    expect(s.targets['fake-device'].sessions).toEqual([]);
+  });
+
+  it('marks the rows of a fork whose QA app did not start not-run, and drops the fork', async () => {
+    const s = await setup([row('giveaway.a', 'row-a')], { baseUrls: { web: QA_API } });
+    await pgliteAdmin(s.dir, () => true).create('app_qa');
+    const fork = pgliteFork(s.dir, singleInstanceArming(new Map(), []));
+    const broken: ForkRunner = { ...fork, serve: async () => Promise.reject(new LaunchwrightError('qa.world.boot', 'the app did not boot')) };
+    const summary = await runManifest({ manifestPath: s.plan }, { ...s.deps, fork: broken });
+    expect(summary.results).toMatchObject([{ status: 'not-run', reason: 'the QA app did not start on fork row-a: qa.world.boot: the app did not boot' }]);
+    expect(summary.exitCode).toBe(1);
+    expect(await pgliteAdmin(s.dir, () => true).list('app_qa_fork_')).toEqual([]);
   });
 
   it('drops the fork after a group whose row fails', async () => {
-    const s = await setup([row('giveaway.blank', 'row-a', { route: '/blank' })]);
+    const s = await setup([row('giveaway.blank', 'row-a', { route: '/blank' })], { baseUrls: { web: QA_API } });
     await pgliteAdmin(s.dir, () => true).create('app_qa');
     const fork = pgliteFork(s.dir, singleInstanceArming(new Map(), []));
     const summary = await runManifest({ manifestPath: s.plan }, { ...s.deps, fork });
@@ -405,14 +470,14 @@ describe('runManifest fork isolation (spec 2.4, R3)', () => {
   });
 
   it('runs two rows of one fork label in a single shared fork', async () => {
-    const s = await setup([row('giveaway.a', 'row-one'), row('giveaway.b', 'row-one')]);
+    const s = await setup([row('giveaway.a', 'row-one'), row('giveaway.b', 'row-one')], { baseUrls: { web: QA_API } });
     await pgliteAdmin(s.dir, () => true).create('app_qa');
-    const created: string[] = [];
     const armedLog: string[] = [];
-    const fork = pgliteFork(s.dir, singleInstanceArming(new Map(), armedLog), (name) => created.push(name));
+    const log: ForkLog = { created: [], served: [], closed: [] };
+    const fork = pgliteFork(s.dir, singleInstanceArming(new Map(), armedLog), log);
     const summary = await runManifest({ manifestPath: s.plan }, { ...s.deps, fork });
     expect(summary.results.map((r) => r.status)).toEqual(['passed', 'passed']);
-    expect(created).toEqual(['app_qa_fork_row_one']);
+    expect(log.created).toEqual(['app_qa_fork_row_one']);
     expect(armedLog).toEqual(['app_qa_fork_row_one:giveaway-open']);
     expect(await pgliteAdmin(s.dir, () => true).list('app_qa_fork_')).toEqual([]);
   });

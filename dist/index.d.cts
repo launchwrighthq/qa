@@ -3,6 +3,7 @@ export { E as EXTENSION_PREFIX, b as QaCommandOptions, Q as QaExtension, S as SU
 import { C as Clock } from './clock-BUdCJ9bN.cjs';
 import { a as QaTargetRegistry, Q as QaTarget, C as CredentialNeed, A as Act, S as Settle, L as LedgerEntry, O as OpenTargetRegistry } from './contract-DSRjkOLo.cjs';
 export { b as ACT_KINDS, c as ActKind, d as AttachmentKind, e as CONSENT_DIR, f as Capture, g as ConsentGrant, h as ConsentGroup, i as ConsentManifest, j as ConsentRecord, k as ConsentStore, D as DataNeed, E as EvidenceKind, G as GrantChoices, I as INTAKE_DIR, l as Isolation, m as Leg, M as ManifestInput, n as ManifestItem, o as OpenOptions, p as OutwardNeed, P as Provenance, q as QA_TARGET_CAPABILITIES, r as QA_TARGET_SPEC_VERSION, s as QaIssue, t as QaSession, u as QaTargetCapability, R as REPORT_STATUSES, v as ROW_FAILURES, w as RawMedia, x as ReportStatus, y as RowFailure, z as RowResult, B as SessionLogLine, F as SkipReason, H as Surface, T as TargetNeeds, J as TargetReadiness, V as VideoCapture, K as computeManifest, N as credentialNeed, U as diff, W as fileConsentStore, X as grant, Y as manifestHash, Z as missingCredentials, _ as recordGrants } from './contract-DSRjkOLo.cjs';
+import { L as ListenQaApp } from './api-DIr60smW.cjs';
 import { Q as QaConfig } from './config-Z7lJ4xeJ.cjs';
 export { L as LegConfig, q as qaConfig, a as qaConfigOf, w as withAppPaths } from './config-Z7lJ4xeJ.cjs';
 export { i as isCodedError } from './errors-DgRPaUlC.cjs';
@@ -21,8 +22,12 @@ interface RunDeps {
     };
 }
 
+/** What a test passes to the states command: run fakes, and the listen of the QA app on a fork. */
+type StatesOverrides = Partial<RunDeps> & {
+    listen?: ListenQaApp;
+};
 /** Builds the subcommand. A test passes fake targets, a fake clock and a fixed revision. */
-declare function createStatesCommand(overrides?: Partial<RunDeps>): QaSubcommand;
+declare function createStatesCommand(overrides?: StatesOverrides): QaSubcommand;
 
 interface PlaywrightTargetOptions {
     clock?: Clock;

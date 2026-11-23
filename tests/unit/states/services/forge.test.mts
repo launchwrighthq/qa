@@ -1,15 +1,10 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fakeClock, tmpDir } from '../../../../src/kernel/testing/index.mts';
 import { describe, expect, it } from 'vitest';
 import { createStatesCommand } from '../../../../src/commands/qa-states.mts';
-import { readLedger } from '../../../../src/services/ledger.mts';
-import type { Manifest, Shot } from '../../../../src/services/manifest.mts';
-import { computeStatus } from '../../../../src/services/report.mts';
-import type { RowResult } from '../../../../src/services/types.mts';
-import { captureForged } from '../../../../src/states/services/forge.mts';
+import { acceptedSeed, draftSeed, readSeed, rowStatements, seedFile } from '../../../../src/states/services/forge-seed.mts';
 import type { SeedProposal } from '../../../../src/states/services/inventory.mts';
-import { provenanceLabel } from '../../../../src/states/services/loop.mts';
 
 const BASE_FILES = {
   'apps/api/src/routes.mts': "export default routes((r) => r.group({ name: 'public' }, (g) => { g.page('/', 'home'); g.page('/invites', 'invites'); }));",
@@ -46,60 +41,82 @@ const MENU_SEED: SeedProposal = {
   reason: 'nothing takes it and nothing returns it',
 };
 
-describe('captureForged (spec 2.5, R4)', () => {
-  it('writes a forged artifact and records it with provenance forged', async () => {
-    const reportDir = await tmpDir();
-    const clock = fakeClock();
-    const recorded: { file: string; kind: string; row: string }[] = [];
-    const result = await captureForged(MENU_SEED, 'idle', {
-      reportDir,
-      slug: 'forged1',
-      record: async (entry) => {
-        recorded.push(entry);
-      },
-      now: () => clock.now(),
-    });
-    expect(result).toMatchObject({ id: 'MenuPhase.idle', union: 'MenuPhase', member: 'idle', ok: true, provenance: 'forged', subject: null, verified: null });
-    expect(recorded).toEqual([{ file: join(reportDir, 'assets/forged1/states/MenuPhase.idle.forged.json'), kind: 'log', row: 'MenuPhase.idle' }]);
-    const artifact = JSON.parse(readFileSync(join(reportDir, 'assets/forged1/states/MenuPhase.idle.forged.json'), 'utf8'));
-    expect(artifact).toMatchObject({ union: 'MenuPhase', member: 'idle', via: 'direct-write', provenance: 'forged' });
+const command = () => createStatesCommand({ clock: fakeClock(), revision: () => ({ commit: 'abc123', dirty: false }) });
+
+describe('forge seeds (spec 2.5, R4)', () => {
+  it('drafts a seed that cannot run until a reviewer accepts it', () => {
+    const draft = draftSeed(MENU_SEED, 'busy');
+    expect(draft).toMatchObject({ state: 'MenuPhase.busy', accepted: false, via: 'direct-write', route: null, rows: [] });
+    expect(acceptedSeed(draft)).toBe('it is a draft: a reviewer sets accepted to true');
+    expect(acceptedSeed({ ...draft, accepted: true })).toBe('it names no route');
+    expect(acceptedSeed({ ...draft, accepted: true, route: '/menu' })).toBe('via direct-write needs rows');
+    expect(acceptedSeed({ ...draft, accepted: true, route: '/menu', via: 'app-service' })).toBe('via app-service needs a module');
+    expect(acceptedSeed({ ...draft, accepted: true, route: '/menu', rows: [{ table: 'menu', values: { id: 1 } }] })).toMatchObject({ state: 'MenuPhase.busy' });
+  });
+
+  it('builds one insert per row with quoted names and literals', () => {
+    const rows = [{ table: 'app.menu', values: { id: 1, phase: "it's busy", tenant_id: '{tenantId}', on: true, note: null } }];
+    expect(rowStatements(rows, 't1')).toEqual([`insert into "app"."menu" ("id", "phase", "tenant_id", "on", "note") values (1, 'it''s busy', 't1', true, null)`]);
+  });
+
+  it('refuses a seed file whose table is not a plain name', async () => {
+    const root = await tmpDir();
+    const path = join(root, 'seed.json');
+    writeFileSync(path, JSON.stringify({ ...draftSeed(MENU_SEED, 'busy'), rows: [{ table: 'menu; drop table x', values: { id: 1 } }] }));
+    expect(() => readSeed(path)).toThrow(/rows\.0\.table/);
+  });
+
+  it('refuses a state id that is not <union>.<member>', () => {
+    expect(seedFile('MenuPhase.busy')).toBe('.lw/qa/forge/MenuPhase.busy.seed.json');
+    expect(() => seedFile('../x')).toThrow(/not a state id/);
   });
 });
 
 describe('lw qa states infer --apply (spec 2.5, R4)', () => {
-  it('records a forged ledger entry for a state no seed reaches', async () => {
+  it('writes a draft seed for each state no seed reaches, and forges none of them', async () => {
     const root = await project(BASE_FILES);
-    const command = createStatesCommand({ clock: fakeClock(), revision: () => ({ commit: 'abc123', dirty: false }) });
     const { out, err, opts } = io();
-    expect(await command.run(['infer', '--apply', '--slug', 'forged1'], opts(root))).toBe(0);
+    expect(await command().run(['infer', '--apply', '--slug', 'forged1'], opts(root))).toBe(0);
     expect(err).toEqual([]);
-    const ledger = await readLedger(join(root, 'docs/qa/assets/forged1/evidence.lock.json'));
-    expect(ledger?.entries.map((e) => [e.row, e.provenance, e.kind, e.leg, e.commit])).toEqual([
-      ['MenuPhase.busy', 'forged', 'log', 'desktop', 'abc123'],
-      ['MenuPhase.idle', 'forged', 'log', 'desktop', 'abc123'],
+    expect(out).toEqual([
+      'draft     MenuPhase.idle: wrote .lw/qa/forge/MenuPhase.idle.seed.json. Review it, then set accepted to true.',
+      'draft     MenuPhase.busy: wrote .lw/qa/forge/MenuPhase.busy.seed.json. Review it, then set accepted to true.',
+      'forged nothing: 2 state(s) wait for a reviewer to accept their seed.',
     ]);
-    expect(out[0]).toBe('applied 1 forged seed(s): 2 forged capture(s) -> docs/qa/assets/forged1/evidence.lock.json');
+    expect(readSeed(join(root, seedFile('MenuPhase.busy')))).toMatchObject({ accepted: false, via: 'direct-write', reason: 'nothing takes it and nothing returns it' });
+    expect(existsSync(join(root, 'docs/qa/assets/forged1/evidence.lock.json'))).toBe(false);
   });
 
-  it('reads a forged run as not a live pass and marks the state forged', async () => {
+  it('keeps a draft the reviewer edited and reports it as waiting', async () => {
     const root = await project(BASE_FILES);
-    const command = createStatesCommand({ clock: fakeClock(), revision: () => ({ commit: 'abc123', dirty: false }) });
     const { opts } = io();
-    expect(await command.run(['infer', '--apply', '--slug', 'forged1'], opts(root))).toBe(0);
-    const ledger = await readLedger(join(root, 'docs/qa/assets/forged1/evidence.lock.json'));
-    const entries = ledger?.entries ?? [];
-    const manifest: Manifest = {
-      title: 'forged',
-      generated: '2026-01-01T00:00:00.000Z',
-      spec: 'docs/specs/2026-11-21-launchwright-qa-library-design.md',
-      shots: entries.map(
-        (e): Shot => ({ id: e.row, screen: 'menu', state: e.row, source: ['spec:docs/specs/2026-11-21-launchwright-qa-library-design.md#R4'], legs: [e.leg], route: '/', fixture: { arm: [] }, settle: { busy: true }, expect: 'forged' }),
-      ),
-    };
-    const passed = entries.map((e): RowResult => ({ row: e.row, leg: e.leg, status: 'passed', failures: [], attempts: 1, ms: 1 }));
-    expect(computeStatus({ manifest, results: passed, entries })).toBe('partial');
-    const live = entries.map((e) => ({ ...e, provenance: 'live' as const }));
-    expect(computeStatus({ manifest, results: passed, entries: live })).toBe('passed');
-    expect(provenanceLabel('forged')).toBe('(forged)');
+    await command().run(['infer', '--apply'], opts(root));
+    const path = join(root, seedFile('MenuPhase.idle'));
+    writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), route: '/menu' }));
+    const again = io();
+    expect(await command().run(['infer', '--apply'], again.opts(root))).toBe(0);
+    expect(again.out).toEqual([
+      'waiting   MenuPhase.idle: it is a draft: a reviewer sets accepted to true (.lw/qa/forge/MenuPhase.idle.seed.json)',
+      'waiting   MenuPhase.busy: it is a draft: a reviewer sets accepted to true (.lw/qa/forge/MenuPhase.busy.seed.json)',
+      'forged nothing: 2 state(s) wait for a reviewer to accept their seed.',
+    ]);
+    expect(readSeed(path).route).toBe('/menu');
+  });
+});
+
+describe('lw qa states forge (spec 2.5, R4)', () => {
+  it('refuses a draft seed and forges nothing', async () => {
+    const root = await project(BASE_FILES);
+    await command().run(['infer', '--apply'], io().opts(root));
+    const { err, opts } = io();
+    expect(await command().run(['forge', 'MenuPhase.busy'], opts(root))).toBe(1);
+    expect(err).toEqual(['MenuPhase.busy is not forged: it is a draft: a reviewer sets accepted to true (.lw/qa/forge/MenuPhase.busy.seed.json)']);
+  });
+
+  it('names the missing seed file and the command that writes its draft', async () => {
+    const root = await project(BASE_FILES);
+    const { err, opts } = io();
+    expect(await command().run(['forge', 'MenuPhase.busy'], opts(root))).toBe(1);
+    expect(err).toEqual(['lw qa states forge: qa.forge.seed: .lw/qa/forge/MenuPhase.busy.seed.json does not exist. Run lw qa states infer --apply to write its draft.']);
   });
 });

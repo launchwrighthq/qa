@@ -1,168 +1,10 @@
-import { A as App } from './app-KXgbRXYO.cjs';
-import { Q as QaConfig } from './config-Z7lJ4xeJ.cjs';
+import { Q as QaAppEntry, W as WorldRegistry, a as QaWorld, b as QaOverlay, L as ListenQaApp, F as FeatureWorld, O as Owned, c as Fact, d as WorldEntry, P as Persona, e as PersonaIds, R as RunRecord, C as CheckoutFacts } from './api-DIr60smW.cjs';
+export { A as ArmCtx, f as FactHandles, g as Listening, h as PersonaHandles, i as QA_TELEGRAM_PORT, j as QaFakeBot, k as QaHandler, l as WorldCtx, m as devProjectName, n as importFromProject, o as listenQaApp, p as loadAppEntry, q as openWorld, r as qaDatabase, s as qaFakeBots, t as qaFakeToken, u as qaSections, v as readCheckout } from './api-DIr60smW.cjs';
 import { C as Clock } from './clock-BUdCJ9bN.cjs';
 import { F as FetchFn } from './bot-api-BiC2rPPD.cjs';
+import './app-KXgbRXYO.cjs';
+import './config-Z7lJ4xeJ.cjs';
 import 'zod';
-
-interface CheckoutFacts {
-    /** The project root: the folder of `launchwright.config.ts`. */
-    root: string;
-    /** The folder that holds `.git`. The root when the project is not in git. */
-    toplevel: string;
-    /** The git common dir: the `.git` folder of the main checkout. The root outside git. */
-    commonDir: string;
-    /** True in a linked worktree, false in the main checkout or outside git. */
-    linked: boolean;
-    /** The project root in the main checkout. */
-    mainRoot: string;
-}
-/** The checkout facts of the project at `root`. */
-declare function readCheckout(root: string): Promise<CheckoutFacts>;
-/**
- * The project name of `lw dev`: config `dev.project`, else the folder of the main checkout, so the
- * worktrees of one project get one name.
- */
-declare function devProjectName(sections: Record<string, unknown>, checkout: CheckoutFacts): string;
-
-/** What a seed gets: the booted QA app and the tenant of the world. */
-interface WorldCtx {
-    /** The QA app, booted on the QA database. A seed writes through its services, never raw SQL. */
-    app: App;
-    /** The tenant of every seeded row. One world is one tenant. */
-    tenantId: string;
-}
-/** The ids that the world gives a persona. They are pure functions of the persona id. */
-interface PersonaIds {
-    persona: string;
-    /** `qa:<persona>`: the subject of the `qa` identity that `POST /__qa/session` signs in. */
-    accountId: string;
-    /** `qaTelegramId(persona)`: the Telegram id of the persona's Mini App launch. */
-    telegramId: number;
-}
-/** What a persona seed returns. `userId` is the auth user that the seed made or reused. */
-interface PersonaHandles {
-    userId: string;
-    readonly [key: string]: string | number;
-}
-/** The handles that a fact seed returns, for the route parameters of a row (`/shelf/{shelfId}`). */
-type FactHandles = Readonly<Record<string, string | number>>;
-/** A user in a named state. */
-interface Persona {
-    /** Kebab case or dotted, unique in the registry, for example `member-expiring`. */
-    id: string;
-    /** One line in a user's words. The report prints it beside the shot. */
-    summary: string;
-    seed(ctx: WorldCtx, ids: PersonaIds): Promise<PersonaHandles>;
-}
-/** What `arm` gets: the world context, the persona of the row, and the undo recorder. */
-interface ArmCtx extends WorldCtx {
-    persona?: PersonaIds;
-    /**
-     * Persists one undo step before the change that it undoes. A process that stops between the
-     * two leaves a step that undoes nothing, never a change that no step names.
-     */
-    record(step: unknown): Promise<void>;
-}
-/** A state of the product data. */
-interface Fact {
-    /** Kebab case or dotted, unique in the registry, for example `catalog.empty-shelf`. */
-    id: string;
-    summary: string;
-    /**
-     * The handle names that the seed returns, declared so a planner can match route parameters
-     * without a database. `lw qa world reset` refuses a seed that does not return each one.
-     */
-    handleKeys: readonly string[];
-    seed(ctx: WorldCtx): Promise<FactHandles>;
-    /** Makes the fact true on a live QA world (`lw qa fixture arm`). Each change records its undo step first. */
-    arm?(ctx: ArmCtx): Promise<void>;
-    /** Replays one undo step that `arm` recorded (`lw qa fixture disarm`). */
-    undo?(ctx: WorldCtx, step: unknown): Promise<void>;
-}
-/** What one `<feature>.world.mts` exports as default. */
-interface FeatureWorld {
-    personas?: readonly Persona[];
-    facts?: readonly Fact[];
-}
-/** A persona or a fact with the feature of its world file. */
-type Owned<T> = T & {
-    feature: string;
-    file: string;
-};
-/** Every persona and fact of the project, in seed order. */
-interface WorldRegistry {
-    personas: readonly Owned<Persona>[];
-    facts: readonly Owned<Fact>[];
-}
-/** One registry entry as plain data: what `lw qa world list --json` prints. */
-interface WorldEntry {
-    kind: 'persona' | 'fact';
-    id: string;
-    summary: string;
-    feature: string;
-    /** A fact's declared handle names. */
-    handleKeys?: readonly string[];
-    /** What the seed returned. Present in the stamp of a reset. */
-    handles?: Readonly<Record<string, string | number>>;
-}
-
-/** A fetch handler, as `buildHonoApp` of `@launchwrighthq/http` gives it. */
-interface QaHandler {
-    fetch(request: Request): Response | Promise<Response>;
-}
-/** What the module of config `qa.app` exports as `qaApp`. */
-interface QaAppEntry {
-    /** The project app, not booted, built from these config sections and this environment. */
-    create(sections: Record<string, unknown>, env: string): App | Promise<App>;
-    /** The HTTP handler of the booted app: the project routes and the module routes, `qaRoutes(app)` among them. */
-    serve(app: App): QaHandler;
-}
-/** The QA database name: config `qa.database`, else `<dev.project>_qa`. */
-declare function qaDatabase(sections: Record<string, unknown>, checkout: CheckoutFacts): string;
-/** The port of the fake Bot API of `lw qa telegram`. The default `qa.telegramUrl` names it. */
-declare const QA_TELEGRAM_PORT = 9102;
-/** What `qaSections` changes. */
-interface QaOverlay {
-    root: string;
-    database: string;
-    /** The fake Bot API: config `qa.telegramUrl`. */
-    telegramUrl: string;
-    /** The hash of the world registry. The fake bot tokens derive from it. */
-    registryHash: string;
-}
-/**
- * The fake token of a bot on the QA API: `<botId>:<32 characters>` from the bot id and the
- * registry hash. Only the fake Bot API knows it, so a QA process never holds a live token.
- */
-declare function qaFakeToken(id: number, registryHash: string): string;
-/** A bot of the fake Bot API: what `serveFakeTelegram` of `telegram-fake` takes. */
-interface QaFakeBot {
-    username: string;
-    token: string;
-}
-/** The bots of config `telegram.bots` with their fake tokens, so `lw qa telegram` serves the bots that the QA API calls. */
-declare function qaFakeBots(sections: Record<string, unknown>, registryHash: string): QaFakeBot[];
-/**
- * The config sections of the QA app:
- * - `db` points at the QA database (same server, other name; or a PGlite folder of its own);
- * - `telegram.apiUrl` is the fake Bot API, and each bot token is replaced by a fake token that
- *   only the fake Bot API knows, so no QA process holds or uses a live token;
- * - `qa.routes` is on, so the `/__qa` routes mount.
- * The input stays unchanged.
- */
-declare function qaSections(sections: Record<string, unknown>, o: QaOverlay): Record<string, unknown>;
-/** Imports a package as the project resolves it, so a registry in it is the one the project fills. */
-declare function importFromProject<T>(root: string, specifier: string): Promise<T>;
-/** The `qaApp` export of the module of config `qa.app`. Throws `qa.world.app`. */
-declare function loadAppEntry(root: string, qa: Pick<QaConfig, 'app'>): Promise<QaAppEntry>;
-/** A booted QA app and the world context of its seeds. */
-interface QaWorld extends WorldCtx {
-    database: string;
-    sections: Record<string, unknown>;
-    close(): Promise<void>;
-}
-/** Builds the QA app from the factory on the overlaid sections and boots it. */
-declare function openWorld(entry: QaAppEntry, sections: Record<string, unknown>, env: string, overlay: QaOverlay): Promise<QaWorld>;
 
 /** The options that a `lw qa` subcommand gets (the fields of `QaCommandOptions` that the world reads). */
 interface WorldCommandOptions {
@@ -180,7 +22,7 @@ interface WorldCommandOptions {
  * of these per database: `arm` makes a fact true, `disarm` replays the undo record and shuts the app
  * down. The runner's `FixtureArming` has this same shape.
  */
-interface FixtureArming {
+interface FixtureArming$1 {
     arm(state: string, opts: {
         persona?: string;
     }): Promise<void>;
@@ -198,10 +40,149 @@ interface FixtureArmingOptions extends WorldCommandOptions {
 /**
  * Opens the QA app on `database` and gives an arming bound to it. `arm` runs `armFact`, which writes
  * the undo record before each change. `disarm` replays the record and shuts the app down, and is
- * safe to call twice. The session runner arms a fork group's facts into the fork this way (spec 2.4,
- * R3), so the fork, not the shared world, holds the row's single-instance state.
+ * safe to call twice.
  */
-declare function fixtureArming(opts: FixtureArmingOptions): Promise<FixtureArming>;
+declare function fixtureArming(opts: FixtureArmingOptions): Promise<FixtureArming$1>;
+
+/** The fields of config section `db` that the stack reads. */
+interface DbSection {
+    driver?: 'pg' | 'pglite';
+    url?: string;
+    dataDir?: string;
+    [key: string]: unknown;
+}
+/** True for `localhost`, `127.0.0.1` and `::1`, also in brackets. */
+declare function isLoopbackHost(host: string): boolean;
+/** A database name from free text: lower case letters, digits and `_`, a letter first, 63 characters at most. */
+declare function databaseName(text: string): string;
+/** The same server, role, password and query, with another database. */
+declare function urlWithDatabase(url: string, name: string): string;
+/**
+ * Why `db` is not the QA database `database` of the project at `root`, or null. Two refusals: a
+ * host that is not this machine, and a database whose name is not `database`. The developer's
+ * database is on the same server and differs by its name alone.
+ */
+declare function qaTargetProblem(db: DbSection, database: string, root: string): string | null;
+/** Throws `qa.stack.target` unless `db` is the QA database. Called before anything destructive. */
+declare function assertQaTarget(db: DbSection, database: string, root: string): void;
+/** Section `db` pointed at the QA database: the same server with another name, or a PGlite folder of its own. */
+declare function qaDbSection(db: DbSection, database: string, root: string): DbSection;
+/** Create, copy, list and drop databases. `allowed` guards each name that a create or drop touches. */
+interface DbAdmin {
+    exists(name: string): Promise<boolean>;
+    /** Creates `name`, empty or as a copy of `template`. A template with open sessions fails with `qa.stack.copy`. */
+    create(name: string, template?: string): Promise<void>;
+    /** Drops `name` when it exists. It ends the open sessions of its own role first; a session of another role fails the drop after 5 s. */
+    drop(name: string): Promise<void>;
+    /** The databases whose names start with `prefix`. */
+    list(prefix: string): Promise<string[]>;
+    close(): Promise<void>;
+}
+/** The admin of a Postgres server on this machine, through its maintenance database. */
+declare function pgAdmin(url: string, allowed: (name: string) => boolean): Promise<DbAdmin>;
+/** The admin of the PGlite QA databases: one folder each under `.lw/qa/pglite/`. */
+declare function pgliteAdmin(root: string, allowed: (name: string) => boolean): DbAdmin;
+/** The admin for section `db`: Postgres through its URL, or the PGlite folders of the project. */
+declare function dbAdmin(db: DbSection, root: string, allowed: (name: string) => boolean): Promise<DbAdmin>;
+
+/** The name of a fork of the QA `database` for `label`: `<database>_fork_<label>`, 63 characters at most. */
+declare function forkName(database: string, label: string): string;
+/**
+ * The snapshot that `lw qa world reset` takes of the seeded QA database: `<database>_fork__seeded`.
+ * No label gives this name, because `databaseName` starts a label with a letter. A fork copies the
+ * snapshot, so it holds the base seeds, and no session of `lw qa world api` blocks the Postgres copy.
+ */
+declare function seededName(database: string): string;
+/** What a fork create or drop needs. */
+interface ForkOptions {
+    root: string;
+    /** The project config sections. */
+    sections: Record<string, unknown>;
+    /** The QA database name, the fork's template. */
+    database: string;
+    out: (line: string) => void;
+}
+/**
+ * Creates a fork of the QA database and gives the fork name. The template is the seeded snapshot when
+ * it exists, else the QA database itself, which a Postgres server copies only when no session uses it.
+ */
+declare function createFork(o: ForkOptions & {
+    label: string;
+}): Promise<string>;
+/** Drops a fork of the QA database. Refuses a name that is not a fork of `database`. */
+declare function dropFork(o: ForkOptions & {
+    name: string;
+}): Promise<void>;
+
+/** Arms and disarms fixtures on the QA database (`lw qa fixture`, spec 2.5.3). The world submodule gives it. */
+interface FixtureArming {
+    /** Applies one state for a persona, after its undo record is written. */
+    arm(state: string, opts: {
+        persona?: string;
+    }): Promise<void>;
+    /** Replays every undo record. Safe to call twice. */
+    disarm(): Promise<void>;
+}
+/** The QA app booted on a fork database and served on a loopback port (spec 2.4, R3). */
+interface ForkServer {
+    /** The origin of the server: `http://127.0.0.1:<port>`. */
+    url: string;
+    /** Fixture arming bound to the app on the fork, so the group arms its single-instance state there. */
+    arming: FixtureArming;
+    /** Stops the server and shuts the app down. */
+    close(): Promise<void>;
+}
+/**
+ * A per-pass database fork for a row group that needs an isolated single-instance state (spec 2.4,
+ * R3). For each `fork` label the runner forks the QA database, serves the QA app on the fork, arms
+ * the group's facts in that app, and points the rows at it. After the group it stops the server and
+ * drops the fork, also after a failure. The world submodule gives `worldForkRunner`.
+ */
+interface ForkRunner {
+    /** Creates a fork for `label` and gives its database name. */
+    create(label: string): Promise<string>;
+    /** Drops a fork by its database name. The runner calls it after the group, also after a failure. */
+    drop(database: string): Promise<void>;
+    /** Boots the QA app on the fork database and serves it on a free loopback port. */
+    serve(database: string): Promise<ForkServer>;
+}
+
+/** What a fork server needs: the project, the QA app entry and the overlay of the QA database. */
+interface ForkWorldOptions {
+    root: string;
+    /** The project config sections. */
+    sections: Record<string, unknown>;
+    env: string;
+    /** The overlay of the QA database. A fork server keeps it and names the fork database instead. */
+    overlay: QaOverlay;
+    entry: QaAppEntry;
+    registry: WorldRegistry;
+    out: (line: string) => void;
+    /** Default: `listenQaApp`, the `serveNode` of the http module. */
+    listen?: ListenQaApp;
+}
+/** A fork server with the booted world, so a forged seed writes through the same app. */
+interface ForkInstance extends ForkServer {
+    database: string;
+    world: QaWorld;
+}
+/**
+ * Boots the QA app on the fork `database` and serves it on a free loopback port. Its arming writes
+ * the undo record under `.lw/qa/fork/`, apart from the shared record, so two forks arm at the same
+ * time. `disarm` replays nothing: the fork drop removes every armed change. `close` stops the
+ * server, shuts the app down and removes the undo record.
+ */
+declare function serveFork(o: ForkWorldOptions, database: string): Promise<ForkInstance>;
+/** A fork with the QA app served on it, as `lw qa states forge` uses it. `release` stops the app and drops the fork. */
+interface OpenFork extends ForkInstance {
+    /** Runs one statement on the fork through `QaAppEntry.db`, else token `DB` of the db module. */
+    execute(sql: string): Promise<unknown>;
+    release(): Promise<void>;
+}
+/** Forks the QA database for `label` and serves the QA app on the fork. A failed start drops the fork. */
+declare function openFork(o: ForkWorldOptions, label: string): Promise<OpenFork>;
+/** The fork runner of `lw qa session run`: fork, serve, drop, on the QA database of `o.overlay`. */
+declare function worldForkRunner(o: ForkWorldOptions): ForkRunner;
 
 /** A shift as milliseconds: a number, or `+2d`, `-3h`, `90m`, `15s`, `500ms`, `1w`. Throws `qa.clock.shift`. */
 declare function parseShift(shift: unknown): number;
@@ -289,14 +270,17 @@ interface UndoRecord {
     database: string;
     armed: ArmedFact[];
 }
-/** The undo record, or an empty one for `database`. */
-declare function readUndo(root: string, database: string): Promise<UndoRecord>;
+/** The undo record of a fork database, relative to the project root. The fork drop removes it. */
+declare function forkUndoFile(database: string): string;
+/** The undo record in `file` (default `UNDO_FILE`), or an empty one for `database`. */
+declare function readUndo(root: string, database: string, file?: string): Promise<UndoRecord>;
 /** Arms `factId` on the QA world, for `persona` when the row names one. Refuses a fact that is armed already. */
 declare function armFact(world: QaWorld, registry: WorldRegistry, root: string, factId: string, opts?: {
     persona?: string;
+    undoFile?: string;
 }): Promise<ArmedFact>;
 /** Replays every undo step in reverse order, removes each fact from the record when its steps are done, and gives the facts. */
-declare function disarmFact(world: QaWorld, registry: WorldRegistry, root: string): Promise<string[]>;
+declare function disarmFact(world: QaWorld, registry: WorldRegistry, root: string, file?: string): Promise<string[]>;
 
 /**
  * The Telegram id of a QA persona: FNV-1a (32 bit) over the persona id, folded into
@@ -365,47 +349,6 @@ interface MenuOptions {
 /** Sets the default menu button of the bot to open `url` as a Mini App. Throws `qa.menu.bot`. */
 declare function setMenuButton(o: MenuOptions): Promise<void>;
 
-/** The fields of config section `db` that the stack reads. */
-interface DbSection {
-    driver?: 'pg' | 'pglite';
-    url?: string;
-    dataDir?: string;
-    [key: string]: unknown;
-}
-/** True for `localhost`, `127.0.0.1` and `::1`, also in brackets. */
-declare function isLoopbackHost(host: string): boolean;
-/** A database name from free text: lower case letters, digits and `_`, a letter first, 63 characters at most. */
-declare function databaseName(text: string): string;
-/** The same server, role, password and query, with another database. */
-declare function urlWithDatabase(url: string, name: string): string;
-/**
- * Why `db` is not the QA database `database` of the project at `root`, or null. Two refusals: a
- * host that is not this machine, and a database whose name is not `database`. The developer's
- * database is on the same server and differs by its name alone.
- */
-declare function qaTargetProblem(db: DbSection, database: string, root: string): string | null;
-/** Throws `qa.stack.target` unless `db` is the QA database. Called before anything destructive. */
-declare function assertQaTarget(db: DbSection, database: string, root: string): void;
-/** Section `db` pointed at the QA database: the same server with another name, or a PGlite folder of its own. */
-declare function qaDbSection(db: DbSection, database: string, root: string): DbSection;
-/** Create, copy, list and drop databases. `allowed` guards each name that a create or drop touches. */
-interface DbAdmin {
-    exists(name: string): Promise<boolean>;
-    /** Creates `name`, empty or as a copy of `template`. A template with open sessions fails with `qa.stack.copy`. */
-    create(name: string, template?: string): Promise<void>;
-    /** Drops `name` when it exists. It ends the open sessions of its own role first; a session of another role fails the drop after 5 s. */
-    drop(name: string): Promise<void>;
-    /** The databases whose names start with `prefix`. */
-    list(prefix: string): Promise<string[]>;
-    close(): Promise<void>;
-}
-/** The admin of a Postgres server on this machine, through its maintenance database. */
-declare function pgAdmin(url: string, allowed: (name: string) => boolean): Promise<DbAdmin>;
-/** The admin of the PGlite QA databases: one folder each under `.lw/qa/pglite/`. */
-declare function pgliteAdmin(root: string, allowed: (name: string) => boolean): DbAdmin;
-/** The admin for section `db`: Postgres through its URL, or the PGlite folders of the project. */
-declare function dbAdmin(db: DbSection, root: string, allowed: (name: string) => boolean): Promise<DbAdmin>;
-
 /** The stamp of the last reset, relative to the project root. The `.lw/` folder is not in git. */
 declare const STAMP_FILE = ".lw/qa/world.json";
 /** What a reset records. `status` compares `hash` with the live registry. */
@@ -460,15 +403,6 @@ declare function worldStatus(o: {
     registry: WorldRegistry;
     admin?: DbAdmin;
 }): Promise<WorldStatus>;
-
-/** The run record of the dev module that the worktree command reads. */
-interface RunRecord {
-    checkout: string;
-    surfaces: Array<{
-        name: string;
-        url?: string;
-    }>;
-}
 
 /** The outside effects of a worktree run. Tests replace each one. */
 interface WorktreeDeps {
@@ -531,4 +465,4 @@ declare function runWorktree(o: WorktreeOptions): Promise<number>;
 /** `--cleanup`: drops each copy of this project whose worktree has no live `lw dev` run. Gives the dropped names. */
 declare function cleanupWorktrees(o: Pick<WorktreeOptions, 'root' | 'sections' | 'out' | 'deps'>): Promise<string[]>;
 
-export { type ArmCtx, type ArmedFact, type CheckoutFacts, type DbAdmin, type DbSection, type Fact, type FactHandles, type FeatureWorld, type FixtureArming, type FixtureArmingOptions, JOBS_DIR, type JobRegistry, type LoadedWorld, type MenuOptions, type Owned, type Persona, type PersonaHandles, type PersonaIds, QA_PROVIDER, QA_TELEGRAM_PORT, type QaAppEntry, type QaFakeBot, type QaHandler, type QaOverlay, type QaWorld, type ResetOptions, type RunJobOptions, STAMP_FILE, ShiftClock, UNDO_FILE, type UndoRecord, WORLD_SUFFIX, type WorktreeDeps, type WorktreeOptions, type WorktreePlan, type WorldCtx, type WorldEntry, type WorldFinding, type WorldRegistry, type WorldStamp, type WorldStatus, armFact, assertQaTarget, assertRegistry, baseSeedNames, buildRegistry, cleanupWorktrees, copyName, copyPrefix, databaseName, dbAdmin, defineWorld, devProjectName, disarmFact, factById, featuresWithoutWorld, fixtureArming, idProblem, importFromProject, importProjectJobs, isLoopbackHost, listJobs, listWorld, loadAppEntry, loadRegistry, loadWorlds, openWorld, parseShift, personaById, personaIds, pgAdmin, pgliteAdmin, planWorktree, qaAccountId, qaDatabase, qaDbSection, qaFakeBots, qaFakeToken, qaSections, qaTargetProblem, qaTelegramId, rawSqlFindings, readCheckout, readStamp, readUndo, registryHash, registryProblem, resetWorld, runJob, runWorktree, seedWorld, setEnvLine, setMenuButton, urlWithDatabase, worldFiles, worldLintFindings, worldStatus };
+export { type ArmedFact, CheckoutFacts, type DbAdmin, type DbSection, Fact, FeatureWorld, type FixtureArming$1 as FixtureArming, type FixtureArmingOptions, type ForkInstance, type ForkWorldOptions, JOBS_DIR, type JobRegistry, ListenQaApp, type LoadedWorld, type MenuOptions, type OpenFork, Owned, Persona, PersonaIds, QA_PROVIDER, QaAppEntry, QaOverlay, QaWorld, type ResetOptions, type RunJobOptions, STAMP_FILE, ShiftClock, UNDO_FILE, type UndoRecord, WORLD_SUFFIX, type WorktreeDeps, type WorktreeOptions, type WorktreePlan, WorldEntry, type WorldFinding, WorldRegistry, type WorldStamp, type WorldStatus, armFact, assertQaTarget, assertRegistry, baseSeedNames, buildRegistry, cleanupWorktrees, copyName, copyPrefix, createFork, databaseName, dbAdmin, defineWorld, disarmFact, dropFork, factById, featuresWithoutWorld, fixtureArming, forkName, forkUndoFile, idProblem, importProjectJobs, isLoopbackHost, listJobs, listWorld, loadRegistry, loadWorlds, openFork, parseShift, personaById, personaIds, pgAdmin, pgliteAdmin, planWorktree, qaAccountId, qaDbSection, qaTargetProblem, qaTelegramId, rawSqlFindings, readStamp, readUndo, registryHash, registryProblem, resetWorld, runJob, runWorktree, seedWorld, seededName, serveFork, setEnvLine, setMenuButton, urlWithDatabase, worldFiles, worldForkRunner, worldLintFindings, worldStatus };

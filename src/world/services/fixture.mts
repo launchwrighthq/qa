@@ -28,30 +28,42 @@ export interface UndoRecord {
   armed: ArmedFact[];
 }
 
-/** The undo record, or an empty one for `database`. */
-export async function readUndo(root: string, database: string): Promise<UndoRecord> {
-  const text = await readTextOrNull(join(root, UNDO_FILE));
+/** The undo record of a fork database, relative to the project root. The fork drop removes it. */
+export function forkUndoFile(database: string): string {
+  return `.lw/qa/fork/${database}.fixture.json`;
+}
+
+/** The undo record in `file` (default `UNDO_FILE`), or an empty one for `database`. */
+export async function readUndo(root: string, database: string, file: string = UNDO_FILE): Promise<UndoRecord> {
+  const text = await readTextOrNull(join(root, file));
   if (text === null) return { database, armed: [] };
   let record: UndoRecord;
   try {
     record = JSON.parse(text) as UndoRecord;
   } catch (cause) {
-    throw new LaunchwrightError('qa.fixture.read', `${UNDO_FILE} is not JSON. Restore it from the run log, or delete it after lw qa world reset.`, { cause });
+    throw new LaunchwrightError('qa.fixture.read', `${file} is not JSON. Restore it from the run log, or delete it after lw qa world reset.`, { cause });
   }
   if (record.armed.length > 0 && record.database !== database) {
-    throw new LaunchwrightError('qa.fixture.database', `${UNDO_FILE} holds facts armed on ${record.database}, not on ${database}. Disarm them on that database first.`, {
+    throw new LaunchwrightError('qa.fixture.database', `${file} holds facts armed on ${record.database}, not on ${database}. Disarm them on that database first.`, {
       context: { database: record.database },
     });
   }
   return { database, armed: record.armed };
 }
 
-function writeUndo(root: string, record: UndoRecord): Promise<void> {
-  return writeJson(join(root, UNDO_FILE), record);
+function writeUndo(root: string, record: UndoRecord, file: string): Promise<void> {
+  return writeJson(join(root, file), record);
 }
 
 /** Arms `factId` on the QA world, for `persona` when the row names one. Refuses a fact that is armed already. */
-export async function armFact(world: QaWorld, registry: WorldRegistry, root: string, factId: string, opts: { persona?: string } = {}): Promise<ArmedFact> {
+export async function armFact(
+  world: QaWorld,
+  registry: WorldRegistry,
+  root: string,
+  factId: string,
+  opts: { persona?: string; undoFile?: string } = {},
+): Promise<ArmedFact> {
+  const file = opts.undoFile ?? UNDO_FILE;
   const fact = factById(registry, factId);
   if (fact.arm === undefined) {
     throw new LaunchwrightError('qa.fixture.no-arm', `Fact ${fact.id} (${fact.file}) has no arm(). Seed it with lw qa world reset, or give it arm() and undo().`, {
@@ -59,28 +71,28 @@ export async function armFact(world: QaWorld, registry: WorldRegistry, root: str
     });
   }
   const persona = opts.persona === undefined ? undefined : personaIds(personaById(registry, opts.persona).id);
-  const record = await readUndo(root, world.database);
+  const record = await readUndo(root, world.database, file);
   if (record.armed.some((a) => a.fact === fact.id)) {
     throw new LaunchwrightError('qa.fixture.armed', `Fact ${fact.id} is armed already. Run lw qa fixture disarm first.`, { context: { fact: fact.id } });
   }
   const entry: ArmedFact = { fact: fact.id, ...(persona ? { persona: persona.persona } : {}), steps: [] };
   record.armed.push(entry);
-  await writeUndo(root, record);
+  await writeUndo(root, record, file);
   await fact.arm({
     app: world.app,
     tenantId: world.tenantId,
     ...(persona ? { persona } : {}),
     async record(step: unknown) {
       entry.steps.push(step);
-      await writeUndo(root, record);
+      await writeUndo(root, record, file);
     },
   });
   return entry;
 }
 
 /** Replays every undo step in reverse order, removes each fact from the record when its steps are done, and gives the facts. */
-export async function disarmFact(world: QaWorld, registry: WorldRegistry, root: string): Promise<string[]> {
-  const record = await readUndo(root, world.database);
+export async function disarmFact(world: QaWorld, registry: WorldRegistry, root: string, file: string = UNDO_FILE): Promise<string[]> {
+  const record = await readUndo(root, world.database, file);
   const done: string[] = [];
   while (record.armed.length > 0) {
     const entry = record.armed[record.armed.length - 1]!;
@@ -89,10 +101,10 @@ export async function disarmFact(world: QaWorld, registry: WorldRegistry, root: 
     while (entry.steps.length > 0) {
       await fact.undo(world, entry.steps[entry.steps.length - 1]);
       entry.steps.pop();
-      await writeUndo(root, record);
+      await writeUndo(root, record, file);
     }
     record.armed.pop();
-    await writeUndo(root, record);
+    await writeUndo(root, record, file);
     done.push(entry.fact);
   }
   return done;

@@ -26,7 +26,7 @@ import {
   stageBatch,
   writeCursor,
   writeProposal
-} from "./chunk-5CANXVBB.js";
+} from "./chunk-J6M6MYBF.js";
 import {
   FAKE_INTAKE_ITEMS,
   FakeIntakeDriver
@@ -35,15 +35,23 @@ import {
   QA_INTAKE_CAPABILITIES,
   QA_INTAKE_SPEC_VERSION
 } from "./chunk-K3F4HTKJ.js";
-import "./chunk-HOTB3Y25.js";
-import "./chunk-AGGRX66T.js";
-import "./chunk-CR6DWKU7.js";
+import "./chunk-TO3EZXJJ.js";
+import "./chunk-UTLQTV2X.js";
+import "./chunk-CB2YK37X.js";
 import "./chunk-W4O3YTED.js";
 import "./chunk-37DKYQMH.js";
-import "./chunk-NWIOKD2S.js";
+import "./chunk-ZNUANGPQ.js";
 import "./chunk-N6G3DBRC.js";
 import "./chunk-62VIRJ2H.js";
 import "./chunk-ZYIHPZ3V.js";
+import "./chunk-EUYLWYDS.js";
+import "./chunk-GJVA76MS.js";
+import "./chunk-ZMPWNSJU.js";
+import "./chunk-K4LKBBDD.js";
+import "./chunk-RCXD64CA.js";
+import "./chunk-ZJ35OYFC.js";
+import "./chunk-CNY6SOD7.js";
+import "./chunk-I4K4P4GZ.js";
 import "./chunk-YDFQPHPI.js";
 import "./chunk-4B5GWDFB.js";
 import "./chunk-5KDQJ25J.js";
@@ -95,7 +103,7 @@ var qaIntakeProvider = provider({
 // src/intake/services/extension.mts
 var qaExtension = {
   name: "qa-intake",
-  subcommands: { intake: async () => (await import("./qa-intake-YJLT36WH.js")).default }
+  subcommands: { intake: async () => (await import("./qa-intake-APY46TVA.js")).default }
 };
 export {
   FAKE_INTAKE_ITEMS,

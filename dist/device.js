@@ -52,19 +52,27 @@ import {
   writeHeld,
   writePng
 } from "./chunk-TRG6QP57.js";
-import "./chunk-HOTB3Y25.js";
-import "./chunk-AGGRX66T.js";
+import "./chunk-TO3EZXJJ.js";
+import "./chunk-UTLQTV2X.js";
 import {
   QA_TARGETS
-} from "./chunk-CR6DWKU7.js";
+} from "./chunk-CB2YK37X.js";
 import "./chunk-W4O3YTED.js";
 import "./chunk-37DKYQMH.js";
-import "./chunk-NWIOKD2S.js";
+import "./chunk-ZNUANGPQ.js";
 import {
   credentialNeed
 } from "./chunk-N6G3DBRC.js";
 import "./chunk-62VIRJ2H.js";
 import "./chunk-ZYIHPZ3V.js";
+import "./chunk-EUYLWYDS.js";
+import "./chunk-GJVA76MS.js";
+import "./chunk-ZMPWNSJU.js";
+import "./chunk-K4LKBBDD.js";
+import "./chunk-RCXD64CA.js";
+import "./chunk-ZJ35OYFC.js";
+import "./chunk-CNY6SOD7.js";
+import "./chunk-I4K4P4GZ.js";
 import "./chunk-YDFQPHPI.js";
 import "./chunk-4B5GWDFB.js";
 import "./chunk-5KDQJ25J.js";
@@ -453,7 +461,7 @@ var qaDeviceProvider = provider({
 // src/device/services/extension.mts
 var qaExtension = {
   name: "qa-device",
-  subcommands: { device: async () => (await import("./qa-device-XXNEUHNN.js")).default },
+  subcommands: { device: async () => (await import("./qa-device-4UBLLSDO.js")).default },
   targets: (config, root) => deviceTargets(withDevice(config), systemDeviceDeps(root))
 };
 export {
