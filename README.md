@@ -16,9 +16,17 @@ A TypeScript or Node consumer pins the tag:
 ```json
 {
   "devDependencies": {
-    "@launchwrighthq/qa": "github:launchwrighthq/qa#v0.1.0"
+    "@launchwrighthq/qa": "github:launchwrighthq/qa#v0.1.3"
   }
 }
+```
+
+The `lw-qa` command runs through `tsx`, which depends on `esbuild`. pnpm 11 runs no dependency
+build script by default, so allow the one `esbuild` needs in `pnpm-workspace.yaml`:
+
+```yaml
+allowBuilds:
+  esbuild: true
 ```
 
 A Python consumer adds the same tag as a uv git dependency.
