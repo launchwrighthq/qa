@@ -1,0 +1,28 @@
+# The skills and the rule of the qa module (QA spec 2.13). Paths are relative to this folder.
+# `lw harness sync` reads it; modules/harness/README.md gives the format.
+
+[[skill]]
+id = "lw-qa-pass"
+dir = "harness/skills/lw-qa-pass"
+
+[[skill]]
+id = "lw-qa-worktree"
+dir = "harness/skills/lw-qa-worktree"
+
+[[skill]]
+id = "lw-qa-device"
+dir = "harness/skills/lw-qa-device"
+
+[[skill]]
+id = "lw-qa-intake"
+dir = "harness/skills/lw-qa-intake"
+
+[[skill]]
+id = "lw-qa-world"
+dir = "harness/skills/lw-qa-world"
+
+[[rule]]
+id = "qa-testability"
+summary = "QA testability: a persona or a fact for every state, a trigger for every state union, no QA flag in a component"
+file = "harness/rules/qa-testability.md"
+paths = ["apps/client/**", "apps/api/**", "packages/**", "qa/**", "**/*.world.mts", "**/*.feature.mts"]

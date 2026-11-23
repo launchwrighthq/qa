@@ -1,0 +1,96 @@
+{
+  "name": "@launchwrighthq/qa",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "A standalone, public QA library for AI products: QA passes with evidence, personas, state triggers, devices, fake Telegram, issue intake, a reviewer-comment viewer and a score.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "lw-qa": "./bin/lw-qa.mjs"
+  },
+  "exports": {
+    ".": {
+      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+    },
+    "./world": {
+      "import": { "types": "./dist/world.d.ts", "default": "./dist/world.js" },
+      "require": { "types": "./dist/world.d.cts", "default": "./dist/world.cjs" }
+    },
+    "./states": {
+      "import": { "types": "./dist/states.d.ts", "default": "./dist/states.js" },
+      "require": { "types": "./dist/states.d.cts", "default": "./dist/states.cjs" }
+    },
+    "./testing": {
+      "import": { "types": "./dist/testing.d.ts", "default": "./dist/testing.js" },
+      "require": { "types": "./dist/testing.d.cts", "default": "./dist/testing.cjs" }
+    },
+    "./sink": {
+      "import": { "types": "./dist/sink.d.ts", "default": "./dist/sink.js" },
+      "require": { "types": "./dist/sink.d.cts", "default": "./dist/sink.cjs" }
+    },
+    "./render": {
+      "import": { "types": "./dist/render.d.ts", "default": "./dist/render.js" },
+      "require": { "types": "./dist/render.d.cts", "default": "./dist/render.cjs" }
+    },
+    "./intake": {
+      "import": { "types": "./dist/intake.d.ts", "default": "./dist/intake.js" },
+      "require": { "types": "./dist/intake.d.cts", "default": "./dist/intake.cjs" }
+    },
+    "./device": {
+      "import": { "types": "./dist/device.d.ts", "default": "./dist/device.js" },
+      "require": { "types": "./dist/device.d.cts", "default": "./dist/device.cjs" }
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "bin",
+    "harness",
+    "harness.toml",
+    "tsconfig.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "build": "tsup",
+    "prepare": "tsup"
+  },
+  "dependencies": {
+    "smol-toml": "^1.9.1",
+    "zod": "^4.6.7",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3"
+  },
+  "peerDependencies": {
+    "@launchwrighthq/auth": "*",
+    "@launchwrighthq/client": "*",
+    "@launchwrighthq/db": "*",
+    "@launchwrighthq/dev": "*",
+    "@launchwrighthq/http": "*",
+    "@launchwrighthq/queue": "*",
+    "@launchwrighthq/storage": "*",
+    "@launchwrighthq/telegram": "*",
+    "@launchwrighthq/tunnel": "*",
+    "@playwright/test": "^1.64.1"
+  },
+  "peerDependenciesMeta": {
+    "@launchwrighthq/auth": { "optional": true },
+    "@launchwrighthq/client": { "optional": true },
+    "@launchwrighthq/db": { "optional": true },
+    "@launchwrighthq/dev": { "optional": true },
+    "@launchwrighthq/http": { "optional": true },
+    "@launchwrighthq/queue": { "optional": true },
+    "@launchwrighthq/storage": { "optional": true },
+    "@launchwrighthq/telegram": { "optional": true },
+    "@launchwrighthq/tunnel": { "optional": true },
+    "@playwright/test": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@playwright/test": "^1.64.1",
+    "vitest": "^5.1.0",
+    "tsup": "^8.3.5"
+  }
+}
