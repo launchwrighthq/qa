@@ -16,7 +16,7 @@ A TypeScript or Node consumer pins the tag:
 ```json
 {
   "devDependencies": {
-    "@launchwrighthq/qa": "github:launchwrighthq/qa#v0.2.0"
+    "@launchwrighthq/qa": "github:launchwrighthq/qa#v0.2.1"
   }
 }
 ```
