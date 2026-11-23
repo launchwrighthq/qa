@@ -1,14 +1,14 @@
-import { a as QaSubcommand, P as Provider } from './extensions-D2fnlaXp.cjs';
-export { E as EXTENSION_PREFIX, b as QaCommandOptions, Q as QaExtension, S as SUBCOMMANDS, e as extensionNames, c as extensionTargets, l as loadExtensions, q as qaCommand } from './extensions-D2fnlaXp.cjs';
+import { a as QaSubcommand, P as Provider } from './extensions-hEIbllvs.cjs';
+export { E as EXTENSION_PREFIX, b as QaCommandOptions, Q as QaExtension, S as SUBCOMMANDS, e as extensionNames, c as extensionTargets, l as loadExtensions, q as qaCommand } from './extensions-hEIbllvs.cjs';
 import { C as Clock } from './clock-BUdCJ9bN.cjs';
 import { a as QaTargetRegistry, Q as QaTarget, L as Leg, A as Act, S as Settle, b as LedgerEntry, O as OpenTargetRegistry } from './contract-xgrBaS32.cjs';
 export { c as ACT_KINDS, d as ActKind, e as AttachmentKind, C as Capture, E as EvidenceKind, I as INTAKE_DIR, f as Isolation, g as OpenOptions, P as Provenance, h as QA_TARGET_CAPABILITIES, i as QA_TARGET_SPEC_VERSION, j as QaIssue, k as QaSession, l as QaTargetCapability, R as REPORT_STATUSES, m as ROW_FAILURES, n as RawMedia, o as ReportStatus, p as RowFailure, q as RowResult, r as SessionLogLine, s as SkipReason, t as Surface, T as TargetReadiness, V as VideoCapture } from './contract-xgrBaS32.cjs';
-import { Q as QaConfig } from './config-B-lxHEnb.cjs';
-export { L as LegConfig, q as qaConfig, a as qaConfigOf, w as withAppPaths } from './config-B-lxHEnb.cjs';
+import { Q as QaConfig } from './config-Z7lJ4xeJ.cjs';
+export { L as LegConfig, q as qaConfig, a as qaConfigOf, w as withAppPaths } from './config-Z7lJ4xeJ.cjs';
 export { i as isCodedError } from './errors-DgRPaUlC.cjs';
 export { I as IssueDraft, i as issueMarkdown, l as listIssues, r as readIssue, a as recordDir, b as recordId, w as writeIssue } from './records-Dp-XPGne.cjs';
+import { z } from 'zod';
 import { T as Token } from './app-KXgbRXYO.cjs';
-import 'zod';
 
 /** The dependencies of a run. A test passes fakes; the command builds the defaults. */
 interface RunDeps {
@@ -511,9 +511,9 @@ interface ScoreResult {
  * `weights` overrides any of the default weights.
  */
 declare function computeScore(input: ScoreInput, weights?: Partial<ScoreWeights>): ScoreResult;
-/** Options for `renderScoreGauge`. The ring colour is a configuration value, not a fixed purple (spec 2.11). */
+/** Options for `renderScoreGauge`. The ring colour is config `qa.score.gaugeColor` (spec 2.11). */
 interface GaugeOptions {
-    /** The ring colour. Default: a neutral accent the consumer overrides. */
+    /** The ring colour. Default: `DEFAULT_GAUGE_COLOR`. */
     color?: string;
     /** The track colour behind the ring. */
     track?: string;
@@ -522,11 +522,73 @@ interface GaugeOptions {
     /** A short label under the number, for example a confidence word. */
     label?: string;
 }
+/** The default ring: a solid purple, as the owner asked ("like gstack"). Config `qa.score.gaugeColor` overrides it. */
+declare const DEFAULT_GAUGE_COLOR = "#7c3aed";
 /**
  * A circular gauge for the score, as a self-contained inline SVG string. The arc length is the score
- * over 100, the number sits in the centre, and the ring uses `opts.color` with a neutral default.
+ * over 100, the number sits in the centre, and the ring uses `opts.color`, purple by default.
  */
 declare function renderScoreGauge(score: number, opts?: GaugeOptions): string;
+/** The reader's name of each dimension, in rubric order. */
+declare const SCORE_DIMENSIONS: ReadonlyArray<{
+    dimension: ScoreDimension;
+    label: string;
+}>;
+/** One row of the score breakdown. `score` is null for a dimension the run did not test. */
+interface ScoreRow {
+    dimension: ScoreDimension;
+    label: string;
+    score: number | null;
+    weight: number;
+    counted: boolean;
+    /** What the row reads from, or why it is untested. */
+    note: string;
+}
+/** The breakdown of a result: every dimension with its score, its weight and whether it counted. */
+declare function scoreRows(result: ScoreResult, weights?: Partial<ScoreWeights>, notes?: Partial<Record<ScoreDimension, string>>): ScoreRow[];
+/** The breakdown as an HTML table, so the reader sees which dimensions the number averages. */
+declare function renderScoreBreakdown(rows: readonly ScoreRow[]): string;
+
+/** True for a hex colour, a functional colour such as `rgb(124 58 237)`, or a CSS named colour. */
+declare function isCssColor(value: string): boolean;
+/** `qa.score`. A weight left out keeps its default; `DEFAULT_SCORE_WEIGHTS` lists them. */
+declare const scoreConfig: z.ZodObject<{
+    weights: z.ZodDefault<z.ZodObject<{
+        findings: z.ZodOptional<z.ZodNumber>;
+        console: z.ZodOptional<z.ZodNumber>;
+        coverage: z.ZodOptional<z.ZodNumber>;
+        evidence: z.ZodOptional<z.ZodNumber>;
+        accessibility: z.ZodOptional<z.ZodNumber>;
+        performance: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strict>>;
+    gaugeColor: z.ZodDefault<z.ZodString>;
+}, z.core.$strip>;
+type ScoreConfig = z.infer<typeof scoreConfig>;
+
+/** The severity tags of a finding, from the rubric of spec 2.11. */
+declare const SEVERITIES: readonly ["critical", "high", "medium", "low"];
+type Severity = (typeof SEVERITIES)[number];
+/** One finding line of section 4. */
+interface Finding {
+    /** The 0-based line index in the report. */
+    line: number;
+    status: 'CONFIRMED' | 'SUSPECTED';
+    /** The tag in lower case, or null when the line has none. */
+    tag: string | null;
+    /** The tag when it is a known severity, else null. */
+    severity: Severity | null;
+    claim: string;
+}
+/** The finding lines of `lines[from, to)`, with fenced code left out. */
+declare function parseFindings(lines: readonly string[], from?: number, to?: number): Finding[];
+/** What the score reads: the CONFIRMED findings by severity, and the SUSPECTED count it leaves out. */
+interface FindingTally {
+    confirmed: Required<SeverityCounts>;
+    suspected: number;
+}
+declare function tallyFindings(findings: readonly Finding[]): FindingTally;
+/** The problem text of each finding line with no tag on a CONFIRMED finding, or an unknown tag. */
+declare function findingProblems(findings: readonly Finding[]): string[];
 
 /**
  * Every registered target. `extra` adds targets or replaces a built-in one, for example a fake
@@ -541,4 +603,4 @@ declare const MIN_VIDEO_S = 1;
 /** The registered `qa.target` drivers: `app.get(QA_TARGETS).get('playwright')`. Extension modules add theirs at boot. */
 declare const QA_TARGETS: Token<OpenTargetRegistry>;
 
-export { ANCHOR_KINDS, Act, BOTFATHER, BOT_STORE_DIR, type BotCommand, type BotFatherChat, type BotGetMe, type BotRecord, type BotStore, COMMENTS_DIR, type Comment, type CommentAnchor, type CommentReply, type CommentServer, type CommentServerOptions, type CommentStore, type ConfigureBotOptions, type ConsentGrant, type ConsentGroup, type ConsentManifest, type ConsentRecord, type ConsentStore, type CredentialNeed, DEFAULT_SCORE_WEIGHTS, DELETE_CONFIRM, type DataNeed, type DeadBot, type ExportContext, type FlowAnchor, type GaugeOptions, type GrantChoices, LedgerEntry, Leg, MIN_VIDEO_S, type ManifestInput, type ManifestItem, type NewBot, type NewComment, OpenTargetRegistry, type OutwardNeed, type PlaywrightTargetOptions, QA_TARGETS, QaConfig, QaSubcommand, QaTarget, QaTargetRegistry, type RegionAnchor, type ResolvedComment, SEVERITY_DEDUCTION, type ScoreDimension, type ScoreInput, type ScoreResult, type ScoreWeights, Settle, type SeverityCounts, type StepAnchor, type TextAnchor, type TimeAnchor, type UserbotLease, type UserbotProvider, addComment, botIdOf, commentsFile, computeManifest, computeScore, configureBot, createPlaywrightTarget, createStatesCommand, createTargetRegistry, destroyBot, diff, exportTaskList, extensionOf, fileBotStore, fileCommentStore, fileConsentStore, grant, makeComment, manifestHash, mimeOfExtension, newBot, parseBotToken, pngSize, qaProvider, renderScoreGauge, replyToComment, resolveComments, setStatus, startCommentServer, validateAnchor };
+export { ANCHOR_KINDS, Act, BOTFATHER, BOT_STORE_DIR, type BotCommand, type BotFatherChat, type BotGetMe, type BotRecord, type BotStore, COMMENTS_DIR, type Comment, type CommentAnchor, type CommentReply, type CommentServer, type CommentServerOptions, type CommentStore, type ConfigureBotOptions, type ConsentGrant, type ConsentGroup, type ConsentManifest, type ConsentRecord, type ConsentStore, type CredentialNeed, DEFAULT_GAUGE_COLOR, DEFAULT_SCORE_WEIGHTS, DELETE_CONFIRM, type DataNeed, type DeadBot, type ExportContext, type Finding, type FindingTally, type FlowAnchor, type GaugeOptions, type GrantChoices, LedgerEntry, Leg, MIN_VIDEO_S, type ManifestInput, type ManifestItem, type NewBot, type NewComment, OpenTargetRegistry, type OutwardNeed, type PlaywrightTargetOptions, QA_TARGETS, QaConfig, QaSubcommand, QaTarget, QaTargetRegistry, type RegionAnchor, type ResolvedComment, SCORE_DIMENSIONS, SEVERITIES, SEVERITY_DEDUCTION, type ScoreConfig, type ScoreDimension, type ScoreInput, type ScoreResult, type ScoreRow, type ScoreWeights, Settle, type Severity, type SeverityCounts, type StepAnchor, type TextAnchor, type TimeAnchor, type UserbotLease, type UserbotProvider, addComment, botIdOf, commentsFile, computeManifest, computeScore, configureBot, createPlaywrightTarget, createStatesCommand, createTargetRegistry, destroyBot, diff, exportTaskList, extensionOf, fileBotStore, fileCommentStore, fileConsentStore, findingProblems, grant, isCssColor, makeComment, manifestHash, mimeOfExtension, newBot, parseBotToken, parseFindings, pngSize, qaProvider, renderScoreBreakdown, renderScoreGauge, replyToComment, resolveComments, scoreConfig, scoreRows, setStatus, startCommentServer, tallyFindings, validateAnchor };

@@ -51,9 +51,9 @@ import {
   writeBytes,
   writeHeld,
   writePng
-} from "./chunk-33RJBPBQ.js";
-import "./chunk-3NHPBT7P.js";
-import "./chunk-GUHFATHG.js";
+} from "./chunk-TRG6QP57.js";
+import "./chunk-4VC7YQ7I.js";
+import "./chunk-HHUS2XJO.js";
 import {
   QA_TARGETS
 } from "./chunk-CWVGWAJ5.js";
@@ -64,7 +64,7 @@ import "./chunk-N3XSGPAN.js";
 import "./chunk-62VIRJ2H.js";
 import "./chunk-ZYIHPZ3V.js";
 import "./chunk-YDFQPHPI.js";
-import "./chunk-7OHVK72J.js";
+import "./chunk-4B5GWDFB.js";
 import "./chunk-5KDQJ25J.js";
 import "./chunk-SQO6FPZ2.js";
 import "./chunk-NYZ72SDM.js";
@@ -73,7 +73,7 @@ import "./chunk-LBZC23FE.js";
 import "./chunk-277Y4WQJ.js";
 import "./chunk-O5NSNELG.js";
 import "./chunk-B7UB2WOJ.js";
-import "./chunk-ZXEFVZDQ.js";
+import "./chunk-RFUDK5EX.js";
 import {
   QA_TARGET_SPEC_VERSION
 } from "./chunk-K3P52YYY.js";
@@ -82,6 +82,7 @@ import "./chunk-3OHR7PBT.js";
 import "./chunk-H3DGWSMZ.js";
 import "./chunk-SA2YN55L.js";
 import "./chunk-GZ2IEQDP.js";
+import "./chunk-2VQTE6KZ.js";
 import {
   CONFIG,
   provider
@@ -445,7 +446,7 @@ var qaDeviceProvider = provider({
 // src/device/services/extension.mts
 var qaExtension = {
   name: "qa-device",
-  subcommands: { device: async () => (await import("./qa-device-AMANTL6F.js")).default },
+  subcommands: { device: async () => (await import("./qa-device-LELED2XJ.js")).default },
   targets: (config, root) => deviceTargets(withDevice(config), systemDeviceDeps(root))
 };
 export {

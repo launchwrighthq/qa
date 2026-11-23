@@ -1,5 +1,5 @@
 import { t as Surface, P as Provenance, E as EvidenceKind, k as QaSession, u as RoutablePage, S as Settle } from './contract-xgrBaS32.js';
-import { Q as QaConfig } from './config-B-lxHEnb.js';
+import { Q as QaConfig } from './config-Z7lJ4xeJ.js';
 import { L as LaunchwrightError } from './errors-DgRPaUlC.js';
 import 'zod';
 

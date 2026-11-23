@@ -1,5 +1,5 @@
 import { A as App } from './app-KXgbRXYO.cjs';
-import { Q as QaConfig } from './config-B-lxHEnb.cjs';
+import { Q as QaConfig } from './config-Z7lJ4xeJ.cjs';
 import { C as Clock } from './clock-BUdCJ9bN.cjs';
 import { F as FetchFn } from './bot-api-BiC2rPPD.cjs';
 import 'zod';

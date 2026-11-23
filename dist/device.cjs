@@ -614,6 +614,48 @@ var init_extensions = __esm({
   }
 });
 
+// src/services/score.mts
+var DEFAULT_GAUGE_COLOR;
+var init_score = __esm({
+  "src/services/score.mts"() {
+    "use strict";
+    init_cjs_shims();
+    DEFAULT_GAUGE_COLOR = "#7c3aed";
+  }
+});
+
+// src/services/score-config.mts
+function isCssColor(value) {
+  const v = value.trim();
+  return HEX.test(v) || FUNCTIONAL.test(v) || NAMED_COLORS.has(v.toLowerCase());
+}
+var NAMED_COLORS, HEX, FUNCTIONAL, weight, scoreConfig;
+var init_score_config = __esm({
+  "src/services/score-config.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_kernel();
+    init_score();
+    NAMED_COLORS = new Set(
+      "aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen transparent currentcolor".split(" ")
+    );
+    HEX = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+    FUNCTIONAL = /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(\s*[-+0-9.%a-z\s,/]+\)$/i;
+    weight = import_zod6.z.number().nonnegative();
+    scoreConfig = import_zod6.z.object({
+      weights: import_zod6.z.strictObject({
+        findings: weight.optional(),
+        console: weight.optional(),
+        coverage: weight.optional(),
+        evidence: weight.optional(),
+        accessibility: weight.optional(),
+        performance: weight.optional()
+      }).default({}),
+      gaugeColor: import_zod6.z.string().refine(isCssColor, { message: "qa.score.gaugeColor must be a CSS colour: #rgb, #rrggbb, rgb(...), hsl(...), oklch(...) or a named colour" }).default(DEFAULT_GAUGE_COLOR)
+    });
+  }
+});
+
 // src/config.mts
 function withAppPaths(cfg, sections = {}) {
   const apps = sectionApps(sections);
@@ -630,6 +672,7 @@ var init_config2 = __esm({
     "use strict";
     init_cjs_shims();
     init_kernel();
+    init_score_config();
     legConfig = import_zod6.z.object({
       surface: import_zod6.z.enum(["web", "miniapp", "bot"]),
       target: import_zod6.z.string().min(1),
@@ -690,6 +733,8 @@ var init_config2 = __esm({
         blackRatio: import_zod6.z.number().min(0).max(1).default(0.95),
         attempts: import_zod6.z.number().int().positive().default(3)
       }).prefault({}),
+      /** The 0-100 score (spec 2.11): weight overrides per dimension and the gauge ring colour. */
+      score: scoreConfig.prefault({}),
       /** Key of module `qa-device`, which parses it. The core keeps it whole. */
       device: import_zod6.z.record(import_zod6.z.string(), import_zod6.z.unknown()).default({}),
       /** Key of module `qa-intake`, which parses it. The core keeps it whole. */
@@ -4857,9 +4902,9 @@ var init_comment_server = __esm({
   }
 });
 
-// src/services/score.mts
-var init_score = __esm({
-  "src/services/score.mts"() {
+// src/services/findings.mts
+var init_findings = __esm({
+  "src/services/findings.mts"() {
     "use strict";
     init_cjs_shims();
   }
@@ -4888,6 +4933,8 @@ var init_src = __esm({
     init_comment_export();
     init_comment_server();
     init_score();
+    init_score_config();
+    init_findings();
     init_targets();
     init_types();
     init_video();

@@ -13,8 +13,10 @@ import type { Comment, CommentAnchor } from './comments.mts';
 import { plannedPairs, resultText } from './evidence.mts';
 import { pairKey } from './ledger.mts';
 import { expectText, type Manifest, type Shot, type ValidateOptions } from './manifest.mts';
-import { computeStatus, loadReport, reportScoreInput } from './report.mts';
-import { computeScore, renderScoreGauge } from './score.mts';
+import { type FindingTally, tallyFindings } from './findings.mts';
+import { computeStatus, loadReport, reportFindings } from './report.mts';
+import { reportScore } from './report-score.mts';
+import { renderScoreBreakdown, renderScoreGauge, type ScoreWeights } from './score.mts';
 import type { Act, LedgerEntry, ReportStatus, RowResult } from './types.mts';
 
 /** A media link in the bundle resolves two folders up, from `dist/<slug>-viewer/` to the report folder. */
@@ -23,10 +25,12 @@ const MEDIA_PREFIX = '../../';
 /** The folder name of the bundle under `dist/`, so the single-page render and the viewer never clash. */
 export const viewerDirName = (slug: string): string => `${slug}-viewer`;
 
-/** Options for the viewer. The gauge ring colour is a configuration value, not a fixed purple (spec 2.11). */
+/** Options for the viewer. `gaugeColor` and `weights` are config `qa.score` (spec 2.11). */
 export interface ViewerOptions {
-  /** The score gauge ring colour. Default: the neutral accent of `renderScoreGauge`. */
+  /** The score gauge ring colour. Default: `DEFAULT_GAUGE_COLOR` of `renderScoreGauge`. */
   gaugeColor?: string;
+  /** Weight overrides per score dimension. Default: `DEFAULT_SCORE_WEIGHTS`. */
+  weights?: Partial<ScoreWeights>;
   /** Reviewer comments to embed as marks and a sidebar (spec 2.9). Default: none. */
   comments?: readonly Comment[];
 }
@@ -40,6 +44,8 @@ export interface ViewerInput {
   manifest: Manifest;
   results: readonly RowResult[];
   entries: readonly LedgerEntry[];
+  /** The section 4 findings by severity. Without it, the findings dimension stays untested. */
+  findings?: FindingTally;
   /** Reviewer comments, rendered as marks and a sidebar (spec 2.9). Default: none. */
   comments?: readonly Comment[];
 }
@@ -349,19 +355,22 @@ function page(input: { title: string; heading: string; crumb: string; body: stri
   ].join('\n');
 }
 
-/** The score gauge block of the index (spec 2.11). */
+/** The score gauge block of the index, with the breakdown beside the gauge (spec 2.11). */
 function scoreBlock(input: ViewerInput, opts: ViewerOptions): string {
-  const scoreInput = reportScoreInput(input);
-  if (Object.keys(scoreInput).length === 0) {
+  const s = reportScore(input, opts.weights);
+  if (!s) {
     return '<div class="qa-score"><p>No rows have run yet, so the score has no dimension to average.</p></div>';
   }
-  const { score, confidence } = computeScore(scoreInput);
+  const { score, confidence } = s.result;
   const percent = Math.round(confidence * 100);
   const gauge = renderScoreGauge(score, { size: 148, label: `${percent}%`, ...(opts.gaugeColor ? { color: opts.gaugeColor } : {}) });
   return [
     '<div class="qa-score">',
     `<div class="qa-gauge">${gauge}</div>`,
-    `<p>QA score <strong>${score}</strong> of 100. The weighted score covers the dimensions this run tested. Confidence ${percent}% comes from the live coverage and the evidence. A low coverage or evidence caps the confidence, so a thin run does not read as a clean pass.</p>`,
+    '<div class="qa-score-text">',
+    `<p>QA score <strong>${score}</strong> of 100. The weighted score averages the counted dimensions. Confidence ${percent}% comes from the live coverage and the evidence. A low coverage or evidence caps the confidence, so a thin run does not read as a clean pass.</p>`,
+    `<div class="qa-score-scroll">${renderScoreBreakdown(s.rows)}</div>`,
+    '</div>',
     '</div>',
   ].join('');
 }
@@ -523,6 +532,7 @@ export async function loadViewerInput(mdPath: string, opts: ValidateOptions = {}
     manifest,
     results: loaded.results,
     entries,
+    findings: tallyFindings(reportFindings(loaded.text)),
   };
   return { input, slug: loaded.slug, reportDir: loaded.reportDir };
 }
@@ -578,6 +588,12 @@ h3{font-size:1.1rem;margin:0 0 .5rem}
 .qa-score p{margin:0;max-width:46ch;color:var(--ink-soft)}
 .qa-score strong{color:var(--ink);font-size:1.15em}
 .qa-gauge{flex:0 0 auto}
+.qa-score-text{flex:1 1 22rem;min-width:0}
+.qa-score-scroll{overflow-x:auto;margin-top:.8rem}
+.qa-score-table{width:100%;border-collapse:collapse;font-size:.86rem}
+.qa-score-table th,.qa-score-table td{text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--rule)}
+.qa-score-table th{color:var(--ink-soft);font-weight:600}
+.qa-score-table tr[data-counted="false"] td{color:var(--ink-soft)}
 .qa-findings table{width:100%;border-collapse:collapse;font-size:.92rem}
 .qa-findings th,.qa-findings td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--rule);vertical-align:top}
 .qa-findings th{color:var(--ink-soft);font-weight:600}

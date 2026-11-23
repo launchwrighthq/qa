@@ -321,7 +321,16 @@ Coverage: 63 of 79 states, 11 owe a seed
   lines from the ledger. Never type section 3 and never edit the generated block. Write your
   judgement in section 4.
 - `Status` is computed: `planned`, `passed`, `failed` or `partial`. Never type another value.
-- Section 4 states each finding as `CONFIRMED` or `SUSPECTED`.
+- Section 4 states each finding as `CONFIRMED` or `SUSPECTED`. The finding line starts with that
+  word, then a severity tag, then the claim:
+  `- CONFIRMED [high] The checkout button stays disabled after a valid card.` The line may also be
+  a `###` heading. The tags are `[critical]`, `[high]`, `[medium]` and `[low]`, in English in every
+  report language. The finding's four lines of section 2 follow under it.
+- Every `CONFIRMED` finding has a tag. `lw-qa report check` names a `CONFIRMED` line with no tag
+  and any unknown tag. A `SUSPECTED` finding may carry a tag.
+- The 0-100 score deducts per `CONFIRMED` finding: critical 25, high 15, medium 8, low 3. A
+  `SUSPECTED` finding is not reproduced, so it deducts nothing. The breakdown beside the gauge
+  counts it.
 - An issue pass has the header line `Issues: <id>, <id>`. For each id, section 4 holds exactly
   one line `- issue <id>: REPRODUCED` or `- issue <id>: NOT REPRODUCED`, alone on its line.
   Write the reason on the next lines. A row of the plan with `source: issue:<id>` must have a
