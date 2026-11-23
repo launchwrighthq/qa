@@ -1,7 +1,9 @@
 /**
- * The folder of the page template `spec-template.html`. A published package carries `assets/` in
- * its own folder (`<package>/assets/renderer`). In the framework repo, `assets/` sits next to
- * `ts/` (`modules/qa/assets/renderer`).
+ * The folder of the page template `spec-template.html`. The package carries it in
+ * `<package>/assets/renderer`. This file runs from `src/render/services/` (three folders down),
+ * from a `dist/` chunk (one folder down), or in the framework from `modules/qa/ts/src/render/services/`,
+ * where `assets/` sits next to `ts/` (four folders down). So the search walks up from this file to
+ * the first folder that holds the template.
  */
 declare const TEMPLATE_DIR: string;
 /** The vocabulary `.claude/rules/lw/spec-format.md` defines for a spec or plan: the active

@@ -12,7 +12,7 @@ import { escapeHtml, LaunchwrightError } from '../kernel/index.mts';
 import type { Comment, CommentAnchor } from './comments.mts';
 import { plannedPairs, resultText } from './evidence.mts';
 import { pairKey } from './ledger.mts';
-import { expectText, type Manifest, type Shot } from './manifest.mts';
+import { expectText, type Manifest, type Shot, type ValidateOptions } from './manifest.mts';
 import { computeStatus, loadReport, reportScoreInput } from './report.mts';
 import { computeScore, renderScoreGauge } from './score.mts';
 import type { Act, LedgerEntry, ReportStatus, RowResult } from './types.mts';
@@ -504,9 +504,12 @@ export interface LoadedViewer {
   reportDir: string;
 }
 
-/** Reads `mdPath` and its plan, results and ledger into a `ViewerInput`. Throws `qa.viewer.plan`. */
-export async function loadViewerInput(mdPath: string): Promise<LoadedViewer> {
-  const loaded = await loadReport(mdPath);
+/**
+ * Reads `mdPath` and its plan, results and ledger into a `ViewerInput`. `opts.legs` holds the leg
+ * names of the project config, so a plan with a custom leg validates. Throws `qa.viewer.plan`.
+ */
+export async function loadViewerInput(mdPath: string, opts: ValidateOptions = {}): Promise<LoadedViewer> {
+  const loaded = await loadReport(mdPath, opts);
   if (!loaded.manifest) {
     throw new LaunchwrightError('qa.viewer.plan', `The plan of ${mdPath} is invalid:\n  ${loaded.manifestErrors.join('\n  ')}`, { context: { errors: loaded.manifestErrors } });
   }
@@ -529,8 +532,8 @@ export async function loadViewerInput(mdPath: string): Promise<LoadedViewer> {
  * paths it wrote. The media stays in `assets/<slug>/`, so the bundle never copies a screenshot.
  * `opts.comments` embeds reviewer comments, which a `file://` page shows read-only (spec 2.9).
  */
-export async function buildViewer(mdPath: string, opts: ViewerOptions = {}): Promise<ViewerResult> {
-  const { input, slug, reportDir } = await loadViewerInput(mdPath);
+export async function buildViewer(mdPath: string, opts: ViewerOptions & ValidateOptions = {}): Promise<ViewerResult> {
+  const { input, slug, reportDir } = await loadViewerInput(mdPath, { ...(opts.legs ? { legs: opts.legs } : {}), ...(opts.bases ? { bases: opts.bases } : {}) });
   const bundle = renderViewerBundle(input, opts);
   const dir = join(reportDir, 'dist', viewerDirName(slug));
   await mkdir(dir, { recursive: true });

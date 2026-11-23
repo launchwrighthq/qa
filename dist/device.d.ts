@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Q as QaConfig$1 } from './config-B-lxHEnb.js';
-import { P as Provider, Q as QaExtension } from './extensions-CLfOuTYK.js';
+import { P as Provider, Q as QaExtension } from './extensions-Ba_HvLm5.js';
 import { Q as QaTarget } from './contract-braBVxB_.js';
 import './app-KXgbRXYO.js';
 

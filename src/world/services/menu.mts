@@ -1,7 +1,7 @@
 // `lw qa worktree --set-menu`: points the menu button of the dev bot at the tunnel URL of the run,
-// through the Bot API client of the `telegram` module (`setChatMenuButton`).
+// through the library's Bot API client (`setChatMenuButton`).
 import { LaunchwrightError } from '../../kernel/index.mts';
-import { type FetchFn, loadTelegram } from '../../services/peers.mts';
+import { BotApi, type FetchFn } from '../../telegram/bot-api.mts';
 
 export interface MenuOptions {
   /** Config section `telegram`. */
@@ -26,7 +26,6 @@ export async function setMenuButton(o: MenuOptions): Promise<void> {
   }
   const [name, bot] = picked;
   if (bot.token === undefined) throw new LaunchwrightError('qa.menu.bot', `Bot ${name} has no token in config, so lw qa cannot set its menu button.`);
-  const { BotApi } = await loadTelegram();
   const api = new BotApi({ token: bot.token, ...(section.apiUrl ? { apiUrl: section.apiUrl } : {}), ...(o.fetch ? { fetch: o.fetch } : {}) });
   await api.setChatMenuButton({ type: 'web_app', text: o.text, web_app: { url: o.url } });
 }

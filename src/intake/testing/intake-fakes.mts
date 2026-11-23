@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { LaunchwrightError } from '../../kernel/index.mts';
-import type { GramJsClient, GramJsModule } from '../services/telegram-peers.mts';
+import type { GramJsClient, GramJsModule } from '../../telegram/mtproto.mts';
 import type { GhRunner } from '../services/gh.mts';
 
 function readFixture<T>(file: string, tool: string): T {

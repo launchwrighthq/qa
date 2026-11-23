@@ -31,7 +31,7 @@ import {
   setStatus,
   startCommentServer,
   validateAnchor
-} from "./chunk-3MN5K3QL.js";
+} from "./chunk-RZJZNFR2.js";
 import {
   qaConfig,
   qaConfigOf,
@@ -58,7 +58,7 @@ import {
   recordId,
   renderScoreGauge,
   writeIssue
-} from "./chunk-JHXOJGHS.js";
+} from "./chunk-7DHZXG6M.js";
 import "./chunk-6LHTNS5B.js";
 import "./chunk-WUOHAWEI.js";
 import "./chunk-L57WEOVE.js";

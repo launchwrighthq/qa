@@ -3,7 +3,7 @@ import {
   extensionOf,
   recordId,
   writeIssue
-} from "./chunk-JHXOJGHS.js";
+} from "./chunk-7DHZXG6M.js";
 import {
   readJsonOrNull
 } from "./chunk-6LHTNS5B.js";
@@ -33,16 +33,16 @@ async function createIntakeDriver(name, intake, deps = {}) {
   const maxBytes = maxBytesOf(intake);
   switch (name) {
     case "github": {
-      const { GithubIntakeDriver } = await import("./github-DP3GKC7B.js");
+      const { GithubIntakeDriver } = await import("./github-QLKZTDHR.js");
       return new GithubIntakeDriver({ maxBytes, ...deps.gh ? { gh: deps.gh } : {}, ...deps.fetch ? { fetch: deps.fetch } : {} });
     }
     case "telegram-mtproto": {
-      const { TelegramMtprotoIntakeDriver } = await import("./telegram-mtproto-HV3DVPR4.js");
+      const { TelegramMtprotoIntakeDriver } = await import("./telegram-mtproto-5CM5WQFO.js");
       return new TelegramMtprotoIntakeDriver(cfg, { maxBytes, ...deps.loadGramJs ? { loader: deps.loadGramJs } : {} });
     }
     case "telegram-bot": {
-      const { loadBotApi, TelegramBotIntakeDriver } = await import("./telegram-bot-LV7E5GAW.js");
-      return new TelegramBotIntakeDriver(cfg, { maxBytes, botApi: await loadBotApi(), ...deps.fetch ? { fetch: deps.fetch } : {} });
+      const { TelegramBotIntakeDriver } = await import("./telegram-bot-FQY2MDZH.js");
+      return new TelegramBotIntakeDriver(cfg, { maxBytes, ...deps.fetch ? { fetch: deps.fetch } : {} });
     }
     case "fake": {
       const { FakeIntakeDriver } = await import("./fake-66UCHHNN.js");
@@ -213,4 +213,4 @@ export {
   readGroups,
   applyGroups
 };
-//# sourceMappingURL=chunk-LRNSZYEL.js.map
+//# sourceMappingURL=chunk-4FJYH53F.js.map

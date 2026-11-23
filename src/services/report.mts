@@ -650,7 +650,7 @@ function scoreBlock(loaded: LoadedReport): string {
  * in `rendererDir`. The page links the evidence as `../assets/<slug>/<file>`. `root` is the project
  * root, where the section 4 links to reporter media resolve. Returns the page path.
  */
-export async function renderReport(mdPath: string, rendererDir: string, root: string): Promise<string> {
+export async function renderReport(mdPath: string, rendererDir: string, root: string, opts: ValidateOptions = {}): Promise<string> {
   const slug = slugOf(mdPath);
   const template = join(rendererDir, 'spec-template.html');
   let shell: string;
@@ -659,7 +659,7 @@ export async function renderReport(mdPath: string, rendererDir: string, root: st
   } catch (cause) {
     throw new LaunchwrightError('qa.report.renderer', `The page template of the spec renderer is not at ${template}. Reinstall @launchwrighthq/qa.`, { cause, context: { template } });
   }
-  const loaded = await loadReport(mdPath);
+  const loaded = await loadReport(mdPath, opts);
   const text = loaded.text;
   const p = parse(text);
   if (p.title === null) throw new LaunchwrightError('qa.report.header', `${mdPath}: the report has no "# " title line`);

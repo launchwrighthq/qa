@@ -43,10 +43,18 @@ var importMetaUrl = /* @__PURE__ */ getImportMetaUrl();
 var import_node_fs = require("fs");
 var import_node_path = require("path");
 var import_node_url = require("url");
+var TEMPLATE_SEARCH_DEPTH = 5;
 var TEMPLATE_DIR = templateDir();
 function templateDir() {
-  const published = (0, import_node_url.fileURLToPath)(new URL("../../../assets/renderer/", importMetaUrl));
-  return (0, import_node_fs.existsSync)(published) ? published : (0, import_node_url.fileURLToPath)(new URL("../../../../assets/renderer/", importMetaUrl));
+  let dir = (0, import_node_path.dirname)((0, import_node_url.fileURLToPath)(importMetaUrl));
+  let packageRoot = null;
+  for (let up = 0; up <= TEMPLATE_SEARCH_DEPTH; up += 1) {
+    const candidate = (0, import_node_path.join)(dir, "assets", "renderer");
+    if ((0, import_node_fs.existsSync)((0, import_node_path.join)(candidate, "spec-template.html"))) return candidate;
+    if (packageRoot === null && (0, import_node_fs.existsSync)((0, import_node_path.join)(dir, "package.json"))) packageRoot = dir;
+    dir = (0, import_node_path.dirname)(dir);
+  }
+  return (0, import_node_path.join)(packageRoot ?? (0, import_node_path.dirname)((0, import_node_url.fileURLToPath)(importMetaUrl)), "assets", "renderer");
 }
 var TEMPLATE = (0, import_node_path.join)(TEMPLATE_DIR, "spec-template.html");
 var STATUS_VALUES = [

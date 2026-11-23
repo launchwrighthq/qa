@@ -1,11 +1,19 @@
 // src/render/services/spec-render.mts
 import { existsSync, readFileSync } from "fs";
-import { basename, join } from "path";
+import { basename, dirname, join } from "path";
 import { fileURLToPath } from "url";
+var TEMPLATE_SEARCH_DEPTH = 5;
 var TEMPLATE_DIR = templateDir();
 function templateDir() {
-  const published = fileURLToPath(new URL("../../../assets/renderer/", import.meta.url));
-  return existsSync(published) ? published : fileURLToPath(new URL("../../../../assets/renderer/", import.meta.url));
+  let dir = dirname(fileURLToPath(import.meta.url));
+  let packageRoot = null;
+  for (let up = 0; up <= TEMPLATE_SEARCH_DEPTH; up += 1) {
+    const candidate = join(dir, "assets", "renderer");
+    if (existsSync(join(candidate, "spec-template.html"))) return candidate;
+    if (packageRoot === null && existsSync(join(dir, "package.json"))) packageRoot = dir;
+    dir = dirname(dir);
+  }
+  return join(packageRoot ?? dirname(fileURLToPath(import.meta.url)), "assets", "renderer");
 }
 var TEMPLATE = join(TEMPLATE_DIR, "spec-template.html");
 var STATUS_VALUES = [
@@ -574,4 +582,4 @@ export {
   renderWithTemplate,
   render
 };
-//# sourceMappingURL=chunk-PYKQB25D.js.map
+//# sourceMappingURL=chunk-JYL7CKWM.js.map

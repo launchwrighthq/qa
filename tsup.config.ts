@@ -11,9 +11,11 @@ const optionalPeers = [
   '@launchwrighthq/http',
   '@launchwrighthq/queue',
   '@launchwrighthq/storage',
-  '@launchwrighthq/telegram',
   '@launchwrighthq/tunnel',
   '@playwright/test',
+  // GramJS, the optional peer of the MTProto user client under src/telegram.
+  'telegram',
+  'telegram/sessions',
   // vitest is a test-time peer of the contract suites, never part of the shipped bundle.
   'vitest',
   // The states host: the Vite plugin and the UI mounts. Each mount loads only its own UI library.

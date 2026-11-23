@@ -1,4 +1,4 @@
-import { F as FetchFn } from './peers-D6wBRa1W.js';
+import { F as FetchFn } from './bot-api-BiC2rPPD.js';
 import { C as Clock } from './clock-BUdCJ9bN.js';
 
 /** The HTML of `/__tg`. */

@@ -1,6 +1,6 @@
 import {
   mimeOfExtension
-} from "./chunk-JHXOJGHS.js";
+} from "./chunk-7DHZXG6M.js";
 import {
   LaunchwrightError
 } from "./chunk-L57WEOVE.js";
@@ -108,4 +108,4 @@ export {
   sourceOf,
   download
 };
-//# sourceMappingURL=chunk-S5PDLVTW.js.map
+//# sourceMappingURL=chunk-LAFOB6RX.js.map

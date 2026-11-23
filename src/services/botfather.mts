@@ -68,7 +68,13 @@ export interface DeadBot {
 }
 
 const BOT_TOKEN = /(\d{6,12}:[A-Za-z0-9_-]{30,})/;
-const RATE_LIMIT = /too many (requests|attempts)|try again later|retry after/i;
+/** A BotFather wait: "try again in 8 seconds", "retry after 30", "try again in 2 minutes". */
+const WAIT = /(?:try again in|retry after)\s+(\d+)\s*(seconds?|minutes?|hours?)?/i;
+/** A refusal or a limit with no wait in it. A reply that opens with "Sorry" refuses the step. */
+const REFUSAL = /cannot create new bots|can't create new bots|too many (?:requests|attempts)|try again later|@SpamBot|^\s*sorry\b/im;
+/** The help menu arrives where a prompt was due when BotFather dropped the dialog. */
+const HELP_MENU = /I can help you create and manage Telegram bots/i;
+const UNIT_SECONDS: Record<string, number> = { s: 1, m: 60, h: 3600 };
 
 /** Reads the bot token from a BotFather reply. Throws `qa.bot.token` when no token matches. */
 export function parseBotToken(reply: string): string {
@@ -86,13 +92,31 @@ export function botIdOf(token: string): number {
   return id;
 }
 
-/** Sends one line and reads the reply. Throws `qa.bot.ratelimit` when BotFather asks to wait. */
+/**
+ * The error of a BotFather reply that stops the dialog, or null for a reply the flow can use. A
+ * reply never holds a token when it refuses, so the message quotes it.
+ */
+export function refusalOf(reply: string): LaunchwrightError | null {
+  if (BOT_TOKEN.test(reply)) return null;
+  const text = reply.replace(/\s+/g, ' ').trim();
+  const wait = WAIT.exec(reply);
+  if (wait) {
+    const seconds = Number(wait[1]) * (UNIT_SECONDS[(wait[2] ?? 's').charAt(0).toLowerCase()] ?? 1);
+    return new LaunchwrightError('qa.bot.limit', `BotFather limits this account: wait ${seconds} seconds, then run the command again. BotFather said: "${text}"`, { context: { seconds } });
+  }
+  if (REFUSAL.test(reply)) return new LaunchwrightError('qa.bot.refused', `BotFather refused the step. BotFather said: "${text}"`);
+  if (HELP_MENU.test(reply)) {
+    return new LaunchwrightError('qa.bot.refused', `BotFather sent its help menu where a prompt was due, so it dropped the dialog. BotFather said: "${text.slice(0, 200)}"`);
+  }
+  return null;
+}
+
+/** Sends one line and reads the reply. Throws `qa.bot.refused` or `qa.bot.limit` so no further line goes out. */
 async function exchange(chat: BotFatherChat, text: string): Promise<string> {
   await chat.send(text);
   const reply = await chat.reply();
-  if (RATE_LIMIT.test(reply)) {
-    throw new LaunchwrightError('qa.bot.ratelimit', 'BotFather rate-limited the lifecycle. Wait and run the command again.');
-  }
+  const refusal = refusalOf(reply);
+  if (refusal) throw refusal;
   return reply;
 }
 

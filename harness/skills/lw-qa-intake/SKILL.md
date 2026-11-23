@@ -5,14 +5,16 @@ description: Use to read bug reports into local issue records before a QA pass. 
 
 # Issue intake
 
+A framework project can also run each `lw-qa <sub>` command as `lw qa <sub>`.
+
 Intake reads a source and writes local issue records. It never posts to the source: no comment,
 no label, no reaction and no reply.
 
 ```sh
-lw qa intake github <issue-url>
-lw qa intake telegram --chat <id> [--since <date|message-id>] [--until <date|message-id>] [--driver <d>] [--follow]
-lw qa intake telegram --chat <id> --apply
-lw qa intake list
+lw-qa intake github <issue-url>
+lw-qa intake telegram --chat <id> [--since <date|message-id>] [--until <date|message-id>] [--driver <d>] [--follow]
+lw-qa intake telegram --chat <id> --apply
+lw-qa intake list
 ```
 
 ## Privacy
@@ -22,7 +24,7 @@ Chat text, reporter names and media are personal data.
 - Records stay in `.lw/qa/intake/<id>/` (`issue.json`, `issue.md`, `assets/`). `.lw/` is out of
   git.
 - Never copy chat text, a reporter name or a reporter's file into `docs/`, a commit, a log line,
-  a spec or a published bundle. `lw qa publish` leaves intake content out.
+  a spec or a published bundle. `lw-qa publish` leaves intake content out.
 - In a QA report, state the claim in your own words and name the issue id. Link a reporter's
   file at its intake path in section 4. The file stays in `.lw/qa/intake/`.
 - An MTProto user session can do anything that its account can do. The read-only method
@@ -32,7 +34,7 @@ Chat text, reporter names and media are personal data.
 
 ## GitHub
 
-`lw qa intake github <issue-url>` reads the issue with the operator's `gh` login. It downloads
+`lw-qa intake github <issue-url>` reads the issue with the operator's `gh` login. It downloads
 every image and video that the body and the comments link, from the GitHub media hosts only. The
 token goes only to GitHub upload URLs, never into a log or an argument list.
 
@@ -67,14 +69,14 @@ one author less than 15 minutes apart join one group. The proposal is a start, n
 3. Give each group a short title in your own words.
 4. Write `groups.json` beside the proposal: `{ "groups": [{ "title": "...", "messages": ["412", "415"] }] }`,
    the first message first.
-5. Run `lw qa intake telegram --chat <id> --apply`. It writes one issue record per group. A
+5. Run `lw-qa intake telegram --chat <id> --apply`. It writes one issue record per group. A
    message id that was not staged fails with `qa.intake.telegram.groups`.
 
 ## Hand-off to a QA pass
 
 ```sh
-lw qa intake list
-lw qa session resolve --issue <id> [<id> ...]
+lw-qa intake list
+lw-qa session resolve --issue <id> [<id> ...]
 ```
 
 Then follow the `lw-qa-pass` skill. Each row of an issue has `source: issue:<id>`, and the report
@@ -82,8 +84,8 @@ header has `Issues: <id>, <id>`. Section 4 of the report holds one line per issu
 `- issue <id>: REPRODUCED` or `- issue <id>: NOT REPRODUCED`. A row of that issue must have
 evidence in the ledger. Section 4 links the reporter's media at its intake path, relative from
 the report file, for example `[reporter screenshot](../../.lw/qa/intake/<id>/assets/<file>)`.
-Never copy a reporter's file into the report folder. `lw qa report check` refuses a media link
-outside section 4, and `lw qa publish` replaces each one with plain text.
+Never copy a reporter's file into the report folder. `lw-qa report check` refuses a media link
+outside section 4, and `lw-qa publish` replaces each one with plain text.
 
 The device hints in the reporter's text (a phone model, an OS, Telegram or a browser) pick the
 legs. A hint that no leg serves goes in section 5.

@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<!-- Status: {{STATUS}} -->
+<style>
+:root{
+  --ground:#F4F7F6;
+  --surface:#FFFFFF;
+  --sunk:#EDF2F1;
+  --ink:#0F1A19;
+  --ink-soft:#546360;
+  --ink-faint:#7C8B88;
+  --rule:#D9E2E0;
+  --rule-soft:#E6EDEB;
+  --accent:#15605A;
+  --accent-soft:#E2EFEC;
+  --signal:#9A5B08;
+  --signal-soft:#F7EEDF;
+  --danger:#8C2B2B;
+  --danger-soft:#F8E9E7;
+  /* The kind badge, and the ONLY thing that differs between a specification, a plan and a
+     QA report. Everything else on this page is shared, so there is no second stylesheet to
+     drift. Each pair must be defined in all three blocks: this one, the
+     prefers-color-scheme block, and the explicit [data-theme="dark"] block. */
+  --kind-spec:#15605A;
+  --kind-spec-soft:#E2EFEC;
+  --kind-plan:#9A5B08;
+  --kind-plan-soft:#F7EEDF;
+  --kind-qa:#6B3FA0;
+  --kind-qa-soft:#EFE8F7;
+  --shadow:0 1px 2px rgba(15,26,25,.05),0 8px 24px -16px rgba(15,26,25,.24);
+  --serif:Georgia,"Times New Roman",serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --rail:16.5rem;
+  --measure:68ch;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0D1413;
+    --surface:#141E1D;
+    --sunk:#101917;
+    --ink:#DBE4E2;
+    --ink-soft:#94A6A3;
+    --ink-faint:#71837F;
+    --rule:#243231;
+    --rule-soft:#1C2827;
+    --accent:#63C0B3;
+    --accent-soft:#16302D;
+    --signal:#DCA648;
+    --signal-soft:#2E2617;
+    --danger:#E08A8A;
+    --danger-soft:#311E1E;
+    --kind-spec:#63C0B3;
+    --kind-spec-soft:#16302D;
+    --kind-plan:#DCA648;
+    --kind-plan-soft:#2E2617;
+    --kind-qa:#B79AE0;
+    --kind-qa-soft:#241B33;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -16px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0D1413;
+  --surface:#141E1D;
+  --sunk:#101917;
+  --ink:#DBE4E2;
+  --ink-soft:#94A6A3;
+  --ink-faint:#71837F;
+  --rule:#243231;
+  --rule-soft:#1C2827;
+  --accent:#63C0B3;
+  --accent-soft:#16302D;
+  --signal:#DCA648;
+  --signal-soft:#2E2617;
+  --danger:#E08A8A;
+  --danger-soft:#311E1E;
+  --kind-spec:#63C0B3;
+  --kind-spec-soft:#16302D;
+  --kind-plan:#DCA648;
+  --kind-plan-soft:#2E2617;
+  --kind-qa:#B79AE0;
+  --kind-qa-soft:#241B33;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -16px rgba(0,0,0,.7);
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:16px;
+  line-height:1.65;
+  font-feature-settings:"kern","liga";
+}
+a{color:var(--accent);text-underline-offset:.18em;text-decoration-thickness:from-font}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+
+/* ---------- shell ---------- */
+.shell{display:grid;grid-template-columns:var(--rail) minmax(0,1fr);gap:0;max-width:96rem;margin:0 auto}
+
+/* ---------- rail ---------- */
+.rail{
+  position:sticky;top:0;align-self:start;height:100vh;
+  display:flex;flex-direction:column;
+  border-right:1px solid var(--rule);
+  background:var(--ground);
+}
+.rail-head{padding:2.25rem 1.5rem 1.1rem;border-bottom:1px solid var(--rule-soft);display:flex;flex-direction:column;gap:.45rem}
+.wordmark{font-family:var(--mono);font-size:.95rem;font-weight:600;letter-spacing:-.01em;color:var(--ink)}
+.wordmark span{color:var(--accent)}
+/* The kind badge. `align-self` keeps it the width of its own word inside the column the
+   rail head lays out, so it reads as a badge rather than a full-width band. */
+.rail-sub{
+  align-self:flex-start;
+  font-family:var(--mono);font-size:.65rem;font-weight:600;
+  letter-spacing:.12em;text-transform:uppercase;
+  padding:.18rem .5rem;border:1px solid currentColor;border-radius:3px;
+  color:var(--ink-faint);
+}
+.rail-sub.kind-spec{color:var(--kind-spec);background:var(--kind-spec-soft)}
+.rail-sub.kind-plan{color:var(--kind-plan);background:var(--kind-plan-soft)}
+.rail-sub.kind-qa{color:var(--kind-qa);background:var(--kind-qa-soft)}
+.toc{overflow-y:auto;padding:1rem .75rem 3rem;flex:1}
+.toc ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
+.toc a{
+  display:grid;grid-template-columns:2rem 1fr;gap:.35rem;align-items:baseline;
+  padding:.4rem .65rem;border-radius:4px;text-decoration:none;
+  color:var(--ink-soft);font-size:.845rem;line-height:1.35;
+}
+.toc a:hover{background:var(--rule-soft);color:var(--ink)}
+.toc a .n{font-family:var(--mono);font-size:.72rem;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+.toc a.active{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.toc a.active .n{color:var(--accent)}
+
+/* ---------- main ---------- */
+main{padding:3.5rem clamp(1.25rem,4vw,4.5rem) 8rem;min-width:0}
+.doc-head{max-width:var(--measure);margin-bottom:3.5rem}
+.doc-title{
+  font-family:var(--serif);font-weight:600;font-size:clamp(2.1rem,4.6vw,3.1rem);
+  line-height:1.08;letter-spacing:-.02em;margin:0 0 1.1rem;text-wrap:balance;
+}
+/* flex-direction is stated explicitly: the generic `ul,ol` rule below sets
+   column, and .meta only wins the properties it names. */
+.meta{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;
+  gap:.5rem;margin:0 0 1.6rem;padding:0;list-style:none}
+.meta .chip{flex:0 0 auto}
+.chip{
+  font-family:var(--mono);font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;
+  padding:.28rem .6rem;border:1px solid var(--rule);border-radius:3px;color:var(--ink-soft);background:var(--surface);
+}
+.chip.is-live{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.standfirst{font-size:1.075rem;line-height:1.6;color:var(--ink-soft);margin:0;max-width:60ch}
+.standfirst strong{color:var(--ink);font-weight:600}
+
+article{max-width:none}
+article > *{max-width:var(--measure)}
+article > .scroller,article > .code,article > .figure{max-width:min(100%,58rem)}
+
+/* A numbered heading hangs its number in a 2.6rem gutter: the eyebrow is an inline-block of
+   that width, pulled into the padding by the negative indent, so a wrapped title lines up
+   under its own first word. It is not a grid. A grid item is a block, and a selection copied
+   across a block boundary pastes as two lines, `4` then `The section title`. */
+h2,h3,h4{scroll-margin-top:1.5rem;text-wrap:balance;padding-left:2.6rem;text-indent:-2.6rem}
+h2{
+  font-family:var(--serif);font-weight:600;font-size:1.72rem;line-height:1.2;letter-spacing:-.015em;
+  margin:4.25rem 0 1.35rem;padding-top:1.5rem;border-top:1px solid var(--rule);
+}
+h3{
+  font-family:var(--sans);font-weight:600;font-size:1.055rem;line-height:1.35;letter-spacing:-.005em;
+  margin:2.6rem 0 .9rem;
+}
+h4{
+  font-family:var(--sans);font-weight:600;font-size:.92rem;line-height:1.4;letter-spacing:-.005em;
+  margin:2.1rem 0 .7rem;
+}
+/* text-indent inherits, so every inline-block inside a heading resets it, or its own first
+   line starts 2.6rem to the left. white-space:pre keeps the eyebrow's trailing space a real
+   character, so the copied text reads `4. The` rather than `4.The`. */
+h2 .eyebrow,h3 .eyebrow,h4 .eyebrow{
+  display:inline-block;width:2.6rem;text-indent:0;white-space:pre;
+  font-family:var(--mono);font-weight:500;color:var(--accent);
+  font-variant-numeric:tabular-nums;letter-spacing:0;
+}
+/* A heading the source did not number has nothing to hang in the gutter. */
+h2.no-eyebrow,h3.no-eyebrow,h4.no-eyebrow{padding-left:0;text-indent:0}
+h2 .eyebrow{font-size:.82rem}
+h3 .eyebrow,h4 .eyebrow{font-size:.75rem;color:var(--ink-faint)}
+/* The copy button is appended by the script below, so a page read without JavaScript has no
+   dead control. It carries no text, so a selection swept across the heading does not pick
+   it up. */
+.copy{
+  display:inline-block;vertical-align:middle;margin-left:.5rem;padding:.2rem;
+  border:0;border-radius:3px;background:none;color:var(--ink-faint);cursor:pointer;
+  line-height:0;text-indent:0;user-select:none;opacity:0;transition:opacity .12s,color .12s;
+}
+h2:hover .copy,h3:hover .copy,h4:hover .copy,.copy:focus-visible,.copy.is-copied,.copy.is-failed{opacity:1}
+.copy:hover{color:var(--accent);background:var(--accent-soft)}
+.copy svg{width:15px;height:15px;display:block}
+.copy .tick{display:none}
+.copy.is-copied{color:var(--accent)}
+.copy.is-copied .sheet{display:none}
+.copy.is-copied .tick{display:block}
+.copy.is-failed{color:var(--danger)}
+@media (hover:none){.copy{opacity:1}}
+
+p{margin:0 0 1.05rem}
+strong{font-weight:600;color:var(--ink)}
+
+ul,ol{margin:0 0 1.15rem;padding-left:1.35rem;display:flex;flex-direction:column;gap:.5rem}
+li{padding-left:.2rem}
+li > ul,li > ol{margin:.5rem 0 0}
+ol{counter-reset:none}
+ol > li::marker{font-family:var(--mono);font-size:.85em;color:var(--accent);font-variant-numeric:tabular-nums}
+ul > li::marker{color:var(--ink-faint)}
+
+code{
+  font-family:var(--mono);font-size:.855em;
+  background:var(--sunk);border:1px solid var(--rule-soft);border-radius:3px;
+  padding:.08em .32em;color:var(--ink);
+  /* Inline spans carry long env vars and URIs. Without this they refuse to
+     break and push the whole page into a horizontal scroll on narrow screens. */
+  overflow-wrap:anywhere;
+}
+h2 code,h3 code,h4 code{font-size:.8em}
+
+.code{
+  position:relative;margin:0 0 1.6rem;border:1px solid var(--rule);border-radius:6px;
+  background:var(--surface);box-shadow:var(--shadow);overflow:hidden;
+}
+.code::before{
+  content:attr(data-lang);position:absolute;top:0;right:0;
+  font-family:var(--mono);font-size:.63rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-faint);background:var(--sunk);
+  border-left:1px solid var(--rule-soft);border-bottom:1px solid var(--rule-soft);
+  border-radius:0 6px 0 6px;padding:.28rem .6rem;
+}
+.code pre{margin:0;overflow-x:auto;padding:1.15rem 1.25rem}
+.code code{background:none;border:0;padding:0;font-size:.815rem;line-height:1.68;color:var(--ink);overflow-wrap:normal;white-space:pre}
+
+.scroller{overflow-x:auto;margin:0 0 1.6rem;border:1px solid var(--rule);border-radius:6px;background:var(--surface);box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;font-size:.87rem}
+
+/* A TABLE THAT CARRIES A SCREENSHOT SPLITS ITS COLUMNS EVENLY. A portrait phone capture belongs
+   in a table cell, near life size: auto layout sizes the column to the caption beside it and
+   shrinks the shot to a fraction of its width. Fixed layout over a 58rem track gives each of
+   two columns about 464px, near the width of a phone screen. A landscape shot never goes in a
+   table: squeezed into one cell a desktop screen is unreadable. */
+table:has(img),table:has(video){table-layout:fixed}
+td img,td video{margin-bottom:0}
+thead th{
+  text-align:left;font-family:var(--mono);font-weight:500;font-size:.68rem;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint);
+  padding:.72rem 1rem;background:var(--sunk);border-bottom:1px solid var(--rule);white-space:nowrap;
+}
+tbody td{padding:.72rem 1rem;border-bottom:1px solid var(--rule-soft);vertical-align:top;line-height:1.55}
+tbody tr:last-child td{border-bottom:0}
+tbody td:first-child{color:var(--ink);font-weight:500}
+
+blockquote{
+  margin:0 0 1.6rem;padding:.1rem 0 .1rem 1.25rem;
+  border-left:3px solid var(--accent);color:var(--ink-soft);font-style:normal;
+}
+blockquote p{margin:0 0 .6rem}
+blockquote p:last-child{margin-bottom:0}
+
+/* An image is a file in the domain's assets/, referenced relatively. `max-width:100%` is
+   what keeps a full-width screenshot inside the measure instead of pushing the page into a
+   horizontal scroll; `height:auto` keeps its aspect ratio while it does. */
+article img,article video{
+  display:block;max-width:100%;height:auto;
+  margin:0 0 1.6rem;border:1px solid var(--rule);border-radius:6px;background:var(--surface);
+}
+
+/* A recording is a screenshot that moves, so it gets the picture's own frame and nothing more.
+   `height:auto` above keeps a portrait capture portrait; without it the intrinsic 150px default
+   video height crops every phone recording to a letterbox. */
+article video{background:#000}
+
+/* `specs.missingAssets = "placeholder"`: the box that stands for an image with no file. */
+.missing-asset{
+  display:block;margin:0 0 1.6rem;padding:2rem 1rem;text-align:center;
+  border:1px dashed var(--rule);border-radius:6px;background:var(--surface);
+  font-family:var(--mono);font-size:.85rem;overflow-wrap:anywhere;
+}
+td .missing-asset{margin-bottom:0}
+
+/* Every article image opens in the gallery below: fitted first, actual size on a second click,
+   the arrow keys step through the page's images in document order. */
+article img{cursor:zoom-in}
+.gallery{
+  position:fixed;inset:0;z-index:100;display:none;flex-direction:column;
+  background:rgba(8,12,11,.97);color:#DBE4E2;font-family:var(--sans);
+}
+.gallery.is-open{display:flex}
+.gallery .stage{flex:1;min-height:0;overflow:auto;display:flex;padding:3.5rem 4.5rem 1rem}
+.gallery .stage img{
+  margin:auto;max-width:100%;max-height:100%;object-fit:contain;cursor:zoom-in;
+  border:0;border-radius:4px;background:#fff;
+}
+.gallery.is-zoomed .stage img{max-width:none;max-height:none;cursor:zoom-out}
+.gallery .bar{display:flex;align-items:center;gap:1rem;padding:.75rem 1.25rem 1rem;font-size:.85rem}
+.gallery .bar .alt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gallery .bar .count{font-family:var(--mono);color:#94A6A3}
+.gallery button{
+  border:0;background:rgba(255,255,255,.08);color:inherit;border-radius:999px;
+  width:2.75rem;height:2.75rem;font-size:1.25rem;line-height:1;cursor:pointer;
+}
+.gallery button:hover{background:rgba(255,255,255,.16)}
+.gallery .close{position:absolute;top:.75rem;right:1rem}
+.gallery .prev,.gallery .next{position:absolute;top:50%;transform:translateY(-50%)}
+.gallery .prev{left:1rem}
+.gallery .next{right:1rem}
+
+/* A paragraph that is NOTHING but an image is a figure, and a figure gets the wide track above
+   rather than the 68ch measure. A drawing is read, not skimmed: at the measure a wide mockup
+   shrinks until its labels are too small to read. Prose with an image in the middle of a
+   sentence is still prose and keeps the measure. */
+figure.figure{margin:0}
+
+hr{border:0;border-top:1px solid var(--rule);margin:2.5rem 0}
+
+footer{
+  max-width:var(--measure);margin-top:5rem;padding-top:1.4rem;border-top:1px solid var(--rule);
+  font-family:var(--mono);font-size:.72rem;letter-spacing:.04em;color:var(--ink-faint);
+  display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;
+}
+
+@media (max-width:60rem){
+  .shell{grid-template-columns:1fr}
+  .rail{position:static;height:auto;border-right:0;border-bottom:1px solid var(--rule)}
+  .toc{max-height:15rem;padding-bottom:1.25rem}
+  main{padding-top:2.25rem}
+  h2,h3,h4{padding-left:0;text-indent:0}
+  h2 .eyebrow,h3 .eyebrow,h4 .eyebrow{width:auto}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;transition-duration:.01ms !important;scroll-behavior:auto !important}
+}
+@media print{
+  .rail,.copy,.gallery,.gallery.is-open{display:none}
+  .shell{display:block}
+  main{padding:0}
+  .code,.scroller{box-shadow:none}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <nav class="rail" aria-label="Contents">
+    <div class="rail-head">
+      <div class="wordmark"><span>spec</span></div>
+      <div class="rail-sub {{KIND_CLASS}}">{{KIND}}</div>
+    </div>
+    <div class="toc"><ol>{{NAV}}</ol></div>
+  </nav>
+  <main>
+    <header class="doc-head">
+      <h1 class="doc-title">{{TITLE}}</h1>
+      <ul class="meta">
+        <li class="chip">{{DATE}}</li>
+        <li class="chip">{{RANGE}}</li>
+        <li class="chip">{{STATUS}}</li>
+        <li class="chip">{{SUBJECT}}</li>
+      </ul>
+      <p class="standfirst">{{STANDFIRST}}</p>
+    </header>
+    <article>
+{{BODY}}
+    </article>
+    <footer>
+      <span>{{SOURCE}}</span>
+      <span>Generated by ah spec render</span>
+    </footer>
+  </main>
+</div>
+<script>
+(function(){
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  if (!links.length) return;
+  var toc = document.querySelector('.toc');
+  var heads = links
+    .map(function(a){ return document.getElementById(a.getAttribute('href').slice(1)); })
+    .filter(Boolean);
+  if (heads.length !== links.length) return;
+  var current = -1, queued = false;
+
+  function sync(){
+    queued = false;
+    var idx = 0;
+    for (var i = 0; i < heads.length; i++) {
+      if (heads[i].getBoundingClientRect().top <= 120) idx = i;
+    }
+    // Bottom of the document: the last section is current even if its
+    // heading never reaches the 120px line on a short final section.
+    if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 2) {
+      idx = heads.length - 1;
+    }
+    if (idx === current) return;
+    if (current >= 0) links[current].classList.remove('active');
+    current = idx;
+    links[idx].classList.add('active');
+    var r = links[idx].getBoundingClientRect(), t = toc.getBoundingClientRect();
+    if (r.top < t.top || r.bottom > t.bottom) links[idx].scrollIntoView({block:'nearest'});
+  }
+
+  function request(){ if (!queued) { queued = true; requestAnimationFrame(sync); } }
+
+  addEventListener('scroll', request, {passive:true});
+  addEventListener('resize', request, {passive:true});
+  addEventListener('hashchange', request);
+  sync();
+})();
+(function(){
+  var heads = document.querySelectorAll('article h2, article h3, article h4');
+  if (!heads.length) return;
+  var icon =
+    '<svg class="sheet" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">' +
+      '<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/>' +
+      '<path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/>' +
+    '</svg>' +
+    '<svg class="tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M3 8.5l3.2 3L13 4.5"/>' +
+    '</svg>';
+
+  Array.prototype.forEach.call(heads, function(h){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'copy';
+    b.title = 'Copy heading';
+    b.setAttribute('aria-label', 'Copy heading');
+    b.innerHTML = icon;
+    b.addEventListener('click', function(){
+      // The heading's text is already the source line, `4. The section title`, and the button
+      // adds none of its own.
+      var text = h.textContent.replace(/\s+/g, ' ').trim();
+      var write = navigator.clipboard
+        ? navigator.clipboard.writeText(text)
+        : Promise.reject(new Error('no clipboard API on this origin'));
+      write.then(function(){
+        b.classList.remove('is-failed');
+        b.classList.add('is-copied');
+        b.title = 'Copied';
+        setTimeout(function(){ b.classList.remove('is-copied'); b.title = 'Copy heading'; }, 1400);
+      }, function(err){
+        b.classList.add('is-failed');
+        b.title = 'Copy failed: ' + err.message;
+      });
+    });
+    h.appendChild(b);
+  });
+})();
+(function(){
+  var imgs = Array.prototype.slice.call(document.querySelectorAll('article img'));
+  if (!imgs.length) return;
+  var box = document.createElement('div');
+  box.className = 'gallery';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-modal', 'true');
+  box.innerHTML =
+    '<div class="stage"></div>' +
+    '<div class="bar"><span class="alt"></span><span class="count"></span></div>' +
+    '<button type="button" class="close" aria-label="Close">&#x2715;</button>' +
+    '<button type="button" class="prev" aria-label="Previous">&#x2039;</button>' +
+    '<button type="button" class="next" aria-label="Next">&#x203A;</button>';
+  document.body.appendChild(box);
+  // Made through the DOM so the page's markup counts only the document's own images.
+  var stage = box.querySelector('.stage'), big = stage.appendChild(document.createElement('img'));
+  var alt = box.querySelector('.alt'), count = box.querySelector('.count');
+  var at = 0;
+
+  function show(i){
+    at = (i + imgs.length) % imgs.length;
+    box.classList.remove('is-zoomed');
+    big.src = imgs[at].currentSrc || imgs[at].src;
+    big.alt = imgs[at].alt;
+    alt.textContent = imgs[at].alt;
+    alt.title = imgs[at].alt;
+    count.textContent = (at + 1) + ' / ' + imgs.length;
+  }
+  function open(i){ show(i); box.classList.add('is-open'); document.body.style.overflow = 'hidden'; }
+  function close(){ box.classList.remove('is-open'); document.body.style.overflow = ''; }
+
+  imgs.forEach(function(img, i){ img.addEventListener('click', function(){ open(i); }); });
+  big.addEventListener('click', function(e){
+    e.stopPropagation();
+    // Measure the fitted picture before the toggle: after it the box is already actual size.
+    var r = big.getBoundingClientRect();
+    var fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
+    var zoomed = box.classList.toggle('is-zoomed');
+    if (zoomed) {
+      // Keep the clicked point at the centre of the stage once the picture is at actual size.
+      // The stage's padding offsets the picture, so read where it actually sits.
+      var z = big.getBoundingClientRect(), s = stage.getBoundingClientRect();
+      stage.scrollLeft += z.left - s.left + fx * z.width - stage.clientWidth / 2;
+      stage.scrollTop += z.top - s.top + fy * z.height - stage.clientHeight / 2;
+    }
+  });
+  stage.addEventListener('click', function(e){ if (e.target === stage) close(); });
+  box.querySelector('.close').addEventListener('click', close);
+  box.querySelector('.prev').addEventListener('click', function(){ show(at - 1); });
+  box.querySelector('.next').addEventListener('click', function(){ show(at + 1); });
+  addEventListener('keydown', function(e){
+    if (!box.classList.contains('is-open')) return;
+    if (e.key === 'Escape') close();
+    else if (e.key === 'ArrowLeft') show(at - 1);
+    else if (e.key === 'ArrowRight') show(at + 1);
+  });
+})();
+</script>
+</body>
+</html>

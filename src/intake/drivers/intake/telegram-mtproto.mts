@@ -1,10 +1,10 @@
-// The `telegram-mtproto` intake driver (spec 2.15.3): the chat history through the `telegram`
-// MTProto user client, with a session that the operator supplies. A method allowlist wraps the
+// The `telegram-mtproto` intake driver (spec 2.15.3): the chat history through the library's MTProto
+// user client over GramJS (the optional npm peer `telegram`), with a session that the operator supplies. A method allowlist wraps the
 // client: history, messages by id and media download. Any other method fails with
 // `qa.intake.telegram.method`. The allowlist is an accident guard, not a sandbox (spec 3.5).
 import { BaseDriver, LaunchwrightError, z } from '../../../kernel/index.mts';
 import { kindOf, mimeOf } from '../../services/media.mts';
-import { type GramJsClient, type GramJsModule, loadMtproto, type UserClient } from '../../services/telegram-peers.mts';
+import { type GramJsClient, type GramJsModule, loadGramJs, UserClient } from '../../../telegram/mtproto.mts';
 import { type IntakeBatch, type IntakeWindow, QA_INTAKE_SPEC_VERSION, type QaIntakeDriver, type RawItem, type RawMedia } from './contract.mts';
 
 /** Config `qa.intake.drivers.telegram-mtproto`. The values come from the secrets store. */
@@ -143,10 +143,14 @@ export class TelegramMtprotoIntakeDriver extends BaseDriver implements QaIntakeD
 
   /** Connects the user client behind the allowlist. */
   async connect(): Promise<ReadOnlyTelegram> {
-    const { UserClient, loadGramJs } = await loadMtproto();
-    const load = this.opts.loader ?? loadGramJs;
+    let gram: GramJsModule;
     try {
-      const client = await UserClient.connect({ ...this.cfg, loader: async () => readOnlyGramJs(await load()) });
+      gram = readOnlyGramJs(await (this.opts.loader ?? loadGramJs)());
+    } catch (cause) {
+      throw new LaunchwrightError('qa.intake.telegram.peer', 'The telegram-mtproto intake driver reads the chat through GramJS. Add the npm package "telegram" (2.26 or later).', { cause });
+    }
+    try {
+      const client = await UserClient.connect({ ...this.cfg, loader: async () => gram });
       return new ReadOnlyTelegram(client);
     } catch (cause) {
       throw new LaunchwrightError('qa.intake.telegram.connect', 'The Telegram user session cannot connect. Check QA_TELEGRAM_SESSION and the API id.', { cause });

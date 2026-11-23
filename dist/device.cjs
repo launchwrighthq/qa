@@ -1552,23 +1552,28 @@ var init_manifest2 = __esm({
 });
 
 // src/services/comment-export.mts
+var import_promises8, import_node_path10;
 var init_comment_export = __esm({
   "src/services/comment-export.mts"() {
     "use strict";
     init_cjs_shims();
+    import_promises8 = require("fs/promises");
+    import_node_path10 = require("path");
+    init_kernel();
     init_manifest2();
+    init_png();
   }
 });
 
 // src/services/comment-server.mts
-var import_node_http, import_promises8, import_node_path10, MAX_BODY;
+var import_node_http, import_promises9, import_node_path11, MAX_BODY;
 var init_comment_server = __esm({
   "src/services/comment-server.mts"() {
     "use strict";
     init_cjs_shims();
     import_node_http = require("http");
-    import_promises8 = require("fs/promises");
-    import_node_path10 = require("path");
+    import_promises9 = require("fs/promises");
+    import_node_path11 = require("path");
     init_kernel();
     init_comments();
     init_mime();
@@ -2465,7 +2470,7 @@ function resolveDevice(config, name) {
 }
 function controlPath(root, rig, home = (0, import_node_os.homedir)()) {
   const id = sha256(`${root}\0${rig}`).slice(0, 16);
-  const path = (0, import_node_path11.join)(home, SSH_SOCKET_DIR, `${id}.sock`);
+  const path = (0, import_node_path12.join)(home, SSH_SOCKET_DIR, `${id}.sock`);
   if (Buffer.byteLength(path) > MAX_SOCKET_PATH) {
     throw new LaunchwrightError(
       "qa.device.ssh.path",
@@ -2507,7 +2512,7 @@ function sshRig(name, config, deps, ssh) {
   async function open() {
     const check = await deps.run.run(ssh, ["-S", ctl, "-O", "check", host]);
     if (check.code === 0) return;
-    await (0, import_promises9.mkdir)((0, import_node_path11.dirname)(ctl), { recursive: true, mode: 448 });
+    await (0, import_promises10.mkdir)((0, import_node_path12.dirname)(ctl), { recursive: true, mode: 448 });
     const res = await deps.run.run(ssh, masterArgs(ctl, host), { timeoutMs: 3e4 });
     if (res.code !== 0) {
       throw new LaunchwrightError(
@@ -2587,7 +2592,7 @@ function localRig(name, config, deps) {
     name,
     config,
     remote: false,
-    stateDir: (0, import_node_path11.join)(deps.root, DEVICE_STATE_DIR),
+    stateDir: (0, import_node_path12.join)(deps.root, DEVICE_STATE_DIR),
     ensure: async () => {
     },
     exec: (command, opts) => deps.run.run("sh", ["-c", command], { timeoutMs: 12e4, ...opts }),
@@ -2597,8 +2602,8 @@ function localRig(name, config, deps) {
     adbServer: async () => [],
     adbPort: async () => ADB_SERVER_PORT,
     async writeFile(path, content) {
-      await (0, import_promises9.mkdir)((0, import_node_path11.dirname)(path), { recursive: true });
-      await (0, import_promises9.writeFile)(path, content);
+      await (0, import_promises10.mkdir)((0, import_node_path12.dirname)(path), { recursive: true });
+      await (0, import_promises10.writeFile)(path, content);
     },
     down: async () => {
     }
@@ -2649,14 +2654,14 @@ function createRigPool(config, deps) {
     }
   };
 }
-var import_promises9, import_node_os, import_node_path11, DEVICE_STATE_DIR, RIG_STATE_DIR, MAX_SOCKET_PATH, SSH_SOCKET_DIR, REMOTE_PATH, ADB_SERVER_PORT;
+var import_promises10, import_node_os, import_node_path12, DEVICE_STATE_DIR, RIG_STATE_DIR, MAX_SOCKET_PATH, SSH_SOCKET_DIR, REMOTE_PATH, ADB_SERVER_PORT;
 var init_rigs = __esm({
   "src/device/services/rigs.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises9 = require("fs/promises");
+    import_promises10 = require("fs/promises");
     import_node_os = require("os");
-    import_node_path11 = require("path");
+    import_node_path12 = require("path");
     init_kernel();
     init_fs();
     init_text();
@@ -2950,20 +2955,20 @@ async function pageAct(step, evaluate, target) {
 async function writePng(path, bytes, target) {
   const size = pngSize(bytes);
   if (size === null) throw new LaunchwrightError("qa.target.screenshot", `The ${target} target returned ${bytes.length} bytes that are not a PNG.`);
-  await (0, import_promises10.mkdir)((0, import_node_path12.dirname)(path), { recursive: true });
-  await (0, import_promises10.writeFile)(path, bytes);
+  await (0, import_promises11.mkdir)((0, import_node_path13.dirname)(path), { recursive: true });
+  await (0, import_promises11.writeFile)(path, bytes);
   return { path, ...size };
 }
 async function writeBytes(path, bytes) {
-  await (0, import_promises10.mkdir)((0, import_node_path12.dirname)(path), { recursive: true });
-  await (0, import_promises10.writeFile)(path, bytes);
+  await (0, import_promises11.mkdir)((0, import_node_path13.dirname)(path), { recursive: true });
+  await (0, import_promises11.writeFile)(path, bytes);
 }
 async function holdLastFrame(deps, ffmpeg, path, durationMs) {
   const seconds = (durationMs / 1e3).toFixed(3);
   const held = `${path}.held.mp4`;
   const args = ["-y", "-v", "error", "-i", path, "-vf", `tpad=stop_mode=clone:stop_duration=${seconds}`, "-t", seconds, "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", held];
   orFail(await deps.run.run(ffmpeg, args, { timeoutMs: 12e4 }), "qa.device.record", `holding the last frame of ${path} with ${ffmpeg}`);
-  await (0, import_promises10.rename)(held, path);
+  await (0, import_promises11.rename)(held, path);
 }
 function consoleLogKind(line) {
   if (line.level !== "error" && line.level !== "SEVERE") return null;
@@ -2976,13 +2981,13 @@ async function waitAct(clock, step) {
   if (!step.why) throw new LaunchwrightError("qa.target.act", "A wait act needs a why: it names what the row waits for.");
   await clock.sleep(step.ms ?? 0);
 }
-var import_promises10, import_node_path12, SETTLE_TIMEOUT_MS, SETTLE_EVERY_MS;
+var import_promises11, import_node_path13, SETTLE_TIMEOUT_MS, SETTLE_EVERY_MS;
 var init_session_base = __esm({
   "src/device/services/session-base.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises10 = require("fs/promises");
-    import_node_path12 = require("path");
+    import_promises11 = require("fs/promises");
+    import_node_path13 = require("path");
     init_kernel();
     init_src();
     init_page_script();
@@ -2994,7 +2999,7 @@ var init_session_base = __esm({
 
 // src/device/services/telegram.mts
 function apkPath(root) {
-  return (0, import_node_path13.join)(root, DEVICE_STATE_DIR, "telegram.apk");
+  return (0, import_node_path14.join)(root, DEVICE_STATE_DIR, "telegram.apk");
 }
 function pinOf(cfg) {
   if (!cfg.apkSha256) {
@@ -3020,7 +3025,7 @@ async function fetchApk(cfg, deps) {
   const path = apkPath(deps.root);
   let bytes = null;
   try {
-    bytes = await (0, import_promises11.readFile)(path);
+    bytes = await (0, import_promises12.readFile)(path);
   } catch (err) {
     if (err.code !== "ENOENT") throw new LaunchwrightError("qa.device.telegram.apk", `Cannot read ${path}.`, { cause: err });
   }
@@ -3037,8 +3042,8 @@ async function fetchApk(cfg, deps) {
     throw new LaunchwrightError("qa.device.telegram.apk", `The APK download is truncated: ${body.length} of ${declared} bytes.`);
   }
   checkPin(body, cfg);
-  await (0, import_promises11.mkdir)((0, import_node_path13.dirname)(path), { recursive: true });
-  await (0, import_promises11.writeFile)(path, body);
+  await (0, import_promises12.mkdir)((0, import_node_path14.dirname)(path), { recursive: true });
+  await (0, import_promises12.writeFile)(path, body);
   return path;
 }
 async function installed(adb, pkg) {
@@ -3071,13 +3076,13 @@ async function viewIntent(adb, uri, pkg) {
 async function forceStop(adb, pkg) {
   await adb.shell(["am", "force-stop", pkg]);
 }
-var import_promises11, import_node_path13, DEFAULT_START_PARAM;
+var import_promises12, import_node_path14, DEFAULT_START_PARAM;
 var init_telegram = __esm({
   "src/device/services/telegram.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises11 = require("fs/promises");
-    import_node_path13 = require("path");
+    import_promises12 = require("fs/promises");
+    import_node_path14 = require("path");
     init_kernel();
     init_fs();
     init_process();
@@ -3147,12 +3152,12 @@ async function attachSocket(ctx, h, pkg, surface) {
     );
   }
 }
-var import_node_path14, MIN_CLIP_MS2, SCRCPY_GRACE_S, AndroidSession;
+var import_node_path15, MIN_CLIP_MS2, SCRCPY_GRACE_S, AndroidSession;
 var init_android_session = __esm({
   "src/device/services/android-session.mts"() {
     "use strict";
     init_cjs_shims();
-    import_node_path14 = require("path");
+    import_node_path15 = require("path");
     init_kernel();
     init_src();
     init_adb();
@@ -3290,7 +3295,7 @@ var init_android_session = __esm({
         const capS = Math.min(this.ctx.config.evidence.videoCapS, SCREENRECORD_MAX_S);
         const startedAt = this.ctx.deps.clock.now();
         if (this.h.recorder === "screenrecord") {
-          const rec = await startScreenrecord(this.h.adb, this.ctx.deps, capS, (0, import_node_path14.basename)(path));
+          const rec = await startScreenrecord(this.h.adb, this.ctx.deps, capS, (0, import_node_path15.basename)(path));
           this.video = { path, startedAt, stop: () => rec.stop() };
           return;
         }
@@ -3492,7 +3497,7 @@ async function budget(client) {
   return minuteSummary(sessions, plan);
 }
 function heldSessionPath(root) {
-  return (0, import_node_path15.join)(root, DEVICE_STATE_DIR, "browserstack-session.json");
+  return (0, import_node_path16.join)(root, DEVICE_STATE_DIR, "browserstack-session.json");
 }
 async function readHeld(root) {
   return await readJsonOrNull(heldSessionPath(root));
@@ -3500,11 +3505,11 @@ async function readHeld(root) {
 async function writeHeld(root, held) {
   const path = heldSessionPath(root);
   if (held === null) {
-    await (0, import_promises12.rm)(path, { force: true });
+    await (0, import_promises13.rm)(path, { force: true });
     return;
   }
-  await (0, import_promises12.mkdir)((0, import_node_path15.dirname)(path), { recursive: true });
-  await (0, import_promises12.writeFile)(path, `${JSON.stringify(held, null, 1)}
+  await (0, import_promises13.mkdir)((0, import_node_path16.dirname)(path), { recursive: true });
+  await (0, import_promises13.writeFile)(path, `${JSON.stringify(held, null, 1)}
 `);
 }
 function checkBudget(startedAt, now, cfg) {
@@ -3517,13 +3522,13 @@ function checkBudget(startedAt, now, cfg) {
     );
   }
 }
-var import_promises12, import_node_path15, WebDriverError;
+var import_promises13, import_node_path16, WebDriverError;
 var init_browserstack = __esm({
   "src/device/services/browserstack.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises12 = require("fs/promises");
-    import_node_path15 = require("path");
+    import_promises13 = require("fs/promises");
+    import_node_path16 = require("path");
     init_kernel();
     init_fetch();
     init_fs();
@@ -4435,18 +4440,18 @@ var init_probes = __esm({
 async function expressionOf(rest, cwd) {
   const arg = rest.join(" ").trim();
   if (!arg) throw new LaunchwrightError("qa.device.usage", "Give an expression, or @path/to/file.js.");
-  return arg.startsWith("@") ? (0, import_promises13.readFile)((0, import_node_path16.resolve)(cwd, arg.slice(1)), "utf8") : arg;
+  return arg.startsWith("@") ? (0, import_promises14.readFile)((0, import_node_path17.resolve)(cwd, arg.slice(1)), "utf8") : arg;
 }
 function str(value) {
   return typeof value === "string" ? value : JSON.stringify(value, null, 1);
 }
-var import_promises13, import_node_path16, VERBS, DeviceVerbs;
+var import_promises14, import_node_path17, VERBS, DeviceVerbs;
 var init_device_verbs = __esm({
   "src/device/services/device-verbs.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises13 = require("fs/promises");
-    import_node_path16 = require("path");
+    import_promises14 = require("fs/promises");
+    import_node_path17 = require("path");
     init_kernel();
     init_config3();
     init_adb();
@@ -4502,7 +4507,7 @@ var init_device_verbs = __esm({
         this.opts.out(line);
       }
       file(given, name, ext) {
-        return given ? (0, import_node_path16.resolve)(this.opts.cwd, given) : (0, import_node_path16.join)(this.ctx.deps.root, DEVICE_STATE_DIR, `${name}.${ext}`);
+        return given ? (0, import_node_path17.resolve)(this.opts.cwd, given) : (0, import_node_path17.join)(this.ctx.deps.root, DEVICE_STATE_DIR, `${name}.${ext}`);
       }
       /** Attaches to the visible WebView page of an Android device and runs `fn` with its client. */
       async onAndroidPage(h, pkg, fn, onEvent) {

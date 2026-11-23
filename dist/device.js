@@ -51,14 +51,14 @@ import {
   writeBytes,
   writeHeld,
   writePng
-} from "./chunk-ZRA52RM5.js";
+} from "./chunk-466HMMHW.js";
 import {
   QA_TARGETS
-} from "./chunk-3MN5K3QL.js";
+} from "./chunk-RZJZNFR2.js";
 import "./chunk-APXO3KTC.js";
 import {
   QA_TARGET_SPEC_VERSION
-} from "./chunk-JHXOJGHS.js";
+} from "./chunk-7DHZXG6M.js";
 import "./chunk-6LHTNS5B.js";
 import {
   CONFIG,
@@ -422,7 +422,7 @@ var qaDeviceProvider = provider({
 // src/device/services/extension.mts
 var qaExtension = {
   name: "qa-device",
-  subcommands: { device: async () => (await import("./qa-device-OFFLPWVZ.js")).default },
+  subcommands: { device: async () => (await import("./qa-device-ZI5RAIE4.js")).default },
   targets: (config, root) => deviceTargets(withDevice(config), systemDeviceDeps(root))
 };
 export {

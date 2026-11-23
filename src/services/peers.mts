@@ -154,14 +154,3 @@ interface TunnelPeer {
 }
 
 export const loadTunnel = (): Promise<TunnelPeer> => loadPeer<TunnelPeer>('@launchwrighthq/tunnel', 'tunnel');
-
-/** The `fetch` of the Bot API client. A local copy of the telegram module's FetchFn. */
-export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
-
-interface TelegramPeer {
-  BotApi: new (options: { token: string; apiUrl?: string; fetch?: FetchFn }) => {
-    setChatMenuButton(button: { type: string; text: string; web_app: { url: string } }): Promise<unknown>;
-  };
-}
-
-export const loadTelegram = (): Promise<TelegramPeer> => loadPeer<TelegramPeer>('@launchwrighthq/telegram', 'telegram');

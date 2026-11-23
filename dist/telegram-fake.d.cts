@@ -1,4 +1,4 @@
-import { F as FetchFn } from './peers-D6wBRa1W.cjs';
+import { F as FetchFn } from './bot-api-BiC2rPPD.cjs';
 import { C as Clock } from './clock-BUdCJ9bN.cjs';
 
 /** The HTML of `/__tg`. */

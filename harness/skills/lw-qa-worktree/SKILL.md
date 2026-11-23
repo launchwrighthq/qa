@@ -5,11 +5,13 @@ description: Use to run the branch of a worktree as the live dev stack, so a per
 
 # Run a worktree's branch as the dev stack
 
+A framework project can also run each `lw-qa <sub>` command as `lw qa <sub>`.
+
 ```sh
-lw qa worktree                          # copy the dev database, migrate the copy, run lw dev --replace
-lw qa worktree --set-menu               # also point the dev bot's menu button at the tunnel URL
-lw qa worktree --keep-db                # keep the copy after the run
-lw qa worktree --cleanup                # drop the copies of runs that died
+lw-qa worktree                          # copy the dev database, migrate the copy, run lw dev --replace
+lw-qa worktree --set-menu               # also point the dev bot's menu button at the tunnel URL
+lw-qa worktree --keep-db                # keep the copy after the run
+lw-qa worktree --cleanup                # drop the copies of runs that died
 ```
 
 `--set-menu` takes `--bot <name>` (a bot of `telegram.bots`), `--menu-text <text>` and
@@ -46,10 +48,10 @@ A web app URL that BotFather holds (the main Mini App of the bot) does not chang
 Set it in BotFather when a test needs it.
 
 For a browser instead of a phone, open the Mini App on the dev server with the fake Telegram
-host of the `client` module. A QA persona launch needs the QA world: use `lw qa world api` and
+host of the `client` module. A QA persona launch needs the QA world: use `lw-qa world api` and
 the `lw-qa-pass` skill, not this skill.
 
 ## Cleanup
 
-A run that dies without its cleanup leaves its copy. `lw qa worktree --cleanup` drops every copy
+A run that dies without its cleanup leaves its copy. `lw-qa worktree --cleanup` drops every copy
 of this project whose worktree has no live `lw dev` run. A copy of a live run stays.

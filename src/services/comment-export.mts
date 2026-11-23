@@ -1,16 +1,30 @@
 // Agent comment resolution (spec 2.10, R10). `resolveComments` reads the comment store and the
 // report, and resolves each open comment to the target it points at: a text quote and section, a
 // step with its screenshot, a region with its screenshot and nearest step, a video time with the
-// step then active, or a named flow. `exportTaskList` renders the result as an agent task list, one
-// line per open comment. A resolved comment leaves the list.
+// step then active, or a named flow. `writeRegionCrops` cuts the rectangle of each open region
+// comment out of its screenshot. `exportTaskList` renders the result as an agent task list, one line
+// per open comment. A resolved comment leaves the list.
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join, relative } from 'node:path';
+import { LaunchwrightError } from '../kernel/index.mts';
 import { type Manifest, type Shot } from './manifest.mts';
 import type { Comment } from './comments.mts';
+import { cropPng } from './png.mts';
 import type { LedgerEntry } from './types.mts';
 
 /** What the resolver reads: the plan and the ledger of the report the comments sit on. */
 export interface ExportContext {
   manifest: Manifest;
   entries: readonly LedgerEntry[];
+  /** The crop of each region comment by comment id, from `writeRegionCrops`. */
+  crops?: ReadonlyMap<string, RegionCrop>;
+}
+
+/** The crop file of one region comment: its path for the task list and its pixel size. */
+export interface RegionCrop {
+  path: string;
+  width: number;
+  height: number;
 }
 
 /** One open comment resolved to its target (spec 2.10). */
@@ -25,6 +39,8 @@ export interface ResolvedComment {
   orphaned: boolean;
   /** The reviewer note, on one line. */
   note: string;
+  /** The crop of a region comment, when `ctx.crops` holds one. */
+  crop?: RegionCrop;
 }
 
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
@@ -80,7 +96,47 @@ function resolveAnchor(anchor: Comment['anchor'], ctx: ExportContext): Pick<Reso
 export function resolveComments(comments: readonly Comment[], ctx: ExportContext): ResolvedComment[] {
   return comments
     .filter((c) => c.status === 'open')
-    .map((c) => ({ id: c.id, kind: c.anchor.kind, ...resolveAnchor(c.anchor, ctx), note: oneLine(c.body) }));
+    .map((c) => {
+      const crop = ctx.crops?.get(c.id);
+      return { id: c.id, kind: c.anchor.kind, ...resolveAnchor(c.anchor, ctx), note: oneLine(c.body), ...(crop ? { crop } : {}) };
+    });
+}
+
+/** Where `writeRegionCrops` reads the screenshots and writes the crops. */
+export interface CropOptions {
+  /** The report folder: a region anchor names its screenshot relative to it. */
+  reportDir: string;
+  /** The crop folder, `.lw/qa/comments/<slug>` under the project root. */
+  cropDir: string;
+  /** The project root: the task list names each crop relative to it. */
+  root: string;
+}
+
+/** A comment id as a file name: any character outside `[A-Za-z0-9._-]` becomes `_`. */
+const fileNameOf = (id: string): string => id.replace(/[^A-Za-z0-9._-]/g, '_');
+
+/**
+ * Writes `<cropDir>/<id>.crop.png` for each open region comment whose screenshot the ledger holds,
+ * and returns the crops by comment id. An orphaned region gets no crop: its line says orphaned.
+ */
+export async function writeRegionCrops(comments: readonly Comment[], ctx: ExportContext, opts: CropOptions): Promise<Map<string, RegionCrop>> {
+  const crops = new Map<string, RegionCrop>();
+  for (const c of comments) {
+    if (c.status !== 'open' || c.anchor.kind !== 'region' || !inLedger(ctx.entries, c.anchor.screenshot)) continue;
+    const source = join(opts.reportDir, c.anchor.screenshot);
+    let bytes: Buffer;
+    try {
+      bytes = await readFile(source);
+    } catch (cause) {
+      throw new LaunchwrightError('qa.comment.crop', `Cannot read the screenshot ${c.anchor.screenshot} of comment ${c.id}.`, { cause, context: { id: c.id } });
+    }
+    const crop = cropPng(bytes, c.anchor);
+    const file = join(opts.cropDir, `${fileNameOf(c.id)}.crop.png`);
+    await mkdir(opts.cropDir, { recursive: true });
+    await writeFile(file, crop.png);
+    crops.set(c.id, { path: relative(opts.root, file), width: crop.width, height: crop.height });
+  }
+  return crops;
 }
 
 /**
@@ -94,7 +150,8 @@ export function exportTaskList(comments: readonly Comment[], ctx: ExportContext)
   const lines = [`${resolved.length} open comment${resolved.length === 1 ? '' : 's'} to act on:`, ''];
   for (const r of resolved) {
     const orphan = r.orphaned ? ' (orphaned: the ledger no longer holds this file)' : '';
-    lines.push(`- [${r.kind}] ${r.target}${orphan}: ${r.located}. Note: ${r.note}`);
+    const crop = r.crop ? ` Crop: ${r.crop.path} (${r.crop.width}x${r.crop.height} px).` : '';
+    lines.push(`- [${r.kind}] ${r.target}${orphan}: ${r.located}.${crop} Note: ${r.note}`);
   }
   return lines.join('\n');
 }

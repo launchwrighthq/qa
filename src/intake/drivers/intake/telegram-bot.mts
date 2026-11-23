@@ -1,11 +1,11 @@
 // The `telegram-bot` intake driver (spec 2.15.3): the updates that a QA bot receives in a chat.
 // It calls only `getUpdates` and `getFile`. The Bot API downloads files up to 20 MB; a larger
 // file is `skipped: too-large`. The bot has no history from before it joined. The calls go through
-// `BotApi` of `@launchwrighthq/telegram/bot-api`, an optional peer that `loadBotApi` loads.
+// the library's own Bot API client.
 import { BaseDriver, LaunchwrightError, z } from '../../../kernel/index.mts';
 import { mimeOfExtension } from '../../../index.mts';
 import { download, type FetchFn, kindOf } from '../../services/media.mts';
-import type { BotApi, BotApiModule, TgMessage } from '../../services/telegram-peers.mts';
+import { BotApi, TelegramApiError, type TgMessage } from '../../../telegram/bot-api.mts';
 import { type IntakeBatch, type IntakeWindow, QA_INTAKE_SPEC_VERSION, type QaIntakeDriver, type RawItem, type RawMedia } from './contract.mts';
 
 /** The largest file that the Bot API downloads. */
@@ -23,15 +23,9 @@ export const telegramBotConfig = z.object({
   pollTimeoutS: z.number().int().positive().default(30),
 });
 
-// `loadBotApi` loads the Bot API client of module telegram, an optional peer. registry imports it
-// from this file, which dynamic-imports the peer only when the telegram-bot driver is selected.
-export { loadBotApi } from '../../services/telegram-peers.mts';
-
 export interface TelegramBotOptions {
   /** The size cap of one file, in bytes. The driver also applies the 20 MB Bot API cap. */
   maxBytes: number;
-  /** The Bot API client module: `loadBotApi()`. */
-  botApi: BotApiModule;
   fetch?: FetchFn;
 }
 
@@ -108,7 +102,7 @@ export class TelegramBotIntakeDriver extends BaseDriver implements QaIntakeDrive
     }
     this.cfg = parsed.data;
     this.fetchFn = opts.fetch ?? ((input, init) => fetch(input, init));
-    this.api = new opts.botApi.BotApi({ token: this.cfg.token, apiUrl: this.cfg.apiUrl, fetch: this.fetchFn });
+    this.api = new BotApi({ token: this.cfg.token, apiUrl: this.cfg.apiUrl, fetch: this.fetchFn });
   }
 
   /** Calls one Bot API method. A method outside `BOT_READ_METHODS` throws `qa.intake.telegram.method`. */
@@ -177,7 +171,7 @@ export class TelegramBotIntakeDriver extends BaseDriver implements QaIntakeDrive
     try {
       path = (await this.call<{ file_path?: string }>('getFile', { file_id: file.file_id })).file_path;
     } catch (cause) {
-      if (!(cause instanceof this.opts.botApi.TelegramApiError)) throw cause;
+      if (!(cause instanceof TelegramApiError)) throw cause;
       return { ...base, skipped: /too big/i.test(cause.description) ? 'too-large' : 'unreachable' };
     }
     if (path === undefined) return { ...base, skipped: 'unreachable' };

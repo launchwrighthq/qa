@@ -3,7 +3,7 @@
 // it in the local run store. `destroy` revokes and deletes the bot, confirmed dead by a getMe 401.
 // The token lives only in `.lw/qa/bots`; no line here prints, logs or commits it.
 import { join } from 'node:path';
-import { type Clock, LaunchwrightError, optionalPeer, systemClock } from '../kernel/index.mts';
+import { type Clock, LaunchwrightError, systemClock } from '../kernel/index.mts';
 import { BOT_STORE_DIR, type BotRecord, type BotStore, fileBotStore } from '../services/bot-store.mts';
 import {
   BOTFATHER,
@@ -15,6 +15,8 @@ import {
   type UserbotLease,
   type UserbotProvider,
 } from '../services/botfather.mts';
+import { BotApi, TelegramApiError } from '../telegram/bot-api.mts';
+import { connectUserClient, type UserClient } from '../telegram/mtproto.mts';
 import { parseArgs } from '../world/services/context.mts';
 import type { QaCommandOptions } from './qa.command.mts';
 
@@ -37,13 +39,6 @@ export interface BotDeps {
   getMe: BotGetMe;
   store: BotStore;
   clock: Clock;
-}
-
-/** The part of the MTProto user client the BotFather adapter drives. */
-interface UserClientLike {
-  sendMessage(peer: string | number, text: string): Promise<unknown>;
-  history(peer: string | number, opts: Record<string, unknown>): Promise<unknown[]>;
-  close(): Promise<void>;
 }
 
 interface GramMessage {
@@ -71,19 +66,20 @@ export function envUserbotProvider(env: Record<string, string | undefined>): Use
   };
 }
 
-type Mtproto = {
-  connectUserClient(opts: { apiId: number; apiHash: string; session: string; proxy?: string }): Promise<UserClientLike>;
-};
-
-async function loadMtproto(): Promise<Mtproto> {
-  const spec = '@launchwrighthq/telegram/mtproto';
-  const mod = await optionalPeer(spec, () => import(spec) as Promise<Mtproto>);
-  if (!mod) throw new LaunchwrightError('qa.bot.module', 'lw qa telegram bot needs the telegram module. Run lw add telegram.');
-  return mod;
+/** Connects the user client. A missing GramJS fails `qa.bot.module`, so the fix names the package. */
+async function connect(lease: UserbotLease): Promise<UserClient> {
+  try {
+    return await connectUserClient({ apiId: lease.apiId, apiHash: lease.apiHash, session: lease.session, ...(lease.proxy ? { proxy: lease.proxy } : {}) });
+  } catch (cause) {
+    if (cause instanceof LaunchwrightError && cause.code === 'telegram.mtproto.missing') {
+      throw new LaunchwrightError('qa.bot.module', 'lw qa telegram bot needs GramJS. Add the npm package "telegram" (2.26 or later).', { cause });
+    }
+    throw cause;
+  }
 }
 
 /** Adapts the MTProto user client to a BotFather chat. It polls history for the next reply. */
-function userClientChat(client: UserClientLike, clock: Clock): BotFatherChat {
+function userClientChat(client: UserClient, clock: Clock): BotFatherChat {
   let lastId = 0;
   return {
     async send(text) {
@@ -111,12 +107,15 @@ function userClientChat(client: UserClientLike, clock: Clock): BotFatherChat {
   };
 }
 
-const BOT_API = 'https://api.telegram.org';
-
-/** Calls the Bot API getMe for a token. It builds the URL from the token but never logs either. */
+/** Calls the Bot API getMe for a token. A refused token gives its HTTP status; no line holds the token. */
 async function botApiGetMe(token: string): Promise<{ ok: boolean; status: number }> {
-  const res = await fetch(`${BOT_API}/bot${token}/getMe`);
-  return { ok: res.ok, status: res.status };
+  try {
+    await new BotApi({ token }).getMe();
+    return { ok: true, status: 200 };
+  } catch (cause) {
+    if (cause instanceof TelegramApiError && cause.status !== 0) return { ok: false, status: cause.status };
+    throw cause;
+  }
 }
 
 async function realBotDeps(opts: QaCommandOptions): Promise<BotDeps> {
@@ -125,13 +124,7 @@ async function realBotDeps(opts: QaCommandOptions): Promise<BotDeps> {
   return {
     async openChat() {
       const lease = await provider.lease();
-      const mtproto = await loadMtproto();
-      const client = await mtproto.connectUserClient({
-        apiId: lease.apiId,
-        apiHash: lease.apiHash,
-        session: lease.session,
-        ...(lease.proxy ? { proxy: lease.proxy } : {}),
-      });
+      const client = await connect(lease);
       return {
         chat: userClientChat(client, systemClock),
         async close() {

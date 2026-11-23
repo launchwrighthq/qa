@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { n as RawMedia, D as Driver, i as QaIssue, B as BaseDriver, s as SkipReason, d as AttachmentKind } from './contract-braBVxB_.js';
 export { I as IssueDraft, i as issueMarkdown, l as listIssues, r as readIssue, a as recordDir, b as recordId, w as writeIssue } from './records-DM_T-aMl.js';
-import { P as Provider, Q as QaExtension } from './extensions-CLfOuTYK.js';
+import { P as Provider, Q as QaExtension } from './extensions-Ba_HvLm5.js';
 import './app-KXgbRXYO.js';
 import './config-B-lxHEnb.js';
 
@@ -160,7 +160,7 @@ declare const qaIntakeProvider: Provider;
 
 declare const qaExtension: QaExtension;
 
-/** The part of a GramJS client that the telegram-mtproto driver uses. Matches GramJsClient of module telegram. */
+/** The part of a GramJS client that this wrapper uses. */
 interface GramJsClient {
     connect(): Promise<unknown>;
     disconnect(): Promise<unknown>;
@@ -168,14 +168,16 @@ interface GramJsClient {
     sendMessage(peer: unknown, params: {
         message: string;
     }): Promise<unknown>;
+    /** GramJS `getMessages`: history with `limit`, `minId`, `maxId`, `offsetDate`, `reverse`, or `ids`. */
     getMessages(peer: unknown, params: Record<string, unknown>): Promise<unknown[]>;
+    /** GramJS `downloadMedia`: the bytes of the media of a message. */
     downloadMedia(message: unknown, params?: Record<string, unknown>): Promise<unknown>;
     invoke(request: unknown): Promise<unknown>;
     session: {
         save(): unknown;
     };
 }
-/** The part of the GramJS package that the telegram-mtproto driver uses. */
+/** The part of the GramJS package that this wrapper uses. */
 interface GramJsModule {
     TelegramClient: new (session: unknown, apiId: number, apiHash: string, opts: Record<string, unknown>) => GramJsClient;
     StringSession: new (session: string) => unknown;

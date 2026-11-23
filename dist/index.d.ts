@@ -1,5 +1,5 @@
-import { P as Provider } from './extensions-CLfOuTYK.js';
-export { E as EXTENSION_PREFIX, a as QaCommandOptions, Q as QaExtension, b as QaSubcommand, e as extensionNames, c as extensionTargets, l as loadExtensions } from './extensions-CLfOuTYK.js';
+import { P as Provider } from './extensions-Ba_HvLm5.js';
+export { E as EXTENSION_PREFIX, a as QaCommandOptions, Q as QaExtension, b as QaSubcommand, e as extensionNames, c as extensionTargets, l as loadExtensions } from './extensions-Ba_HvLm5.js';
 export { L as LegConfig, Q as QaConfig, q as qaConfig, a as qaConfigOf, w as withAppPaths } from './config-B-lxHEnb.js';
 import { L as Leg, A as Act, S as Settle, a as LedgerEntry, O as OpenTargetRegistry } from './contract-braBVxB_.js';
 export { b as ACT_KINDS, c as ActKind, d as AttachmentKind, C as Capture, E as EvidenceKind, I as INTAKE_DIR, e as Isolation, f as OpenOptions, P as Provenance, g as QA_TARGET_CAPABILITIES, h as QA_TARGET_SPEC_VERSION, i as QaIssue, j as QaSession, Q as QaTarget, k as QaTargetCapability, l as QaTargetRegistry, R as REPORT_STATUSES, m as ROW_FAILURES, n as RawMedia, o as ReportStatus, p as RowFailure, q as RowResult, r as SessionLogLine, s as SkipReason, t as Surface, T as TargetReadiness, V as VideoCapture } from './contract-braBVxB_.js';
@@ -373,6 +373,14 @@ interface Manifest {
 interface ExportContext {
     manifest: Manifest;
     entries: readonly LedgerEntry[];
+    /** The crop of each region comment by comment id, from `writeRegionCrops`. */
+    crops?: ReadonlyMap<string, RegionCrop>;
+}
+/** The crop file of one region comment: its path for the task list and its pixel size. */
+interface RegionCrop {
+    path: string;
+    width: number;
+    height: number;
 }
 /** One open comment resolved to its target (spec 2.10). */
 interface ResolvedComment {
@@ -386,6 +394,8 @@ interface ResolvedComment {
     orphaned: boolean;
     /** The reviewer note, on one line. */
     note: string;
+    /** The crop of a region comment, when `ctx.crops` holds one. */
+    crop?: RegionCrop;
 }
 /** Every open comment resolved to its target (spec 2.10). A resolved comment is left out. */
 declare function resolveComments(comments: readonly Comment[], ctx: ExportContext): ResolvedComment[];

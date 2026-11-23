@@ -1,18 +1,19 @@
 import {
-  loadBotApi
-} from "./chunk-BVKDU77Y.js";
+  BotApi,
+  TelegramApiError
+} from "./chunk-GZPY7AX2.js";
 import {
   download,
   kindOf
-} from "./chunk-S5PDLVTW.js";
+} from "./chunk-LAFOB6RX.js";
 import {
   QA_INTAKE_SPEC_VERSION
 } from "./chunk-K3F4HTKJ.js";
-import "./chunk-3MN5K3QL.js";
+import "./chunk-RZJZNFR2.js";
 import "./chunk-APXO3KTC.js";
 import {
   mimeOfExtension
-} from "./chunk-JHXOJGHS.js";
+} from "./chunk-7DHZXG6M.js";
 import "./chunk-6LHTNS5B.js";
 import {
   BaseDriver,
@@ -76,7 +77,7 @@ var TelegramBotIntakeDriver = class extends BaseDriver {
     }
     this.cfg = parsed.data;
     this.fetchFn = opts.fetch ?? ((input, init) => fetch(input, init));
-    this.api = new opts.botApi.BotApi({ token: this.cfg.token, apiUrl: this.cfg.apiUrl, fetch: this.fetchFn });
+    this.api = new BotApi({ token: this.cfg.token, apiUrl: this.cfg.apiUrl, fetch: this.fetchFn });
   }
   opts;
   source = "telegram";
@@ -146,7 +147,7 @@ var TelegramBotIntakeDriver = class extends BaseDriver {
     try {
       path = (await this.call("getFile", { file_id: file.file_id })).file_path;
     } catch (cause) {
-      if (!(cause instanceof this.opts.botApi.TelegramApiError)) throw cause;
+      if (!(cause instanceof TelegramApiError)) throw cause;
       return { ...base, skipped: /too big/i.test(cause.description) ? "too-large" : "unreachable" };
     }
     if (path === void 0) return { ...base, skipped: "unreachable" };
@@ -161,7 +162,6 @@ export {
   BOT_API_MAX_BYTES,
   BOT_READ_METHODS,
   TelegramBotIntakeDriver,
-  loadBotApi,
   telegramBotConfig
 };
-//# sourceMappingURL=telegram-bot-LV7E5GAW.js.map
+//# sourceMappingURL=telegram-bot-FQY2MDZH.js.map

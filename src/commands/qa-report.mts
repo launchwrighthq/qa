@@ -46,11 +46,11 @@ const report: QaSubcommand = {
         return 0;
       }
       if (action === 'viewer') {
-        const result = await buildViewer(md);
+        const result = await buildViewer(md, { legs });
         opts.out(`lw qa report viewer: wrote ${result.pages.length} pages, open ${result.index}`);
         return 0;
       }
-      const page = await renderReport(md, RENDERER_DIR, opts.cwd);
+      const page = await renderReport(md, RENDERER_DIR, opts.cwd, { legs });
       opts.out(`lw qa report render: wrote ${page}`);
       return 0;
     } catch (cause) {

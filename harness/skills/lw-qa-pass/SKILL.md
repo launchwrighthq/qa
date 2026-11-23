@@ -1,9 +1,11 @@
 ---
 name: lw-qa-pass
-description: Use for a QA pass. Find what changed, what a spec promised or what an issue reports, then open each state, photograph it and film what moves. Use for "what shipped since a date", a QA pass or test plan over a commit range, a walkthrough of new screens and states, "did we build what this spec asked for", "does this work", "show me what it looks like now", "reproduce this issue", "prove the fix landed". Writes one report under the QA report folder. The pass is done only when lw qa report check exits 0.
+description: Use for a QA pass. Find what changed, what a spec promised or what an issue reports, then open each state, photograph it and film what moves. Use for "what shipped since a date", a QA pass or test plan over a commit range, a walkthrough of new screens and states, "did we build what this spec asked for", "does this work", "show me what it looks like now", "reproduce this issue", "prove the fix landed". Writes one report under the QA report folder. The pass is done only when lw-qa report check exits 0.
 ---
 
 # QA pass
+
+A framework project can also run each `lw-qa <sub>` command as `lw qa <sub>`.
 
 One skill, two jobs, one report.
 
@@ -31,11 +33,11 @@ A pass covers a commit range, a spec, intake issues, or a mix. Never guess one.
 ### A range
 
 ```sh
-lw qa changes --since 2026-08-21
-lw qa changes --since "2026-08-21 14:00"
-lw qa changes --since 6f2ab1c
-lw qa changes --last          # continue from the Range line of the newest report
-lw qa changes --last --json   # the form to read
+lw-qa changes --since 2026-08-21
+lw-qa changes --since "2026-08-21 14:00"
+lw-qa changes --since 6f2ab1c
+lw-qa changes --last          # continue from the Range line of the newest report
+lw-qa changes --last --json   # the form to read
 ```
 
 `--last` reads the end commit from the `Range:` line of the newest report. When there is no
@@ -49,7 +51,7 @@ no visible surface goes in section 5, by name.
 ### A spec
 
 ```sh
-lw qa session resolve docs/specs/<name>.md
+lw-qa session resolve docs/specs/<name>.md
 ```
 
 It prints JSON: the header, the section headings, the commits with the source of each commit,
@@ -66,8 +68,8 @@ each. Read three fields with care.
 ### Issues
 
 ```sh
-lw qa intake list
-lw qa session resolve --issue <id> [<id> ...]
+lw-qa intake list
+lw-qa session resolve --issue <id> [<id> ...]
 ```
 
 The `lw-qa-intake` skill reads issues from a GitHub link or a Telegram chat. `resolve --issue`
@@ -115,15 +117,15 @@ the rows below. That is why section 2 comes before the run.
 ## 3. The world, and an address for every state
 
 ```sh
-lw qa world status      # what is seeded, and the hash of the registry
-lw qa world reset       # drop, create, migrate and seed the QA database
-lw qa world api         # the project API on qa.apiPort against the QA database
-lw qa telegram          # the fake Bot API and the /__tg chat page, for bot rows and the Mini App
+lw-qa world status      # what is seeded, and the hash of the registry
+lw-qa world reset       # drop, create, migrate and seed the QA database
+lw-qa world api         # the project API on qa.apiPort against the QA database
+lw-qa telegram          # the fake Bot API and the /__tg chat page, for bot rows and the Mini App
 ```
 
 The pass runs on the QA database (`qa.database`), never on a database that a person uses. The
-undo of any change is `lw qa world reset`. `lw qa fixture arm <fact>` arms one fact on the QA
-database for a row, and `lw qa fixture disarm` undoes it.
+undo of any change is `lw-qa world reset`. `lw-qa fixture arm <fact>` arms one fact on the QA
+database for a row, and `lw-qa fixture disarm` undoes it.
 
 A persona is a user in a named state. A fact is a state of the product data. Both live in
 `<feature>.world.mts` files, and both return the handles that a row needs, so no row holds a
@@ -169,7 +171,7 @@ plan, an empty list, a width, a first visit or a return. Each one is its own row
 ### Find the route
 
 A route is relative to the surface base: `/settings`, never `<base>/settings`. Each leg applies
-its own base, and `lw qa session check` refuses a row that holds one.
+its own base, and `lw-qa session check` refuses a row that holds one.
 
 1. Read the route tables that `qa.routeTables` names. The adapter folder (see "Product facts")
    names the route vocabulary of this project.
@@ -222,7 +224,7 @@ named. A prop such as `analyticsId` often becomes `${analyticsId}-${part}` in th
 - `expect.pageErrors` lists the page errors that a row expects. Any other page error fails the row.
 
 ```sh
-lw qa session check docs/qa/<slug>.shots.json
+lw-qa session check docs/qa/<slug>.shots.json
 ```
 
 It validates the rows and prints every problem at once.
@@ -244,11 +246,11 @@ Start the QA world once, in another terminal, and keep it up for the whole pass.
 reason "no target".
 
 ```sh
-lw qa session run docs/qa/<slug>.shots.json
-lw qa session run docs/qa/<slug>.shots.json --legs desktop,mobile-web
-lw qa session run docs/qa/<slug>.shots.json --only account-card.guest-expanded
-lw qa states run --slug <slug>     # each union member, mounted or intercepted
-lw qa paths crawl --slug <slug>    # can a user get there, and a video of the taps
+lw-qa session run docs/qa/<slug>.shots.json
+lw-qa session run docs/qa/<slug>.shots.json --legs desktop,mobile-web
+lw-qa session run docs/qa/<slug>.shots.json --only account-card.guest-expanded
+lw-qa states run --slug <slug>     # each union member, mounted or intercepted
+lw-qa paths crawl --slug <slug>    # can a user get there, and a video of the taps
 ```
 
 The runner records the evidence of spec 2.11 for each row and leg, and nothing else may:
@@ -289,7 +291,7 @@ flicker. Those get a video. Each video carries its provenance.
 
 | Kind | Provenance | May claim |
 |---|---|---|
-| a path video (`lw qa paths record`) | `live` always | a user can get there with these taps |
+| a path video (`lw-qa paths record`) | `live` always | a user can get there with these taps |
 | a state video | `mounted` or `intercepted`, never `live` | how the state behaves over time, nothing about how a user gets there |
 
 ## 7. The report
@@ -314,7 +316,7 @@ Coverage: 63 of 79 states, 11 owe a seed
 ## 6 How to retest
 ```
 
-- `lw qa report update docs/qa/<slug>.md` writes section 3 between `<!-- qa:evidence:start -->`
+- `lw-qa report update docs/qa/<slug>.md` writes section 3 between `<!-- qa:evidence:start -->`
   and `<!-- qa:evidence:end -->`, the section 5 lines, and the `Status`, `Legs` and `Coverage`
   lines from the ledger. Never type section 3 and never edit the generated block. Write your
   judgement in section 4.
@@ -327,10 +329,10 @@ Coverage: 63 of 79 states, 11 owe a seed
 - Section 3 already embeds the run's screenshot. In section 4, link the reporter's media at its
   intake path, relative from the report file:
   `[reporter screenshot](../../.lw/qa/intake/<id>/assets/<file>)` for a report in `docs/qa/`.
-  Take `<file>` from the `reference` paths of `lw qa session resolve --issue`. Never copy the
+  Take `<file>` from the `reference` paths of `lw-qa session resolve --issue`. Never copy the
   file into `assets/<slug>/`.
-- `lw qa report update` keeps section 4 as you wrote it.
-- `lw qa report render` turns the media link into a link on the page. `lw qa publish` replaces it with
+- `lw-qa report update` keeps section 4 as you wrote it.
+- `lw-qa report render` turns the media link into a link on the page. `lw-qa publish` replaces it with
   `reporter media of issue <id> stays local` and copies no intake file.
 - Section 5 is not optional. It names every leg that did not run, every row that failed, every
   state that owes a seed with its feature, and everything in the range that the report does not
@@ -338,7 +340,7 @@ Coverage: 63 of 79 states, 11 owe a seed
 - A state that renders and that no user can reach goes in section 3 as a finding about the
   product, not in section 5.
 
-The layout of section 3 stays as `lw qa report update` writes it: a landscape shot on its own
+The layout of section 3 stays as `lw-qa report update` writes it: a landscape shot on its own
 line, portrait shots two per table row, never mixed in one table, and a video on its own line.
 
 ## 8. Language
@@ -354,12 +356,12 @@ report in another language never enters the repository.
 ## 9. Finish
 
 ```sh
-lw qa report update docs/qa/<slug>.md
-lw qa report check docs/qa/<slug>.md
-lw qa report render docs/qa/<slug>.md
+lw-qa report update docs/qa/<slug>.md
+lw-qa report check docs/qa/<slug>.md
+lw-qa report render docs/qa/<slug>.md
 ```
 
-1. Run `lw qa report check`. It exits 1 and names each problem: a planned row and leg with no
+1. Run `lw-qa report check`. It exits 1 and names each problem: a planned row and leg with no
    evidence and no section 5 line, a file that is not embedded once, an embed with no ledger
    entry, a hash that does not match, an edited generated block, an embed outside
    `assets/<slug>/`, a missing header line or section, and a `Status` line that differs from
@@ -369,13 +371,13 @@ lw qa report render docs/qa/<slug>.md
    outside section 4, for another issue or to a file that the record does not list
    (`intake-link`).
 2. Fix each problem at its cause: run the row again, add the section 5 line with its reason, or
-   run `lw qa report update`. Never edit the ledger or the generated block by hand.
-3. Run `lw qa report check` again. The pass is done only when it exits 0. Until then, report the
+   run `lw-qa report update`. Never edit the ledger or the generated block by hand.
+3. Run `lw-qa report check` again. The pass is done only when it exits 0. Until then, report the
    pass as not done, and name each problem that is left.
-4. Run `lw qa report render`, then print the page path as `file://<absolute path>` on a line of
+4. Run `lw-qa report render`, then print the page path as `file://<absolute path>` on a line of
    its own. Print it again after each revision.
 
-`lw qa publish <slug>` copies the report, the ledger and the assets to the `qa.publish.storage`
+`lw-qa publish <slug>` copies the report, the ledger and the assets to the `qa.publish.storage`
 disk and prints the links. Run it only when the caller asks to share the report.
 
 ## Product facts
@@ -391,7 +393,7 @@ them.
 - It draws nothing. A pass has photographs, so it needs no mockup.
 - It fixes nothing. It writes a finding, never a repair. A pass writes only in the report folder,
   in `.lw/qa/` and in the QA database.
-- It touches no database that a person uses. The world is the QA database, and `lw qa world
+- It touches no database that a person uses. The world is the QA database, and `lw-qa world
   reset` is the undo.
 - It does not run against staging or production. Local only.
 - It does not post to GitHub or Telegram.

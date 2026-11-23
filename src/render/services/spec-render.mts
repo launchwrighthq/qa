@@ -7,19 +7,32 @@
 // entry is the subpath `@launchwrighthq/qa/render`. The command line entry is
 // `tools/docs/spec2html.mts`; `ah spec render` of agent-harness is its Python port.
 import { existsSync, readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/** The most folders the search walks up: the framework layout needs four. */
+const TEMPLATE_SEARCH_DEPTH = 5;
+
 /**
- * The folder of the page template `spec-template.html`. A published package carries `assets/` in
- * its own folder (`<package>/assets/renderer`). In the framework repo, `assets/` sits next to
- * `ts/` (`modules/qa/assets/renderer`).
+ * The folder of the page template `spec-template.html`. The package carries it in
+ * `<package>/assets/renderer`. This file runs from `src/render/services/` (three folders down),
+ * from a `dist/` chunk (one folder down), or in the framework from `modules/qa/ts/src/render/services/`,
+ * where `assets/` sits next to `ts/` (four folders down). So the search walks up from this file to
+ * the first folder that holds the template.
  */
 export const TEMPLATE_DIR = templateDir();
 
 function templateDir(): string {
-  const published = fileURLToPath(new URL('../../../assets/renderer/', import.meta.url));
-  return existsSync(published) ? published : fileURLToPath(new URL('../../../../assets/renderer/', import.meta.url));
+  let dir = dirname(fileURLToPath(import.meta.url));
+  let packageRoot: string | null = null;
+  for (let up = 0; up <= TEMPLATE_SEARCH_DEPTH; up += 1) {
+    const candidate = join(dir, 'assets', 'renderer');
+    if (existsSync(join(candidate, 'spec-template.html'))) return candidate;
+    if (packageRoot === null && existsSync(join(dir, 'package.json'))) packageRoot = dir;
+    dir = dirname(dir);
+  }
+  // No template: name the path inside the package, so the error of a render points at the right place.
+  return join(packageRoot ?? dirname(fileURLToPath(import.meta.url)), 'assets', 'renderer');
 }
 
 const TEMPLATE = join(TEMPLATE_DIR, 'spec-template.html');

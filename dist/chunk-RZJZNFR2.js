@@ -8,7 +8,7 @@ import {
   createFakeTarget,
   mimeOfExtension,
   pngSize
-} from "./chunk-JHXOJGHS.js";
+} from "./chunk-7DHZXG6M.js";
 import {
   readTextOrNull,
   sha256
@@ -522,7 +522,10 @@ function fileConsentStore(dir) {
 var BOTFATHER = "BotFather";
 var DELETE_CONFIRM = "Yes, I am totally sure.";
 var BOT_TOKEN = /(\d{6,12}:[A-Za-z0-9_-]{30,})/;
-var RATE_LIMIT = /too many (requests|attempts)|try again later|retry after/i;
+var WAIT = /(?:try again in|retry after)\s+(\d+)\s*(seconds?|minutes?|hours?)?/i;
+var REFUSAL = /cannot create new bots|can't create new bots|too many (?:requests|attempts)|try again later|@SpamBot|^\s*sorry\b/im;
+var HELP_MENU = /I can help you create and manage Telegram bots/i;
+var UNIT_SECONDS = { s: 1, m: 60, h: 3600 };
 function parseBotToken(reply) {
   const match = BOT_TOKEN.exec(reply);
   if (!match) {
@@ -535,12 +538,25 @@ function botIdOf(token2) {
   if (!Number.isInteger(id) || id <= 0) throw new LaunchwrightError("qa.bot.token", "The bot token has no numeric bot id before the colon.");
   return id;
 }
+function refusalOf(reply) {
+  if (BOT_TOKEN.test(reply)) return null;
+  const text = reply.replace(/\s+/g, " ").trim();
+  const wait = WAIT.exec(reply);
+  if (wait) {
+    const seconds = Number(wait[1]) * (UNIT_SECONDS[(wait[2] ?? "s").charAt(0).toLowerCase()] ?? 1);
+    return new LaunchwrightError("qa.bot.limit", `BotFather limits this account: wait ${seconds} seconds, then run the command again. BotFather said: "${text}"`, { context: { seconds } });
+  }
+  if (REFUSAL.test(reply)) return new LaunchwrightError("qa.bot.refused", `BotFather refused the step. BotFather said: "${text}"`);
+  if (HELP_MENU.test(reply)) {
+    return new LaunchwrightError("qa.bot.refused", `BotFather sent its help menu where a prompt was due, so it dropped the dialog. BotFather said: "${text.slice(0, 200)}"`);
+  }
+  return null;
+}
 async function exchange(chat, text) {
   await chat.send(text);
   const reply = await chat.reply();
-  if (RATE_LIMIT.test(reply)) {
-    throw new LaunchwrightError("qa.bot.ratelimit", "BotFather rate-limited the lifecycle. Wait and run the command again.");
-  }
+  const refusal = refusalOf(reply);
+  if (refusal) throw refusal;
   return reply;
 }
 function handleOf(username) {
@@ -722,6 +738,8 @@ function fileCommentStore(dir) {
 }
 
 // src/services/comment-export.mts
+import { mkdir as mkdir4, readFile, writeFile as writeFile4 } from "fs/promises";
+import { join as join4, relative } from "path";
 var oneLine = (text) => text.replace(/\s+/g, " ").trim();
 var shotOf = (manifest, row) => manifest.shots.find((s) => s.id === row);
 var screenState = (shot) => shot ? `${shot.screen} ${shot.state}` : "";
@@ -764,7 +782,10 @@ function resolveAnchor(anchor, ctx) {
   return { target: shot ? `${screenState(shot)} (${anchor.name})` : `flow ${anchor.name}`, located: `flow ${anchor.name}`, orphaned: false };
 }
 function resolveComments(comments, ctx) {
-  return comments.filter((c) => c.status === "open").map((c) => ({ id: c.id, kind: c.anchor.kind, ...resolveAnchor(c.anchor, ctx), note: oneLine(c.body) }));
+  return comments.filter((c) => c.status === "open").map((c) => {
+    const crop = ctx.crops?.get(c.id);
+    return { id: c.id, kind: c.anchor.kind, ...resolveAnchor(c.anchor, ctx), note: oneLine(c.body), ...crop ? { crop } : {} };
+  });
 }
 function exportTaskList(comments, ctx) {
   const resolved = resolveComments(comments, ctx);
@@ -772,14 +793,15 @@ function exportTaskList(comments, ctx) {
   const lines = [`${resolved.length} open comment${resolved.length === 1 ? "" : "s"} to act on:`, ""];
   for (const r of resolved) {
     const orphan = r.orphaned ? " (orphaned: the ledger no longer holds this file)" : "";
-    lines.push(`- [${r.kind}] ${r.target}${orphan}: ${r.located}. Note: ${r.note}`);
+    const crop = r.crop ? ` Crop: ${r.crop.path} (${r.crop.width}x${r.crop.height} px).` : "";
+    lines.push(`- [${r.kind}] ${r.target}${orphan}: ${r.located}.${crop} Note: ${r.note}`);
   }
   return lines.join("\n");
 }
 
 // src/services/comment-server.mts
 import { createServer } from "http";
-import { readFile } from "fs/promises";
+import { readFile as readFile2 } from "fs/promises";
 import { resolve, sep } from "path";
 var MAX_BODY = 1024 * 1024;
 var sendJson = (res, status, value) => {
@@ -837,7 +859,7 @@ async function serveStatic(res, reportDir, pathname) {
   }
   let bytes;
   try {
-    bytes = await readFile(target);
+    bytes = await readFile2(target);
   } catch {
     sendText(res, 404, "not found");
     return;
@@ -935,4 +957,4 @@ export {
   exportTaskList,
   startCommentServer
 };
-//# sourceMappingURL=chunk-3MN5K3QL.js.map
+//# sourceMappingURL=chunk-RZJZNFR2.js.map

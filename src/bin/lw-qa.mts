@@ -5,6 +5,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
 import { qaCommand } from '../commands/qa.command.mts';
+import { qaExtension as deviceExtension } from '../device/services/extension.mts';
+import { qaExtension as intakeExtension } from '../intake/services/extension.mts';
 
 /** The config sections from the project's `qa.toml`, or `{}` when none exists (defaults apply). */
 function loadSections(cwd: string): Record<string, unknown> {
@@ -25,5 +27,7 @@ const code = await qaCommand.run(process.argv.slice(2), {
   config: loadSections(cwd),
   env: process.env.LW_ENV ?? 'local',
   processEnv: process.env,
+  commandName: 'lw-qa',
+  extensions: [deviceExtension, intakeExtension],
 });
 process.exit(code);

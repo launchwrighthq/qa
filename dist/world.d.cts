@@ -1,7 +1,7 @@
 import { A as App } from './app-KXgbRXYO.cjs';
 import { Q as QaConfig } from './config-B-lxHEnb.cjs';
 import { C as Clock } from './clock-BUdCJ9bN.cjs';
-import { F as FetchFn, R as RunRecord } from './peers-D6wBRa1W.cjs';
+import { F as FetchFn } from './bot-api-BiC2rPPD.cjs';
 import 'zod';
 
 interface CheckoutFacts {
@@ -460,6 +460,15 @@ declare function worldStatus(o: {
     registry: WorldRegistry;
     admin?: DbAdmin;
 }): Promise<WorldStatus>;
+
+/** The run record of the dev module that the worktree command reads. */
+interface RunRecord {
+    checkout: string;
+    surfaces: Array<{
+        name: string;
+        url?: string;
+    }>;
+}
 
 /** The outside effects of a worktree run. Tests replace each one. */
 interface WorktreeDeps {

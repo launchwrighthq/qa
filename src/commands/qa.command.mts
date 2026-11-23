@@ -23,10 +23,20 @@ export interface QaCommandOptions {
   /** Stops a long-running subcommand (`lw qa telegram`, `lw qa sink`). */
   signal?: AbortSignal;
   /**
+   * The command the user typed: `lw qa` (the default, the framework CLI) or `lw-qa` (the bin of the
+   * library). Every usage, hint and error line prints it.
+   */
+  commandName?: string;
+  /**
    * `qa.target` drivers that a run adds or uses in place of a built-in one, for example
    * `playwright` with a browser binary. `lw qa` adds the targets of the extension modules here.
    */
   targets?: Record<string, QaTarget>;
+  /**
+   * Extension modules the CLI always has. The `lw-qa` bin gives the intake and device extensions of
+   * the library, which have no `qa-<x>` package to load. An enabled config section of the same name wins.
+   */
+  extensions?: readonly QaExtension[];
 }
 
 /** A `lw qa <sub>` module: `./qa-<sub>.mts` with this default export. */
@@ -74,12 +84,25 @@ async function usage(opts: QaCommandOptions, extensions: readonly QaExtension[])
   return 2;
 }
 
+/** The name every subcommand line holds. `commandName` replaces it on the way out. */
+const DEFAULT_NAME = 'lw qa';
+
+/** `opts` with `out` and `err` that print `commandName` wherever a line names `lw qa`. */
+function named(opts: QaCommandOptions): QaCommandOptions {
+  const name = opts.commandName ?? DEFAULT_NAME;
+  if (name === DEFAULT_NAME) return opts;
+  const rename = (write: (line: string) => void) => (line: string): void => write(line.replace(/\blw qa\b/g, name));
+  return { ...opts, out: rename(opts.out), err: rename(opts.err) };
+}
+
 export const qaCommand = {
   name: 'qa',
   summary: 'QA passes with evidence, personas, state triggers, devices, fake Telegram, issue intake',
-  async run(args: string[], opts: QaCommandOptions): Promise<number> {
+  async run(args: string[], given: QaCommandOptions): Promise<number> {
+    const opts = named(given);
     const [first, ...rest] = args;
-    const extensions = await loadExtensions(opts.cwd, opts.config);
+    const loaded = await loadExtensions(opts.cwd, opts.config);
+    const extensions = [...(opts.extensions ?? []).filter((e) => !loaded.some((l) => l.name === e.name)), ...loaded];
     if (first === undefined || first === '--help' || first === '-h') return usage(opts, extensions);
     const spec = await subcommandOf(first, extensions);
     if (spec === undefined) {

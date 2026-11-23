@@ -1,3 +1,6 @@
+import {
+  BotApi
+} from "./chunk-GZPY7AX2.js";
 import "./chunk-JF32RXQ2.js";
 import {
   ShiftClock,
@@ -34,7 +37,6 @@ async function loadPeer(spec, module) {
 }
 var loadDb = () => loadPeer("@launchwrighthq/db", "db");
 var loadAuth = () => loadPeer("@launchwrighthq/auth", "auth");
-var loadTelegram = () => loadPeer("@launchwrighthq/telegram", "telegram");
 
 // src/world/services/checkout.mts
 import { readFile } from "fs/promises";
@@ -814,7 +816,6 @@ async function setMenuButton(o) {
   }
   const [name, bot] = picked;
   if (bot.token === void 0) throw new LaunchwrightError("qa.menu.bot", `Bot ${name} has no token in config, so lw qa cannot set its menu button.`);
-  const { BotApi } = await loadTelegram();
   const api = new BotApi({ token: bot.token, ...section.apiUrl ? { apiUrl: section.apiUrl } : {}, ...o.fetch ? { fetch: o.fetch } : {} });
   await api.setChatMenuButton({ type: "web_app", text: o.text, web_app: { url: o.url } });
 }

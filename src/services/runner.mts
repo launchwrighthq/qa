@@ -523,5 +523,9 @@ export async function runManifest(opts: RunOptions, deps: RunnerDeps): Promise<R
   }
   for (const w of warnings) deps.err(`fixture caveat: ${w}`);
   const failed = results.filter((r) => r.status === 'failed').length;
-  return { slug: run.slugName, results, warnings, exitCode: failed > 0 ? 1 : 0 };
+  // A run where no pair ran proves nothing, so CI must not read it as green.
+  const ran = results.filter((r) => r.status === 'passed' || r.status === 'failed').length;
+  const notRun = results.filter((r) => r.status === 'not-run').length;
+  if (ran === 0 && notRun > 0) deps.err(`no row and leg pair ran: ${notRun} not run. The run proves nothing, so it exits 1.`);
+  return { slug: run.slugName, results, warnings, exitCode: failed > 0 || (ran === 0 && notRun > 0) ? 1 : 0 };
 }

@@ -5,7 +5,9 @@ description: Use to drive the product on a real device and measure it as Playwri
 
 # Devices
 
-`lw qa device <verb> [--device <name>]` is the whole interface. Rigs and devices come from config
+A framework project can also run each `lw-qa <sub>` command as `lw qa <sub>`.
+
+`lw-qa device <verb> [--device <name>]` is the whole interface. Rigs and devices come from config
 `qa.device`. No device, bot, host or address is written in the module.
 
 | Verb | What it does |
@@ -134,12 +136,12 @@ A target never installs or erases a signed-in Telegram without `--force`.
 ## The usual flow
 
 ```sh
-lw qa device doctor
-lw qa device open --device <name> --bot <bot username>
-lw qa device eval --device <name> @measure.js
-lw qa device logs --device <name> 15
-lw qa device shot --device <name> screen.png
-lw qa device down --device <name>
+lw-qa device doctor
+lw-qa device open --device <name> --bot <bot username>
+lw-qa device eval --device <name> @measure.js
+lw-qa device logs --device <name> 15
+lw-qa device shot --device <name> screen.png
+lw-qa device down --device <name>
 ```
 
 ## Product facts

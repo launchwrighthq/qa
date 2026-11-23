@@ -1,5 +1,6 @@
-// PNG reading for the evidence checks (spec 2.11.2): the size from the IHDR chunk, and a decoder
-// for the luminance spread that finds a blank frame. Node `zlib` only, no dependency.
+// PNG reading for the evidence checks (spec 2.11.2): the size from the IHDR chunk, a decoder for the
+// luminance spread that finds a blank frame, and the crop of a region comment (spec 2.10). Node
+// `zlib` only, no dependency.
 import { deflateSync, inflateSync } from 'node:zlib';
 import { LaunchwrightError } from '../kernel/index.mts';
 
@@ -19,6 +20,11 @@ export function pngSize(bytes: Uint8Array): PngSize | null {
   const width = view.getUint32(16);
   const height = view.getUint32(20);
   return width > 0 && height > 0 ? { width, height } : null;
+}
+
+/** A decoded PNG as 8-bit RGBA, four bytes per pixel. */
+export interface PngRgba extends PngSize {
+  rgba: Uint8Array;
 }
 
 /** A decoded PNG as one luminance value (0 to 255) per pixel. */
@@ -43,10 +49,10 @@ function paeth(a: number, b: number, c: number): number {
 }
 
 /**
- * Decodes a non-interlaced PNG of bit depth 8 or 16 (palette: 8) into luminance, with the
- * Rec. 601 weights. Alpha is ignored. Fails with `qa.png.unsupported` on any other form.
+ * Decodes a non-interlaced PNG of bit depth 8 or 16 (palette: 8) into 8-bit RGBA. A 16-bit sample
+ * keeps its high byte. A palette image is opaque. Fails with `qa.png.unsupported` on any other form.
  */
-export function decodePngLuma(bytes: Uint8Array): PngLuma {
+export function decodePngRgba(bytes: Uint8Array): PngRgba {
   const size = pngSize(bytes);
   if (!size) throw bad('not a PNG');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -83,7 +89,7 @@ export function decodePngLuma(bytes: Uint8Array): PngLuma {
   const stride = size.width * bpp;
   if (raw.length < (stride + 1) * size.height) throw bad('the image data is shorter than the header says');
 
-  const luma = new Float32Array(size.width * size.height);
+  const rgba = new Uint8Array(size.width * size.height * 4);
   let prev = new Uint8Array(stride);
   let line = new Uint8Array(stride);
   for (let y = 0; y < size.height; y += 1) {
@@ -105,26 +111,66 @@ export function decodePngLuma(bytes: Uint8Array): PngLuma {
     }
     const sample = (px: number, ch: number): number => (depth === 8 ? (line[px * bpp + ch] as number) : (line[px * bpp + ch * 2] as number));
     for (let px = 0; px < size.width; px += 1) {
-      let r: number;
-      let g: number;
-      let bl: number;
+      const o = (y * size.width + px) * 4;
       if (colorType === 3) {
         const i = (line[px] as number) * 3;
-        r = (palette as Uint8Array)[i] ?? 0;
-        g = (palette as Uint8Array)[i + 1] ?? 0;
-        bl = (palette as Uint8Array)[i + 2] ?? 0;
+        rgba[o] = (palette as Uint8Array)[i] ?? 0;
+        rgba[o + 1] = (palette as Uint8Array)[i + 1] ?? 0;
+        rgba[o + 2] = (palette as Uint8Array)[i + 2] ?? 0;
+        rgba[o + 3] = 255;
       } else if (colorType === 0 || colorType === 4) {
-        r = g = bl = sample(px, 0);
+        rgba[o] = rgba[o + 1] = rgba[o + 2] = sample(px, 0);
+        rgba[o + 3] = colorType === 4 ? sample(px, 1) : 255;
       } else {
-        r = sample(px, 0);
-        g = sample(px, 1);
-        bl = sample(px, 2);
+        rgba[o] = sample(px, 0);
+        rgba[o + 1] = sample(px, 1);
+        rgba[o + 2] = sample(px, 2);
+        rgba[o + 3] = colorType === 6 ? sample(px, 3) : 255;
       }
-      luma[y * size.width + px] = 0.299 * r + 0.587 * g + 0.114 * bl;
     }
     [prev, line] = [line, prev];
   }
-  return { ...size, luma };
+  return { ...size, rgba };
+}
+
+/** Decodes a PNG as `decodePngRgba` does into luminance, with the Rec. 601 weights. Alpha is ignored. */
+export function decodePngLuma(bytes: Uint8Array): PngLuma {
+  const { width, height, rgba } = decodePngRgba(bytes);
+  const luma = new Float32Array(width * height);
+  for (let i = 0; i < luma.length; i += 1) {
+    luma[i] = 0.299 * (rgba[i * 4] as number) + 0.587 * (rgba[i * 4 + 1] as number) + 0.114 * (rgba[i * 4 + 2] as number);
+  }
+  return { width, height, luma };
+}
+
+/** A rectangle of an image as fractions from 0 to 1, as a region comment holds it. */
+export interface FractionRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The pixel box of a fraction rectangle on an image, clamped to the image and at least 1 pixel each way. */
+export function pixelBox(size: PngSize, rect: FractionRect): { left: number; top: number; width: number; height: number } {
+  const clamp = (v: number, max: number): number => Math.min(max, Math.max(0, v));
+  const left = clamp(Math.round(rect.x * size.width), size.width - 1);
+  const top = clamp(Math.round(rect.y * size.height), size.height - 1);
+  const right = clamp(Math.round((rect.x + rect.w) * size.width), size.width);
+  const bottom = clamp(Math.round((rect.y + rect.h) * size.height), size.height);
+  return { left, top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+}
+
+/** Crops a PNG to a fraction rectangle and encodes the crop as an RGBA PNG. */
+export function cropPng(bytes: Uint8Array, rect: FractionRect): { png: Uint8Array; width: number; height: number } {
+  const image = decodePngRgba(bytes);
+  const box = pixelBox(image, rect);
+  const out = new Uint8Array(box.width * box.height * 4);
+  for (let y = 0; y < box.height; y += 1) {
+    const from = ((box.top + y) * image.width + box.left) * 4;
+    out.set(image.rgba.subarray(from, from + box.width * 4), y * box.width * 4);
+  }
+  return { png: encodePng(box.width, box.height, out), width: box.width, height: box.height };
 }
 
 /** The standard deviation of the luminance, 0 to 255. */

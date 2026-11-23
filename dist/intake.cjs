@@ -394,29 +394,6 @@ var init_manifest = __esm({
 });
 
 // src/kernel/services/peers.mts
-function packageOf(specifier) {
-  const parts = specifier.split("/");
-  return specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0] ?? specifier;
-}
-function missingSpecifier(message) {
-  return /['"]([^'"]+)['"]/.exec(message)?.[1];
-}
-function isMissingPeer(cause, name) {
-  if (cause?.code !== "ERR_MODULE_NOT_FOUND") return false;
-  const missing = missingSpecifier(String(cause.message ?? ""));
-  return missing === name || missing === packageOf(name);
-}
-async function optionalPeer(name, load) {
-  try {
-    return await (load ? load() : import(
-      /* @vite-ignore */
-      name
-    ));
-  } catch (cause) {
-    if (isMissingPeer(cause, name)) return void 0;
-    throw new LaunchwrightError("kernel.peer.load", `Cannot load the optional peer ${name}`, { cause, context: { name } });
-  }
-}
 var init_peers = __esm({
   "src/kernel/services/peers.mts"() {
     "use strict";
@@ -1808,23 +1785,28 @@ var init_manifest2 = __esm({
 });
 
 // src/services/comment-export.mts
+var import_promises8, import_node_path10;
 var init_comment_export = __esm({
   "src/services/comment-export.mts"() {
     "use strict";
     init_cjs_shims();
+    import_promises8 = require("fs/promises");
+    import_node_path10 = require("path");
+    init_kernel();
     init_manifest2();
+    init_png();
   }
 });
 
 // src/services/comment-server.mts
-var import_node_http, import_promises8, import_node_path10, MAX_BODY;
+var import_node_http, import_promises9, import_node_path11, MAX_BODY;
 var init_comment_server = __esm({
   "src/services/comment-server.mts"() {
     "use strict";
     init_cjs_shims();
     import_node_http = require("http");
-    import_promises8 = require("fs/promises");
-    import_node_path10 = require("path");
+    import_promises9 = require("fs/promises");
+    import_node_path11 = require("path");
     init_kernel();
     init_comments();
     init_mime();
@@ -2182,26 +2164,95 @@ var init_github = __esm({
   }
 });
 
-// src/intake/services/telegram-peers.mts
-async function loadTelegramPeer(spec, message) {
-  const mod = await optionalPeer(spec, () => import(spec));
-  if (mod === void 0) throw new LaunchwrightError("qa.intake.telegram.peer", message);
-  return mod;
+// src/telegram/mtproto.mts
+async function loadGramJs(importer = (name) => import(name)) {
+  const main = "telegram";
+  const sessions = "telegram/sessions";
+  try {
+    const lib = await importer(main);
+    const sess = await importer(sessions);
+    return { TelegramClient: lib.TelegramClient, StringSession: sess.StringSession };
+  } catch (cause) {
+    throw new LaunchwrightError("telegram.mtproto.missing", 'The MTProto user client needs GramJS: add the npm package "telegram" (2.26 or later) to the project.', { cause });
+  }
 }
-var loadBotApi, loadMtproto;
-var init_telegram_peers = __esm({
-  "src/intake/services/telegram-peers.mts"() {
+function socksProxy(url) {
+  let u;
+  try {
+    u = new URL(url);
+  } catch (cause) {
+    throw new LaunchwrightError("telegram.mtproto.proxy", "The proxy is not a URL. Write socks5://[user:password@]host:port.", { cause });
+  }
+  const port = Number(u.port);
+  if (u.protocol !== "socks5:" || u.hostname === "" || !Number.isInteger(port) || port <= 0) {
+    throw new LaunchwrightError("telegram.mtproto.proxy", "The proxy must be socks5://[user:password@]host:port.");
+  }
+  return {
+    ip: u.hostname,
+    port,
+    socksType: 5,
+    ...u.username ? { username: decodeURIComponent(u.username) } : {},
+    ...u.password ? { password: decodeURIComponent(u.password) } : {}
+  };
+}
+var UserClient;
+var init_mtproto = __esm({
+  "src/telegram/mtproto.mts"() {
     "use strict";
     init_cjs_shims();
     init_kernel();
-    loadBotApi = () => loadTelegramPeer(
-      "@launchwrighthq/telegram/bot-api",
-      "The telegram-bot intake driver calls the Bot API through module telegram. Install @launchwrighthq/telegram."
-    );
-    loadMtproto = () => loadTelegramPeer(
-      "@launchwrighthq/telegram/mtproto",
-      "The telegram-mtproto intake driver reads the chat through module telegram. Install @launchwrighthq/telegram."
-    );
+    UserClient = class _UserClient {
+      constructor(raw) {
+        this.raw = raw;
+      }
+      raw;
+      /** Connects with a saved session. Sign-in (phone code, 2FA) is a step outside this wrapper. */
+      static async connect(opts) {
+        if (!Number.isInteger(opts.apiId) || opts.apiId <= 0 || opts.apiHash === "") {
+          throw new LaunchwrightError("telegram.mtproto.config", "The user client needs apiId and apiHash from my.telegram.org.", { context: { key: "apiId" } });
+        }
+        const proxy = opts.proxy === void 0 ? void 0 : socksProxy(opts.proxy);
+        const gram = await (opts.loader ?? loadGramJs)();
+        const client = new gram.TelegramClient(new gram.StringSession(opts.session), opts.apiId, opts.apiHash, {
+          connectionRetries: opts.connectionRetries ?? 5,
+          ...proxy ? { proxy } : {}
+        });
+        try {
+          await client.connect();
+        } catch (cause) {
+          throw new LaunchwrightError("telegram.mtproto.connect", "The MTProto user client cannot connect.", { cause });
+        }
+        return new _UserClient(client);
+      }
+      sendMessage(peer, text) {
+        return this.raw.sendMessage(peer, { message: text });
+      }
+      /** Reads messages of a chat. `reverse: true` gives the oldest first, from `minId` or `offsetDate` on. */
+      async history(peer, opts = {}) {
+        return [...await this.raw.getMessages(peer, { ...opts })];
+      }
+      /** Reads the messages with these ids. A missing message is absent from the result. */
+      async messages(peer, ids) {
+        const found = await this.raw.getMessages(peer, { ids });
+        return [...found].filter((m) => m !== void 0 && m !== null);
+      }
+      /** Downloads the media of a message into memory. Throws `telegram.mtproto.download`. */
+      async downloadMedia(message) {
+        let data;
+        try {
+          data = await this.raw.downloadMedia(message, {});
+        } catch (cause) {
+          throw new LaunchwrightError("telegram.mtproto.download", "The MTProto user client cannot download the media of a message.", { cause });
+        }
+        if (!(data instanceof Uint8Array)) {
+          throw new LaunchwrightError("telegram.mtproto.download", "The message has no media to download.", { context: { result: typeof data } });
+        }
+        return data;
+      }
+      async close() {
+        await this.raw.disconnect();
+      }
+    };
   }
 });
 
@@ -2265,7 +2316,7 @@ var init_telegram_mtproto = __esm({
     init_cjs_shims();
     init_kernel();
     init_media();
-    init_telegram_peers();
+    init_mtproto();
     init_contract();
     telegramMtprotoConfig = import_zod6.z.object({
       apiId: import_zod6.z.coerce.number().int().positive(),
@@ -2309,10 +2360,14 @@ var init_telegram_mtproto = __esm({
       cfg;
       /** Connects the user client behind the allowlist. */
       async connect() {
-        const { UserClient, loadGramJs } = await loadMtproto();
-        const load = this.opts.loader ?? loadGramJs;
+        let gram;
         try {
-          const client = await UserClient.connect({ ...this.cfg, loader: async () => readOnlyGramJs(await load()) });
+          gram = readOnlyGramJs(await (this.opts.loader ?? loadGramJs)());
+        } catch (cause) {
+          throw new LaunchwrightError("qa.intake.telegram.peer", 'The telegram-mtproto intake driver reads the chat through GramJS. Add the npm package "telegram" (2.26 or later).', { cause });
+        }
+        try {
+          const client = await UserClient.connect({ ...this.cfg, loader: async () => gram });
           return new ReadOnlyTelegram(client);
         } catch (cause) {
           throw new LaunchwrightError("qa.intake.telegram.connect", "The Telegram user session cannot connect. Check QA_TELEGRAM_SESSION and the API id.", { cause });
@@ -2408,13 +2463,113 @@ var init_telegram_mtproto = __esm({
   }
 });
 
+// src/telegram/bot-api.mts
+function redactToken(text, token2) {
+  const stripped = token2 ? text.split(token2).join("[redacted]") : text;
+  return stripped.replace(TOKEN_SHAPE, "[redacted]");
+}
+function reasonOf(status, errorCode) {
+  const code = errorCode ?? status;
+  if (status === 0) return "network";
+  if (code === 429) return "rate_limited";
+  if (code >= 500) return "server";
+  if (code === 401 || code === 404) return "unauthorized";
+  if (code === 403) return "forbidden";
+  if (code === 409) return "conflict";
+  if (code === 400) return "bad_request";
+  return "unknown";
+}
+function botIdOfToken(token2) {
+  const at = token2.indexOf(":");
+  const id = Number(token2.slice(0, at));
+  if (at <= 0 || !Number.isSafeInteger(id) || id <= 0 || token2.length - at < 2) {
+    throw new LaunchwrightError("telegram.token.invalid", "A bot token has the form <bot id>:<secret>.", { context: { key: "token" } });
+  }
+  return id;
+}
+var TOKEN_SHAPE, TelegramApiError, BotApi;
+var init_bot_api = __esm({
+  "src/telegram/bot-api.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_kernel();
+    TOKEN_SHAPE = /[0-9]{4,}:[A-Za-z0-9_-]{20,}/g;
+    TelegramApiError = class extends LaunchwrightError {
+      method;
+      /** The HTTP status. 0 when no answer arrived. */
+      status;
+      /** Telegram's own description, with any token removed. */
+      description;
+      constructor(method, failure, cause) {
+        const reason = reasonOf(failure.status, failure.error_code);
+        const raw = failure.description ?? (failure.status === 0 ? "no answer from the Bot API" : `HTTP ${failure.status}`);
+        super(`telegram.api.${reason}`, redactToken(`Bot API ${method} failed (${failure.error_code ?? failure.status}): ${raw}`), {
+          cause,
+          context: { method, status: failure.status, errorCode: failure.error_code, reason }
+        });
+        this.method = method;
+        this.status = failure.status;
+        this.description = redactToken(raw);
+      }
+    };
+    BotApi = class {
+      botId;
+      token;
+      apiUrl;
+      timeoutMs;
+      fetchFn;
+      constructor(opts) {
+        this.botId = botIdOfToken(opts.token);
+        this.token = opts.token;
+        this.apiUrl = (opts.apiUrl ?? "https://api.telegram.org").replace(/\/+$/, "");
+        this.timeoutMs = opts.timeoutMs ?? 1e4;
+        this.fetchFn = opts.fetch ?? ((input, init) => fetch(input, init));
+      }
+      /** Calls one Bot API method and returns its `result`. A failed call throws `TelegramApiError`. */
+      async call(method, params = {}, opts = {}) {
+        const timeout = AbortSignal.timeout(opts.timeoutMs ?? this.timeoutMs);
+        const signal = opts.signal ? AbortSignal.any([timeout, opts.signal]) : timeout;
+        let response;
+        try {
+          response = await this.fetchFn(`${this.apiUrl}/bot${this.token}/${method}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(params),
+            signal
+          });
+        } catch (cause) {
+          if (opts.signal?.aborted) throw new LaunchwrightError("telegram.api.aborted", `Bot API ${method} was aborted.`, { cause, context: { method } });
+          throw new TelegramApiError(method, { status: 0 }, cause);
+        }
+        let answer;
+        try {
+          answer = await response.json();
+        } catch (cause) {
+          throw new TelegramApiError(method, { status: response.status, description: `the answer is not JSON (HTTP ${response.status})` }, cause);
+        }
+        if (answer.ok === true) return answer.result;
+        throw new TelegramApiError(method, {
+          status: response.status,
+          ...answer.error_code !== void 0 ? { error_code: answer.error_code } : {},
+          ...answer.description !== void 0 ? { description: answer.description } : {}
+        });
+      }
+      getMe() {
+        return this.call("getMe");
+      }
+      setChatMenuButton(menuButton, chatId) {
+        return this.call("setChatMenuButton", { menu_button: menuButton, ...chatId !== void 0 ? { chat_id: chatId } : {} });
+      }
+    };
+  }
+});
+
 // src/intake/drivers/intake/telegram-bot.mts
 var telegram_bot_exports = {};
 __export(telegram_bot_exports, {
   BOT_API_MAX_BYTES: () => BOT_API_MAX_BYTES,
   BOT_READ_METHODS: () => BOT_READ_METHODS,
   TelegramBotIntakeDriver: () => TelegramBotIntakeDriver,
-  loadBotApi: () => loadBotApi,
   telegramBotConfig: () => telegramBotConfig
 });
 function messageOfUpdate(u) {
@@ -2458,8 +2613,8 @@ var init_telegram_bot = __esm({
     init_kernel();
     init_src();
     init_media();
+    init_bot_api();
     init_contract();
-    init_telegram_peers();
     BOT_API_MAX_BYTES = 20 * 1024 * 1024;
     BOT_READ_METHODS = /* @__PURE__ */ new Set(["getUpdates", "getFile"]);
     telegramBotConfig = import_zod6.z.object({
@@ -2480,7 +2635,7 @@ var init_telegram_bot = __esm({
         }
         this.cfg = parsed.data;
         this.fetchFn = opts.fetch ?? ((input, init) => fetch(input, init));
-        this.api = new opts.botApi.BotApi({ token: this.cfg.token, apiUrl: this.cfg.apiUrl, fetch: this.fetchFn });
+        this.api = new BotApi({ token: this.cfg.token, apiUrl: this.cfg.apiUrl, fetch: this.fetchFn });
       }
       opts;
       source = "telegram";
@@ -2550,7 +2705,7 @@ var init_telegram_bot = __esm({
         try {
           path = (await this.call("getFile", { file_id: file.file_id })).file_path;
         } catch (cause) {
-          if (!(cause instanceof this.opts.botApi.TelegramApiError)) throw cause;
+          if (!(cause instanceof TelegramApiError)) throw cause;
           return { ...base, skipped: /too big/i.test(cause.description) ? "too-large" : "unreachable" };
         }
         if (path === void 0) return { ...base, skipped: "unreachable" };
@@ -2583,8 +2738,8 @@ async function createIntakeDriver(name, intake, deps = {}) {
       return new TelegramMtprotoIntakeDriver2(cfg, { maxBytes, ...deps.loadGramJs ? { loader: deps.loadGramJs } : {} });
     }
     case "telegram-bot": {
-      const { loadBotApi: loadBotApi2, TelegramBotIntakeDriver: TelegramBotIntakeDriver2 } = await Promise.resolve().then(() => (init_telegram_bot(), telegram_bot_exports));
-      return new TelegramBotIntakeDriver2(cfg, { maxBytes, botApi: await loadBotApi2(), ...deps.fetch ? { fetch: deps.fetch } : {} });
+      const { TelegramBotIntakeDriver: TelegramBotIntakeDriver2 } = await Promise.resolve().then(() => (init_telegram_bot(), telegram_bot_exports));
+      return new TelegramBotIntakeDriver2(cfg, { maxBytes, ...deps.fetch ? { fetch: deps.fetch } : {} });
     }
     case "fake": {
       const { FakeIntakeDriver: FakeIntakeDriver2 } = await Promise.resolve().then(() => (init_fake(), fake_exports));
@@ -2609,10 +2764,10 @@ function chatName(chat) {
   return recordId(chat);
 }
 function chatDir(root, chat) {
-  return (0, import_node_path11.join)(root, INTAKE_DIR, "telegram", chatName(chat));
+  return (0, import_node_path12.join)(root, INTAKE_DIR, "telegram", chatName(chat));
 }
 function cursorFile(root, chat) {
-  return (0, import_node_path11.join)(root, INTAKE_DIR, "telegram", `${chatName(chat)}.cursor`);
+  return (0, import_node_path12.join)(root, INTAKE_DIR, "telegram", `${chatName(chat)}.cursor`);
 }
 async function jsonOr(file, fallback) {
   return await readJsonOrNull(file) ?? fallback;
@@ -2625,16 +2780,16 @@ async function writeCursor(root, chat, driver, cursor) {
   const file = cursorFile(root, chat);
   const all = await jsonOr(file, {});
   all[driver] = cursor;
-  await (0, import_promises9.mkdir)((0, import_node_path11.join)(root, INTAKE_DIR, "telegram"), { recursive: true });
-  await (0, import_promises9.writeFile)(file, `${JSON.stringify(all, null, 2)}
+  await (0, import_promises10.mkdir)((0, import_node_path12.join)(root, INTAKE_DIR, "telegram"), { recursive: true });
+  await (0, import_promises10.writeFile)(file, `${JSON.stringify(all, null, 2)}
 `);
 }
 function readMessages(root, chat) {
-  return jsonOr((0, import_node_path11.join)(chatDir(root, chat), "messages.json"), []);
+  return jsonOr((0, import_node_path12.join)(chatDir(root, chat), "messages.json"), []);
 }
 async function stageBatch(root, chat, batch) {
   const dir = chatDir(root, chat);
-  await (0, import_promises9.mkdir)((0, import_node_path11.join)(dir, "media"), { recursive: true });
+  await (0, import_promises10.mkdir)((0, import_node_path12.join)(dir, "media"), { recursive: true });
   const all = new Map((await readMessages(root, chat)).map((m) => [m.id, m]));
   for (const item of batch.items) {
     const media = [];
@@ -2645,13 +2800,13 @@ async function stageBatch(root, chat, batch) {
         continue;
       }
       const file = `media/${recordId(item.id)}-${i + 1}.${extensionOf(m.mime)}`;
-      await (0, import_promises9.writeFile)((0, import_node_path11.join)(dir, file), data);
+      await (0, import_promises10.writeFile)((0, import_node_path12.join)(dir, file), data);
       media.push({ ...rest, file });
     }
     all.set(item.id, { ...item, media });
   }
   const messages = [...all.values()].sort(byId);
-  await (0, import_promises9.writeFile)((0, import_node_path11.join)(dir, "messages.json"), `${JSON.stringify(messages, null, 2)}
+  await (0, import_promises10.writeFile)((0, import_node_path12.join)(dir, "messages.json"), `${JSON.stringify(messages, null, 2)}
 `);
   return messages;
 }
@@ -2664,17 +2819,17 @@ function proposeGroups(chat, messages) {
     parent.set(id, at);
     return at;
   };
-  const join9 = (a, b) => {
+  const join10 = (a, b) => {
     const ra = find(a);
     const rb = find(b);
     if (ra !== rb) parent.set(rb, ra);
   };
   const lastOf = /* @__PURE__ */ new Map();
   for (const m of sorted) {
-    if (m.replyTo !== void 0 && parent.has(m.replyTo)) join9(m.replyTo, m.id);
+    if (m.replyTo !== void 0 && parent.has(m.replyTo)) join10(m.replyTo, m.id);
     const at = Date.parse(m.at);
     const prev = lastOf.get(m.author);
-    if (prev && at - prev.at < JOIN_GAP_MS) join9(prev.id, m.id);
+    if (prev && at - prev.at < JOIN_GAP_MS) join10(prev.id, m.id);
     lastOf.set(m.author, { id: m.id, at });
   }
   const groups = /* @__PURE__ */ new Map();
@@ -2685,14 +2840,14 @@ function proposeGroups(chat, messages) {
   return [...groups.values()].map((ids) => ({ title: `Telegram report ${chat}/${ids[0]} (${ids.length} ${ids.length === 1 ? "message" : "messages"})`, messages: ids }));
 }
 async function writeProposal(root, chat, groups) {
-  const file = (0, import_node_path11.join)(chatDir(root, chat), "groups.proposed.json");
-  await (0, import_promises9.mkdir)(chatDir(root, chat), { recursive: true });
-  await (0, import_promises9.writeFile)(file, `${JSON.stringify({ chat, groups }, null, 2)}
+  const file = (0, import_node_path12.join)(chatDir(root, chat), "groups.proposed.json");
+  await (0, import_promises10.mkdir)(chatDir(root, chat), { recursive: true });
+  await (0, import_promises10.writeFile)(file, `${JSON.stringify({ chat, groups }, null, 2)}
 `);
   return file;
 }
 async function readGroups(root, chat) {
-  const file = (0, import_node_path11.join)(chatDir(root, chat), "groups.json");
+  const file = (0, import_node_path12.join)(chatDir(root, chat), "groups.json");
   const raw = await jsonOr(file, null);
   if (raw === null) {
     throw new LaunchwrightError("qa.intake.telegram.groups", `No groups.json for chat ${chat}. Review groups.proposed.json and write groups.json beside it.`, { context: { chat } });
@@ -2720,7 +2875,7 @@ async function applyGroups(root, chat) {
     for (const m of list2) {
       for (const s of m.media) {
         const { file, ...meta } = s;
-        media.push(file === void 0 ? meta : { ...meta, data: new Uint8Array(await (0, import_promises9.readFile)((0, import_node_path11.join)(dir, file))) });
+        media.push(file === void 0 ? meta : { ...meta, data: new Uint8Array(await (0, import_promises10.readFile)((0, import_node_path12.join)(dir, file))) });
       }
     }
     out.push(
@@ -2739,13 +2894,13 @@ async function applyGroups(root, chat) {
   }
   return out;
 }
-var import_promises9, import_node_path11, JOIN_GAP_MS, groupsFile, byId;
+var import_promises10, import_node_path12, JOIN_GAP_MS, groupsFile, byId;
 var init_telegram = __esm({
   "src/intake/services/telegram.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises9 = require("fs/promises");
-    import_node_path11 = require("path");
+    import_promises10 = require("fs/promises");
+    import_node_path12 = require("path");
     init_kernel();
     init_fs();
     init_src();
@@ -2816,7 +2971,7 @@ async function github(args, opts, deps) {
     media: batch.items.flatMap((i) => i.media)
   });
   opts.out(`wrote ${issue.id}: ${issue.attachments.length} attachments, ${issue.skipped.length} skipped`);
-  opts.out(`  ${(0, import_node_path12.relative)(opts.cwd, recordDir(opts.cwd, issue.id))}/issue.md`);
+  opts.out(`  ${(0, import_node_path13.relative)(opts.cwd, recordDir(opts.cwd, issue.id))}/issue.md`);
   return 0;
 }
 function followSignal(opts) {
@@ -2867,7 +3022,7 @@ async function telegram(args, opts, deps) {
   const groups = proposeGroups(chat, staged);
   const file = await writeProposal(opts.cwd, chat, groups);
   opts.out(`read ${batch.items.length} messages from chat ${chat} with ${name}; ${staged.length} staged`);
-  opts.out(`proposed ${groups.length} groups: ${(0, import_node_path12.relative)(opts.cwd, file)}`);
+  opts.out(`proposed ${groups.length} groups: ${(0, import_node_path13.relative)(opts.cwd, file)}`);
   opts.out(`review it, write groups.json beside it, then run: lw qa intake telegram --chat ${chat} --apply`);
   return 0;
 }
@@ -2901,12 +3056,12 @@ function createIntakeCommand(deps = {}) {
     }
   };
 }
-var import_node_path12, USAGE, TELEGRAM_DRIVERS, TELEGRAM_VALUES, qa_intake_default;
+var import_node_path13, USAGE, TELEGRAM_DRIVERS, TELEGRAM_VALUES, qa_intake_default;
 var init_qa_intake = __esm({
   "src/intake/commands/qa-intake.mts"() {
     "use strict";
     init_cjs_shims();
-    import_node_path12 = require("path");
+    import_node_path13 = require("path");
     init_kernel();
     init_args();
     init_src();

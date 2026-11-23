@@ -1,7 +1,7 @@
 import { ZodType } from 'zod';
-import { A as App } from './app-KXgbRXYO.cjs';
-import { Q as QaConfig } from './config-B-lxHEnb.cjs';
-import { Q as QaTarget } from './contract-braBVxB_.cjs';
+import { A as App } from './app-KXgbRXYO.js';
+import { Q as QaConfig } from './config-B-lxHEnb.js';
+import { Q as QaTarget } from './contract-braBVxB_.js';
 
 /** A module's service provider: it binds services in register() and starts them in boot(). */
 interface Provider {
@@ -35,10 +35,20 @@ interface QaCommandOptions {
     /** Stops a long-running subcommand (`lw qa telegram`, `lw qa sink`). */
     signal?: AbortSignal;
     /**
+     * The command the user typed: `lw qa` (the default, the framework CLI) or `lw-qa` (the bin of the
+     * library). Every usage, hint and error line prints it.
+     */
+    commandName?: string;
+    /**
      * `qa.target` drivers that a run adds or uses in place of a built-in one, for example
      * `playwright` with a browser binary. `lw qa` adds the targets of the extension modules here.
      */
     targets?: Record<string, QaTarget>;
+    /**
+     * Extension modules the CLI always has. The `lw-qa` bin gives the intake and device extensions of
+     * the library, which have no `qa-<x>` package to load. An enabled config section of the same name wins.
+     */
+    extensions?: readonly QaExtension[];
 }
 /** A `lw qa <sub>` module: `./qa-<sub>.mts` with this default export. */
 interface QaSubcommand {

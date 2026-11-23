@@ -7,7 +7,7 @@ import { LaunchwrightError } from '../kernel/services/errors.mts';
 import { hmacHex } from '../kernel/services/hmac.mts';
 import { initDataCheckString } from '../kernel/services/init-data.mts';
 
-export type { FetchFn } from '../services/peers.mts';
+export type { FetchFn } from '../telegram/bot-api.mts';
 
 export interface TgUser {
   id: number;

@@ -1,7 +1,7 @@
 // Builds a `qa.intake` driver from config `qa.intake`. Each driver file loads on first use, so the
-// `github` driver needs no `telegram` module and the `telegram-*` drivers need no `gh`.
+// `github` driver needs no GramJS and the `telegram-*` drivers need no `gh`.
 import { LaunchwrightError } from '../../kernel/index.mts';
-import type { GramJsModule } from './telegram-peers.mts';
+import type { GramJsModule } from '../../telegram/mtproto.mts';
 import type { IntakeConfig } from '../config.mts';
 import type { QaIntakeDriver } from '../drivers/intake/contract.mts';
 import type { GhRunner } from './gh.mts';
@@ -40,8 +40,8 @@ export async function createIntakeDriver(name: string, intake: IntakeConfig, dep
       return new TelegramMtprotoIntakeDriver(cfg, { maxBytes, ...(deps.loadGramJs ? { loader: deps.loadGramJs } : {}) });
     }
     case 'telegram-bot': {
-      const { loadBotApi, TelegramBotIntakeDriver } = await import('../drivers/intake/telegram-bot.mts');
-      return new TelegramBotIntakeDriver(cfg, { maxBytes, botApi: await loadBotApi(), ...(deps.fetch ? { fetch: deps.fetch } : {}) });
+      const { TelegramBotIntakeDriver } = await import('../drivers/intake/telegram-bot.mts');
+      return new TelegramBotIntakeDriver(cfg, { maxBytes, ...(deps.fetch ? { fetch: deps.fetch } : {}) });
     }
     case 'fake': {
       const { FakeIntakeDriver } = await import('../drivers/intake/fake.mts');
