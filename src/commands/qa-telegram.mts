@@ -1,7 +1,7 @@
 // `lw qa telegram [--port <p>]` (spec 2.10): the fake Bot API server and the `/__tg` chat page on
 // loopback, for the QA API and the `telegram-fake` leg. It serves the bots of config
 // `telegram.bots` with the fake tokens of the QA API, and one chat per persona of the world files.
-import { LaunchwrightError, optionalPeer } from '@launchwrighthq/kernel';
+import { LaunchwrightError, optionalPeer } from '../kernel/index.mts';
 import { QA_TELEGRAM_PORT, type QaFakeBot, qaFakeBots } from '../world/services/app.mts';
 import { guarded, parseArgs, processSignal, worldContext } from '../world/services/context.mts';
 import { qaTelegramId } from '../world/services/ids.mts';

@@ -2,7 +2,7 @@
 // MTProto user client, with a session that the operator supplies. A method allowlist wraps the
 // client: history, messages by id and media download. Any other method fails with
 // `qa.intake.telegram.method`. The allowlist is an accident guard, not a sandbox (spec 3.5).
-import { BaseDriver, LaunchwrightError, z } from '@launchwrighthq/kernel';
+import { BaseDriver, LaunchwrightError, z } from '../../../kernel/index.mts';
 import { kindOf, mimeOf } from '../../services/media.mts';
 import { type GramJsClient, type GramJsModule, loadMtproto, type UserClient } from '../../services/telegram-peers.mts';
 import { type IntakeBatch, type IntakeWindow, QA_INTAKE_SPEC_VERSION, type QaIntakeDriver, type RawItem, type RawMedia } from './contract.mts';

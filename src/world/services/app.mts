@@ -8,7 +8,7 @@
 import { createHash } from 'node:crypto';
 import { isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { type App, LaunchwrightError, messageOf, resolveImport } from '@launchwrighthq/kernel';
+import { type App, LaunchwrightError, messageOf, resolveImport } from '../../kernel/index.mts';
 import { loadDb } from '../../services/peers.mts';
 import type { QaConfig } from '../../config.mts';
 import { type CheckoutFacts, devProjectName } from './checkout.mts';

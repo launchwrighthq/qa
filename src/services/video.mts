@@ -1,7 +1,7 @@
 // Video checks (spec 2.11.2): duration through `ffprobe`, black time through `ffmpeg -vf
 // blackdetect`. The tools arrive as functions, so a test gives recorded output and runs no binary.
 import { execFile } from 'node:child_process';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../kernel/index.mts';
 import type { QaConfig } from '../config.mts';
 import type { RowFailure } from './types.mts';
 

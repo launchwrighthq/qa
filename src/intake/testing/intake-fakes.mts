@@ -2,7 +2,7 @@
 // fixture files, so no test starts `gh` or reaches Telegram.
 import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 import type { GramJsClient, GramJsModule } from '../services/telegram-peers.mts';
 import type { GhRunner } from '../services/gh.mts';
 

@@ -5,7 +5,7 @@
 //
 // A result line that carries no `reason` is `crashed`, never a code guessed from its text. A
 // planned capture with no result line fails as `crashed`: a missing picture is never silent.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 import type { Provenance } from '../../services/types.mts';
 import {
   coverageFor,

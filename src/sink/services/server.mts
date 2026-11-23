@@ -5,7 +5,7 @@ import { appendFile, mkdir } from 'node:fs/promises';
 import { createServer, type IncomingHttpHeaders, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { dirname } from 'node:path';
-import { type Clock, LaunchwrightError, systemClock } from '@launchwrighthq/kernel';
+import { type Clock, LaunchwrightError, systemClock } from '../../kernel/index.mts';
 import { type FaultRule, FaultPlan, parseFault, seededSource } from './faults.mts';
 
 /** The text that replaces a masked header value. */

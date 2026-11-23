@@ -4,7 +4,7 @@
 // peer, so the driver imports it only when a session opens.
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { type Clock, LaunchwrightError, systemClock } from '@launchwrighthq/kernel';
+import { type Clock, LaunchwrightError, systemClock } from '../../kernel/index.mts';
 import type { Browser, BrowserContext, BrowserContextOptions, BrowserType, Page } from '@playwright/test';
 import { pngSize } from '../../services/png.mts';
 import type { Act, Leg, Settle } from '../../services/types.mts';

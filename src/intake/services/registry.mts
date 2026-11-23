@@ -1,6 +1,6 @@
 // Builds a `qa.intake` driver from config `qa.intake`. Each driver file loads on first use, so the
 // `github` driver needs no `telegram` module and the `telegram-*` drivers need no `gh`.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 import type { GramJsModule } from './telegram-peers.mts';
 import type { IntakeConfig } from '../config.mts';
 import type { QaIntakeDriver } from '../drivers/intake/contract.mts';

@@ -2,8 +2,8 @@
 // It calls only `getUpdates` and `getFile`. The Bot API downloads files up to 20 MB; a larger
 // file is `skipped: too-large`. The bot has no history from before it joined. The calls go through
 // `BotApi` of `@launchwrighthq/telegram/bot-api`, an optional peer that `loadBotApi` loads.
-import { BaseDriver, LaunchwrightError, z } from '@launchwrighthq/kernel';
-import { mimeOfExtension } from '@launchwrighthq/qa';
+import { BaseDriver, LaunchwrightError, z } from '../../../kernel/index.mts';
+import { mimeOfExtension } from '../../../index.mts';
 import { download, type FetchFn, kindOf } from '../../services/media.mts';
 import type { BotApi, BotApiModule, TgMessage } from '../../services/telegram-peers.mts';
 import { type IntakeBatch, type IntakeWindow, QA_INTAKE_SPEC_VERSION, type QaIntakeDriver, type RawItem, type RawMedia } from './contract.mts';

@@ -8,7 +8,7 @@
 // renders the pages with no disk. `buildViewer` loads a report and writes the bundle.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { escapeHtml, LaunchwrightError } from '@launchwrighthq/kernel';
+import { escapeHtml, LaunchwrightError } from '../kernel/index.mts';
 import type { Comment, CommentAnchor } from './comments.mts';
 import { plannedPairs, resultText } from './evidence.mts';
 import { pairKey } from './ledger.mts';

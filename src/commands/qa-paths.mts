@@ -3,8 +3,8 @@
 // scan, never from a route list of this file.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { type App, LaunchwrightError } from '@launchwrighthq/kernel';
-import { type CommandArgs, parseCommandArgs, UsageError } from '@launchwrighthq/kernel/args';
+import { type App, LaunchwrightError } from '../kernel/index.mts';
+import { type CommandArgs, parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { type QaConfig, qaConfigOf } from '../config.mts';
 import type { QaSession } from '../drivers/target/contract.mts';
 import type { Surface } from '../services/types.mts';

@@ -1,6 +1,6 @@
 // `lw qa publish <slug>` (spec 2.12.3): copies a report bundle to the `qa.publish.storage` disk.
-import type { App } from '@launchwrighthq/kernel';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import type { App } from '../kernel/index.mts';
+import { LaunchwrightError } from '../kernel/index.mts';
 import { qaConfigOf } from '../config.mts';
 import { loadStorage } from '../services/peers.mts';
 import { legDefinitions } from '../services/legs.mts';

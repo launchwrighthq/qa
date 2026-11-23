@@ -7,7 +7,7 @@
 // the rows; this file decides nothing a person would argue about.
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve as resolvePath } from 'node:path';
-import { type Clock, LaunchwrightError } from '@launchwrighthq/kernel';
+import { type Clock, LaunchwrightError } from '../kernel/index.mts';
 import { git, gitInstant, gitOut, lines, LOG_FORMAT, type LogCommit, parseLog } from './changes.mts';
 import { INTAKE_DIR, type Leg, type QaIssue, type Surface } from './types.mts';
 

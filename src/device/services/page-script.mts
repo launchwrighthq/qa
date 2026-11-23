@@ -1,8 +1,8 @@
 // The expressions a device target evaluates inside a page (spec 2.4). Android CDP, the WebKit
 // inspector and WebDriver all run the same text, so a row means one thing on every device leg.
 // Each expression is one IIFE that returns a JSON value. Pure: nothing here talks to a device.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import type { Act, Settle } from '@launchwrighthq/qa';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import type { Act, Settle } from '../../index.mts';
 
 /** A selector: CSS, or a role with an accessible name (spec 2.14 rule C5). */
 export type ParsedSelector = { kind: 'css'; css: string } | { kind: 'role'; role: string; name: string };

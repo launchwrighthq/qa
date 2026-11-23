@@ -1,7 +1,7 @@
 // Media helpers of intake: the attachment kind of a media type, a media type from the first bytes,
 // and a download with a size cap.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { mimeOfExtension } from '@launchwrighthq/qa';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import { mimeOfExtension } from '../../index.mts';
 import type { AttachmentKind, SkipReason } from '../drivers/intake/contract.mts';
 
 export type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;

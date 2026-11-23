@@ -1,6 +1,6 @@
 // `lw qa job` lists the registered jobs; `lw qa job run <kind> [--payload <json>] [--tenant <id>]`
 // runs one once on the QA app (spec 2.14 rule S4).
-import { appPath, LaunchwrightError } from '@launchwrighthq/kernel';
+import { appPath, LaunchwrightError } from '../kernel/index.mts';
 import { importFromProject, loadAppEntry } from '../world/services/app.mts';
 import { guarded, parseArgs, withWorld, worldContext } from '../world/services/context.mts';
 import { importProjectJobs, type JobRegistry, listJobs, runJob } from '../world/services/jobs.mts';

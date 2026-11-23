@@ -1,7 +1,7 @@
 // The shot manifest: the rows a QA pass plans before any browser opens (spec 2.4). The plan of a
 // report is `<reportDir>/<slug>.shots.json`, and it holds one `Manifest`.
 import { readFile } from 'node:fs/promises';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../kernel/index.mts';
 import { DEFAULT_LEGS } from './legs.mts';
 import { type Act, ACT_KINDS, type EvidenceKind, type Settle, type Surface } from './types.mts';
 

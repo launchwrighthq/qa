@@ -11,7 +11,7 @@
 // drives every classification from fixture strings.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 import ts from 'typescript';
 import {
   IGNORE_TAG,

@@ -7,8 +7,8 @@
 // that section 4 links (spec 2.15.4).
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { escapeHtml, LaunchwrightError } from '@launchwrighthq/kernel';
-import { pathKind, readTextOrNull } from '@launchwrighthq/kernel/fs';
+import { escapeHtml, LaunchwrightError } from '../kernel/index.mts';
+import { pathKind, readTextOrNull } from '../kernel/services/fs.mts';
 import {
   COVERAGE_END,
   COVERAGE_START,

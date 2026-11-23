@@ -1,7 +1,7 @@
 // The contract suite of driver kind `qa.intake` (spec 2.15.1, 3.3 "Intake contract"). Every
 // intake driver runs it against its own fixtures, described by an `IntakeScenario`.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { defineContract } from '@launchwrighthq/kernel/testing';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import { defineContract } from '../../kernel/testing/index.mts';
 import { expect } from 'vitest';
 import { type AttachmentKind, QA_INTAKE_SPEC_VERSION, type QaIntakeDriver } from '../drivers/intake/contract.mts';
 

@@ -2,9 +2,9 @@
 // world state and address (spec 1.3).
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { LaunchwrightError, systemClock } from '@launchwrighthq/kernel';
-import { parseCommandArgs, UsageError } from '@launchwrighthq/kernel/args';
-import { readTextOrNullSync } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError, systemClock } from '../kernel/index.mts';
+import { parseCommandArgs, UsageError } from '../kernel/services/args.mts';
+import { readTextOrNullSync } from '../kernel/services/fs.mts';
 import { qaConfigOf } from '../config.mts';
 import { legDefinitions } from '../services/legs.mts';
 import { validateManifest } from '../services/manifest.mts';

@@ -3,8 +3,8 @@
 // is a secret: `.lw/` is out of git, and no reader prints the record. The folder stays local.
 import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { readTextOrNull } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError } from '../kernel/index.mts';
+import { readTextOrNull } from '../kernel/services/fs.mts';
 
 /** The run store folder, relative to the project root. */
 export const BOT_STORE_DIR = '.lw/qa/bots';

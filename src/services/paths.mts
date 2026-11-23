@@ -7,7 +7,7 @@
 //
 // The crawl is bounded and deterministic: the bounds are constants here, not flags, so two runs of
 // one tree give the same paths.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../kernel/index.mts';
 import type { QaSession } from '../drivers/target/contract.mts';
 import { type Inventory, PROVENANCE } from '../states/services/inventory.mts';
 import type { Provenance, Settle, Surface } from './types.mts';

@@ -3,8 +3,8 @@
 // it into `docs/`, a log line or a publish bundle.
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { sha256 } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError } from '../kernel/index.mts';
+import { sha256 } from '../kernel/services/fs.mts';
 import { extensionOf } from './mime.mts';
 import { INTAKE_DIR, type QaIssue, type RawMedia } from './types.mts';
 

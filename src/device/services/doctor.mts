@@ -2,7 +2,7 @@
 // checks ssh, adb, the Android SDK, ios_webkit_debug_proxy, scrcpy, ffmpeg and pairing, and names
 // the fix for each failure. It never installs, starts or stops anything. A check never throws: a
 // failure is a row.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 import { deviceKeys, simulatorDeviceKeys } from '../config.mts';
 import { deviceState, keyguard } from './adb.mts';
 import { androidHandle, stateFix } from './android-session.mts';

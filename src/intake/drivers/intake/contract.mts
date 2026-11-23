@@ -1,7 +1,7 @@
 // Driver kind `qa.intake` (spec 2.15.1): reads raw items from a bug report source. The intake
 // submodule writes the items as issue records. A driver only reads: it posts nothing to the source.
-import type { Driver } from '@launchwrighthq/kernel';
-import type { AttachmentKind, QaIssue, RawMedia, SkipReason } from '@launchwrighthq/qa';
+import type { Driver } from '../../../kernel/index.mts';
+import type { AttachmentKind, QaIssue, RawMedia, SkipReason } from '../../../index.mts';
 
 export type { AttachmentKind, RawMedia, SkipReason };
 

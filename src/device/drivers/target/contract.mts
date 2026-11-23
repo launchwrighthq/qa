@@ -11,4 +11,4 @@ export {
   type SessionLogLine,
   type TargetReadiness,
   type VideoCapture,
-} from '@launchwrighthq/qa';
+} from '../../../index.mts';

@@ -1,5 +1,5 @@
 // The `fake` intake driver: fixture messages for tests (spec 2.15.3). It reads no network.
-import { BaseDriver, LaunchwrightError } from '@launchwrighthq/kernel';
+import { BaseDriver, LaunchwrightError } from '../../../kernel/index.mts';
 import { type IntakeBatch, type IntakeWindow, QA_INTAKE_SPEC_VERSION, type QaIntakeDriver, type RawItem, type WindowBound } from './contract.mts';
 
 export interface FakeIntakeOptions {

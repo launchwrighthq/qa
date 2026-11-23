@@ -3,7 +3,7 @@
 // the rendered page `dist/<slug>.html`, which links the deleted evidence.
 import { readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../kernel/index.mts';
 import { reportPaths } from './ledger.mts';
 
 const REPORT_RE = /^(\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*)\.md$/;

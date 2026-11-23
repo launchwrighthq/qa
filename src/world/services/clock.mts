@@ -1,6 +1,6 @@
 // The clock of the QA app: the kernel CLOCK plus an offset that `POST /__qa/clock` moves, so a
 // time-bound state (an expiring plan, a due reminder) is reachable without a wait (spec 2.6).
-import { type Clock, LaunchwrightError } from '@launchwrighthq/kernel';
+import { type Clock, LaunchwrightError } from '../../kernel/index.mts';
 
 const UNIT_MS: Record<string, number> = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 };
 

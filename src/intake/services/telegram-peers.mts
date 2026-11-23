@@ -5,7 +5,7 @@
 // GramJsModule, UserClient of the mtproto export). loadTelegramPeer imports a peer lazily with a
 // variable specifier, so a bundle that drops a driver drops its peer too. The source of truth for
 // each field is @launchwrighthq/telegram.
-import { LaunchwrightError, optionalPeer } from '@launchwrighthq/kernel';
+import { LaunchwrightError, optionalPeer } from '../../kernel/index.mts';
 import type { FetchFn } from './media.mts';
 
 /** Loads optional peer `spec`. Fails with `qa.intake.telegram.peer` when module telegram is not installed. */

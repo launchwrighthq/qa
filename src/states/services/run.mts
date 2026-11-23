@@ -2,7 +2,7 @@
 // the checkout revision, the leg a run uses, and the recorder that puts each evidence file in the
 // ledger (spec 2.11.3).
 import { relative } from 'node:path';
-import { type App, CLOCK, type Clock, LaunchwrightError, systemClock } from '@launchwrighthq/kernel';
+import { type App, CLOCK, type Clock, LaunchwrightError, systemClock } from '../../kernel/index.mts';
 import type { QaConfig } from '../../config.mts';
 import type { QaTarget, QaTargetRegistry } from '../../drivers/target/contract.mts';
 import { git } from '../../services/changes.mts';

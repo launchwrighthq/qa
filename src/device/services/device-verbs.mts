@@ -3,7 +3,7 @@
 // only from `lw qa session` (spec 2.11.5).
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 import { cloudDeviceKeys, deviceKeys, type QaConfig, simulatorDeviceKeys } from '../config.mts';
 import { backGesture, findNode, forwardSocket, keyevent, parseNodes, processBelongsTo, removeForward, screencap, sockets, startScreenrecord, tap, uiDump, wmSize } from './adb.mts';
 import { type AndroidHandle, androidHandle } from './android-session.mts';

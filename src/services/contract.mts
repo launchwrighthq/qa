@@ -9,8 +9,8 @@
 // short sha256 only. The caller computes that short hash and passes the key, never the value.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { readTextOrNull, sha256 } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError } from '../kernel/index.mts';
+import { readTextOrNull, sha256 } from '../kernel/services/fs.mts';
 import type { Leg } from './types.mts';
 
 /** The four groups of a run contract manifest (spec 2.6). */

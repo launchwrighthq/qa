@@ -4,8 +4,8 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { readTextOrNull } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError } from '../kernel/index.mts';
+import { readTextOrNull } from '../kernel/services/fs.mts';
 
 /** The store folder, relative to the project root. `.lw/` is out of git. */
 export const COMMENTS_DIR = '.lw/qa/comments';

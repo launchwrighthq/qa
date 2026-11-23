@@ -1,12 +1,14 @@
 // Legs: where a row runs (spec 2.3). Six default legs, merged with config `qa.legs`. A leg whose
 // target driver is not registered stays in the list as `n/a` with the reason "no target".
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../kernel/index.mts';
 import type { LegConfig, QaConfig } from '../config.mts';
 import type { Leg } from './types.mts';
 
+/** The Chrome major version of the pinned desktop user agent. Bump it here only. */
+const CHROME_MAJOR = 145;
+
 /** A pinned desktop user agent. A browser default (`HeadlessChrome`) would change with the binary. */
-export const DESKTOP_USER_AGENT =
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36'; // a Chrome version, not an IP. publish-audit: allow
+export const DESKTOP_USER_AGENT = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`;
 
 /**
  * The default legs, in report order (spec 2.3). `mobile-web` keeps the desktop user agent: a

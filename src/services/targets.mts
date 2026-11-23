@@ -1,6 +1,6 @@
 // The `qa.target` registry (spec 2.8): `playwright` and `fake`, then the targets the caller passes.
 // An extension module, such as `qa-device`, adds its targets with `add` at boot.
-import { type Clock, LaunchwrightError, systemClock } from '@launchwrighthq/kernel';
+import { type Clock, LaunchwrightError, systemClock } from '../kernel/index.mts';
 import type { QaConfig } from '../config.mts';
 import type { OpenTargetRegistry, QaTarget } from '../drivers/target/contract.mts';
 import { createFakeTarget } from '../drivers/target/fake.mts';

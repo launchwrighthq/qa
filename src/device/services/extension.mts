@@ -1,6 +1,6 @@
 // The qa extension of qa-device: the device targets and `lw qa device`. The `lw qa` command loads
 // it from the project folder when the project config has section `qa-device`.
-import type { QaExtension } from '@launchwrighthq/qa';
+import type { QaExtension } from '../../index.mts';
 import { withDevice } from '../config.mts';
 import { systemDeviceDeps } from './process.mts';
 import { deviceTargets } from './targets.mts';

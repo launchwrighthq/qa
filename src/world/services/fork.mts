@@ -3,7 +3,7 @@
 // (a Postgres `create database ... template`, or a PGlite folder copy), and a drop removes it.
 // assertQaTarget guards the template, so a fork only runs from a loopback host and the `_qa`
 // database. The fork name derives from that database name, so a fork never touches the dev database.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 import { assertQaTarget, checkIdentifier, databaseName, dbAdmin, type DbSection, qaDbSection } from './stack.mts';
 
 /** The part of a fork name between the QA database and the label: `<database>_fork_<label>`. */

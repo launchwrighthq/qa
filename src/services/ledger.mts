@@ -10,8 +10,8 @@
 //   dist/<slug>.html                       the rendered page
 import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { hashFile, readTextOrNull } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError } from '../kernel/index.mts';
+import { hashFile, readTextOrNull } from '../kernel/services/fs.mts';
 import { type LedgerEntry, type RowResult } from './types.mts';
 
 export const LEDGER_FILE = 'evidence.lock.json';

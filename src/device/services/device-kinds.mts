@@ -1,7 +1,7 @@
 // The device kinds of `qa.device.devices.<name>.kind` (QA spec 2.9). Each kind declares how lw
 // reaches the device. The verbs, the doctor and the targets read these traits, never a kind name,
 // so a project adds a kind with `registerDeviceKind` and edits no framework file.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 
 /** How lw reaches a device: adb, the WebKit inspector of iOS, or WebDriver on a cloud phone. */
 export type DeviceAccess = 'adb' | 'webkit' | 'webdriver';

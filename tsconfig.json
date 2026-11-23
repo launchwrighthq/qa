@@ -16,23 +16,7 @@
     "skipLibCheck": true,
     "noEmit": true,
     "ignoreDeprecations": "6.0",
-    "types": ["node"],
-    "paths": {
-      "@launchwrighthq/kernel": ["./src/kernel/index.mts"],
-      "@launchwrighthq/kernel/args": ["./src/kernel/services/args.mts"],
-      "@launchwrighthq/kernel/crypto": ["./src/kernel/services/crypto.mts"],
-      "@launchwrighthq/kernel/errors": ["./src/kernel/services/errors.mts"],
-      "@launchwrighthq/kernel/fetch": ["./src/kernel/services/fetch.mts"],
-      "@launchwrighthq/kernel/fs": ["./src/kernel/services/fs.mts"],
-      "@launchwrighthq/kernel/testing": ["./src/kernel/testing/index.mts"],
-      "@launchwrighthq/kernel/text": ["./src/kernel/services/text.mts"],
-      "@launchwrighthq/qa": ["./src/index.mts"],
-      "@launchwrighthq/qa/world": ["./src/world/index.mts"],
-      "@launchwrighthq/qa/states": ["./src/states/index.mts"],
-      "@launchwrighthq/qa/testing": ["./src/testing/index.mts"],
-      "@launchwrighthq/qa/sink": ["./src/sink/index.mts"],
-      "@launchwrighthq/qa/render": ["./src/render/index.mts"]
-    }
+    "types": ["node"]
   },
   "include": ["src"]
 }

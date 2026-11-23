@@ -1,8 +1,8 @@
 // `lw qa session resolve|check|run` (spec 2.4, 2.15.4).
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { LaunchwrightError, systemClock } from '@launchwrighthq/kernel';
-import { parseCommandArgs, UsageError } from '@launchwrighthq/kernel/args';
+import { LaunchwrightError, systemClock } from '../kernel/index.mts';
+import { parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { type QaConfig, qaConfigOf } from '../config.mts';
 import { git, repoRoot } from '../services/changes.mts';
 import { type ConsentManifest, computeManifest, diff, fileConsentStore, grant, manifestHash } from '../services/contract.mts';

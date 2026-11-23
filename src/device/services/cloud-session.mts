@@ -3,8 +3,8 @@
 // films a whole session and serves the file only after the session ends, so one video clip is
 // one session: `startVideo` starts a fresh session, `stopVideo` ends it, fetches the film, and
 // opens the next session at the same URL. Every call checks the per-run minute budget first.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import type { Act, Settle } from '@launchwrighthq/qa';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import type { Act, Settle } from '../../index.mts';
 import type { Capture, OpenOptions, QaSession, SessionLogLine, VideoCapture } from '../drivers/target/contract.mts';
 import { cloudDeviceKeys, type CloudDeviceKeys, deviceKeys } from '../config.mts';
 import { asyncScript, type BrowserstackClient, capabilities, checkBudget, createBrowserstackClient, writeHeld } from './browserstack.mts';

@@ -3,7 +3,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { basename, dirname, join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { LaunchwrightError, messageOf } from '@launchwrighthq/kernel';
+import { LaunchwrightError, messageOf } from '../../kernel/index.mts';
 import { buildRegistry, type LoadedWorld } from './registry.mts';
 import type { FeatureWorld, WorldRegistry } from './types.mts';
 

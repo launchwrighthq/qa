@@ -1,6 +1,6 @@
 // The shapes of the QA world (spec 2.5.1): a persona is a state of a user, a fact is a state of
 // the product data. A QA row names a persona, facts and a route.
-import type { App } from '@launchwrighthq/kernel';
+import type { App } from '../../kernel/index.mts';
 
 /** What a seed gets: the booted QA app and the tenant of the world. */
 export interface WorldCtx {

@@ -3,7 +3,7 @@
 // recorded answers and never starts a tool, opens a socket off loopback or sleeps.
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import { LaunchwrightError, systemClock } from '@launchwrighthq/kernel';
+import { LaunchwrightError, systemClock } from '../../kernel/index.mts';
 
 /** The outcome of one process. A non-zero exit is data, not an exception. */
 export interface ProcessResult {

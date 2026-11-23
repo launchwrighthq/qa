@@ -1,9 +1,9 @@
 // `lw qa device <verb>` (spec 2.9): parses the verb and its flags, runs it through the
 // `DeviceVerbs` service and prints the outcome. Every verb takes `--device <name>`; with one device
 // in config it may be left out.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { parseCommandArgs } from '@launchwrighthq/kernel/args';
-import type { QaCommandOptions, QaSubcommand } from '@launchwrighthq/qa';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import { parseCommandArgs } from '../../kernel/services/args.mts';
+import type { QaCommandOptions, QaSubcommand } from '../../index.mts';
 import { qaConfigOf } from '../config.mts';
 import { DeviceVerbs, type Verb, type VerbArgs, VERBS } from '../services/device-verbs.mts';
 import { type DeviceDeps, systemDeviceDeps } from '../services/process.mts';

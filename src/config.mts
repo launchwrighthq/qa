@@ -1,4 +1,4 @@
-import { appDir, sectionApps, z } from '@launchwrighthq/kernel';
+import { appDir, sectionApps, z } from './kernel/index.mts';
 
 /** One leg (spec 2.3). The key of `qa.legs` is its name. */
 export const legConfig = z.object({

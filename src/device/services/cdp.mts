@@ -2,7 +2,7 @@
 // leaves `webSocketDebuggerUrl` out of `/json/version`, so Playwright's `connectOverCDP` cannot
 // attach. `/json/list` has one per page, and this client speaks CDP to that page socket directly.
 // Telegram keeps a pool of WebViews; `openVisiblePage` asks each for `document.visibilityState`.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 import type { SessionLogLine } from '../drivers/target/contract.mts';
 import { chooseVisiblePage, VISIBILITY_EXPRESSION } from './page-script.mts';
 import { type DeviceDeps, deferred } from './process.mts';

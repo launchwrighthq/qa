@@ -1,7 +1,7 @@
 // The registry of personas and facts, and its checks (ported from the source `registryProblem`).
 // The registry is the denominator of a QA report: every state that a feature declares is here.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { sha256 } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import { sha256 } from '../../kernel/services/fs.mts';
 import { idProblem, qaTelegramId } from './ids.mts';
 import type { Fact, FeatureWorld, Owned, Persona, WorldEntry, WorldRegistry } from './types.mts';
 

@@ -18,7 +18,7 @@ export { FAKE_INTAKE_ITEMS, FakeIntakeDriver, type FakeIntakeOptions } from './d
 export type { GhResult, GhRunner } from './services/gh.mts';
 export { isGithubMediaHost, isGithubUpload, mediaLinks, takesGithubToken } from './services/links.mts';
 export { download, type FetchFn, kindOf, mimeOf, sniffMime } from './services/media.mts';
-export { type IssueDraft, issueMarkdown, listIssues, readIssue, recordDir, recordId, writeIssue } from '@launchwrighthq/qa';
+export { type IssueDraft, issueMarkdown, listIssues, readIssue, recordDir, recordId, writeIssue } from '../index.mts';
 export { qaIntakeProvider } from './provider.mts';
 export { qaExtension } from './services/extension.mts';
 export { createIntakeDriver, INTAKE_DRIVERS, type IntakeDeps, type IntakeDriverName, maxBytesOf } from './services/registry.mts';

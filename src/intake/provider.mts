@@ -1,5 +1,5 @@
-import { BootError, CONFIG, provider } from '@launchwrighthq/kernel';
-import type { QaConfig } from '@launchwrighthq/qa';
+import { BootError, CONFIG, provider } from '../kernel/index.mts';
+import type { QaConfig } from '../index.mts';
 import { qaIntakeConfig } from './config.mts';
 
 /**

@@ -3,9 +3,9 @@
 // `groups.json`. The apply step then writes one issue record per group.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { LaunchwrightError, z } from '@launchwrighthq/kernel';
-import { readJsonOrNull } from '@launchwrighthq/kernel/fs';
-import { extensionOf, INTAKE_DIR, type QaIssue, recordId, writeIssue } from '@launchwrighthq/qa';
+import { LaunchwrightError, z } from '../../kernel/index.mts';
+import { readJsonOrNull } from '../../kernel/services/fs.mts';
+import { extensionOf, INTAKE_DIR, type QaIssue, recordId, writeIssue } from '../../index.mts';
 import type { IntakeBatch, RawItem, RawMedia } from '../drivers/intake/contract.mts';
 
 /** Messages of one author less than this far apart join one group. */

@@ -2,7 +2,7 @@
 // fixed 2 s clip. Tests and the playground use it. It never starts a process.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { type Clock, LaunchwrightError, systemClock } from '@launchwrighthq/kernel';
+import { type Clock, LaunchwrightError, systemClock } from '../../kernel/index.mts';
 import { encodePng } from '../../services/png.mts';
 import type { Act, Leg, Settle } from '../../services/types.mts';
 import {

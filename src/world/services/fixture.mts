@@ -4,8 +4,8 @@
 // - `disarm` replays the steps in reverse order and works from any process, on any day;
 // - only the QA database: the world comes from `openWorld`, which refuses any other database.
 import { join } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { readTextOrNull } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import { readTextOrNull } from '../../kernel/services/fs.mts';
 import type { QaWorld } from './app.mts';
 import { personaIds } from './ids.mts';
 import { factById, personaById } from './registry.mts';

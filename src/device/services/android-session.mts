@@ -3,8 +3,8 @@
 // screenshot, recording, accessibility dump) runs through adb. A Mini App moves by `pushState`,
 // because a document load drops the launch data that Telegram puts in the URL.
 import { basename } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { type Act, MIN_VIDEO_S, type Settle } from '@launchwrighthq/qa';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import { type Act, MIN_VIDEO_S, type Settle } from '../../index.mts';
 import type { Capture, OpenOptions, QaSession, SessionLogLine, VideoCapture } from '../drivers/target/contract.mts';
 import {
   type Adb,

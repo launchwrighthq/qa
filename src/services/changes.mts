@@ -12,7 +12,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { type Clock, LaunchwrightError, systemClock } from '@launchwrighthq/kernel';
+import { type Clock, LaunchwrightError, systemClock } from '../kernel/index.mts';
 
 /** Git's own empty tree: the base of a range that starts at the first commit. */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';

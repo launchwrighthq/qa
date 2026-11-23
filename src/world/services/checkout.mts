@@ -2,8 +2,8 @@
 // folder in the main checkout, a file in a linked worktree) and the common dir of every worktree.
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { pathKind } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import { pathKind } from '../../kernel/services/fs.mts';
 
 export interface CheckoutFacts {
   /** The project root: the folder of `launchwright.config.ts`. */

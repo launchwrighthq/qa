@@ -1,6 +1,6 @@
 // `GET /__qa/persona/<id>` (spec 2.6): the user that the QA world seeded for a persona, so both
 // persona checks compare a session route answer with that user id. 404 for an unseeded persona.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../kernel/index.mts';
 import { type HandlerArgs, loadAuth, loadDb, loadHttp, type RequestContext } from '../services/peers.mts';
 import { idProblem, personaIds, QA_PROVIDER } from '../world/services/ids.mts';
 

@@ -1,8 +1,8 @@
 // The `android-adb` qa.target driver (spec 2.8): any adb serial, on USB here or on a rig. Input is
 // raw CDP in the visible WebView plus adb `input`; screenshots are `screencap`; video is
 // `screenrecord` (one clip up to the evidence cap) or `scrcpy --record`; the dump is uiautomator.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import type { Leg } from '@launchwrighthq/qa';
+import { LaunchwrightError } from '../../../kernel/index.mts';
+import type { Leg } from '../../../index.mts';
 import { deviceState } from '../../services/adb.mts';
 import { androidHandle, AndroidSession, stateFix } from '../../services/android-session.mts';
 import { avdExists } from '../../services/emulator.mts';

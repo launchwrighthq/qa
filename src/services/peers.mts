@@ -2,7 +2,7 @@
 // framework package the engine always needs; every other one is an optional peer. A loader throws
 // qa.<module>.module when a leg runs without its peer installed. The specifier is a variable, so a
 // bundle that leaves a leg out leaves its peer out too.
-import { LaunchwrightError, optionalPeer, type Token } from '@launchwrighthq/kernel';
+import { LaunchwrightError, optionalPeer, type Token } from '../kernel/index.mts';
 import type { AddressInfo } from 'node:net';
 
 async function loadPeer<T>(spec: string, module: string): Promise<T> {

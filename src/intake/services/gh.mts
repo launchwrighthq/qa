@@ -1,6 +1,6 @@
 // Runs the GitHub CLI. The github intake driver takes a runner, so a test gives recorded output.
 import { spawn } from 'node:child_process';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 
 export interface GhResult {
   code: number;

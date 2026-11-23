@@ -1,6 +1,6 @@
 // `lw qa changes [--since <date|sha> | --last] [--json]`: what a commit range changed (spec 1.3).
-import { LaunchwrightError, systemClock } from '@launchwrighthq/kernel';
-import { parseCommandArgs, UsageError } from '@launchwrighthq/kernel/args';
+import { LaunchwrightError, systemClock } from '../kernel/index.mts';
+import { parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { qaConfigOf } from '../config.mts';
 import { digest, renderChanges, repoRoot } from '../services/changes.mts';
 import type { QaCommandOptions, QaSubcommand } from './qa.command.mts';

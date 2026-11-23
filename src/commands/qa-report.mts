@@ -1,6 +1,6 @@
 // `lw qa report check|update|render|viewer <md>` (spec 2.12.3, 2.8).
 import { isAbsolute, resolve } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../kernel/index.mts';
 import { qaConfigOf } from '../config.mts';
 import { legDefinitions } from '../services/legs.mts';
 import { checkReport, RENDERER_DIR, renderReport, updateReport } from '../services/report.mts';

@@ -1,7 +1,7 @@
 // `lw qa gc --keep <n>` (spec 2.12.3): deletes the evidence of older reports and keeps the reports.
 import { resolve } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { parseCommandArgs, UsageError } from '@launchwrighthq/kernel/args';
+import { LaunchwrightError } from '../kernel/index.mts';
+import { parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { qaConfigOf } from '../config.mts';
 import { gcReports } from '../services/gc.mts';
 import type { QaCommandOptions, QaSubcommand } from './qa.command.mts';

@@ -4,8 +4,8 @@
 // published report and page carry plain text where section 4 links reporter media (spec 2.15.4).
 import { readdir, readFile, realpath } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { pathKind } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError } from '../kernel/index.mts';
+import { pathKind } from '../kernel/services/fs.mts';
 import type { StorageDriver } from './peers.mts';
 import { reportPaths } from './ledger.mts';
 import { checkReport, type CheckOptions, intakeStaysLocal, intakeTarget, type ReportProblem, withoutIntakeLinks } from './report.mts';

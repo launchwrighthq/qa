@@ -5,8 +5,8 @@
 // the database, never the URL: the URL holds a password.
 import { cp, mkdir, readdir, rm } from 'node:fs/promises';
 import { basename, isAbsolute, resolve } from 'node:path';
-import { LaunchwrightError, messageOf } from '@launchwrighthq/kernel';
-import { pathKind } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError, messageOf } from '../../kernel/index.mts';
+import { pathKind } from '../../kernel/services/fs.mts';
 import { type Db, loadDb } from '../../services/peers.mts';
 
 /** The hosts that a QA or worktree database may live on. */

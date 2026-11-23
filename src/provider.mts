@@ -1,4 +1,4 @@
-import { BootError, CLOCK, CONFIG, provider } from '@launchwrighthq/kernel';
+import { BootError, CLOCK, CONFIG, provider } from './kernel/index.mts';
 import { type QaConfig, qaConfig } from './config.mts';
 import { createTargetRegistry } from './services/targets.mts';
 import { QA_TARGETS } from './tokens.mts';

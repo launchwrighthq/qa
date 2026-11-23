@@ -2,8 +2,8 @@
 // never loads the emulator's own quick-boot snapshot: that file is written at shutdown, so after a
 // crash it restores a state from before a sign-in. A snapshot here is a deliberate copy of the AVD
 // folder, `cp -c` (a clone on APFS, a plain copy elsewhere).
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { shq } from '@launchwrighthq/kernel/text';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import { shq } from '../../kernel/services/text.mts';
 import type { EmulatorDeviceKeys } from '../config.mts';
 import type { Adb } from './adb.mts';
 import { type DeviceDeps, orFail, out, poll, said } from './process.mts';

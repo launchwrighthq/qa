@@ -1,7 +1,7 @@
 // `lw qa world api` (spec 2.5.2): the project API on `qa.apiPort` of 127.0.0.1, against the QA
 // database, with the fake Bot API, no bot token and the /__qa routes on.
 import type { AddressInfo } from 'node:net';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 import { loadHttp } from '../../services/peers.mts';
 import { openWorld, type QaAppEntry } from './app.mts';
 import type { WorldContext } from './context.mts';

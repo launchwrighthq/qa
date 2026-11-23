@@ -3,8 +3,8 @@
 // of a bot's Mini App. The bot name comes from the leg, never from this file.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { LaunchwrightError, safeEqual } from '@launchwrighthq/kernel';
-import { sha256 } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError, safeEqual } from '../../kernel/index.mts';
+import { sha256 } from '../../kernel/services/fs.mts';
 import type { TelegramDeviceConfig } from '../config.mts';
 import type { Adb } from './adb.mts';
 import { type DeviceDeps, orFail, out } from './process.mts';

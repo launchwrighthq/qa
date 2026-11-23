@@ -2,8 +2,8 @@
 // seed, then every fact and persona seed through the QA app, and stamp the registry hash.
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { type Clock, LaunchwrightError, messageOf } from '@launchwrighthq/kernel';
-import { readTextOrNull } from '@launchwrighthq/kernel/fs';
+import { type Clock, LaunchwrightError, messageOf } from '../../kernel/index.mts';
+import { readTextOrNull } from '../../kernel/services/fs.mts';
 import { loadAuth, loadDb } from '../../services/peers.mts';
 import { openWorld, type QaAppEntry, type QaOverlay, type QaWorld } from './app.mts';
 import { personaIds, QA_PROVIDER } from './ids.mts';

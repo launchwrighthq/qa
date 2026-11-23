@@ -1,6 +1,6 @@
 // The fault rules of `lw qa sink` (spec 2.17): the answers that make a sender retry, pause, give up
 // or time out. They come from the source sink of the outbound delivery flows.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 
 /** The kinds of fault. `slow` holds the answer and then answers 200. */
 export type FaultKind = '503' | '429' | '410' | '302' | 'slow';

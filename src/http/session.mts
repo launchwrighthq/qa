@@ -4,7 +4,7 @@
 // user the new cookie opens. `qaSessionProblem` compares it with the seeded user, the same
 // comparison as the Mini App launch. That check is the source `qaAssertSeeded`.
 import { request } from 'node:http';
-import { CONFIG } from '@launchwrighthq/kernel';
+import { CONFIG } from '../kernel/index.mts';
 import type { QaConfig } from '../config.mts';
 import { type HandlerArgs, loadAuth, loadHttp } from '../services/peers.mts';
 import { personaIds, QA_PROVIDER, qaAccountId } from '../world/services/ids.mts';

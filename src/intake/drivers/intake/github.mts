@@ -1,7 +1,7 @@
 // The `github` intake driver (spec 2.15.2). It runs only `gh issue view` and `gh auth token`. The
 // token goes only into an HTTP header to a GitHub host: never into an argument list or a log line.
-import { BaseDriver, LaunchwrightError } from '@launchwrighthq/kernel';
-import { mimeOfExtension } from '@launchwrighthq/qa';
+import { BaseDriver, LaunchwrightError } from '../../../kernel/index.mts';
+import { mimeOfExtension } from '../../../index.mts';
 import { type GhRunner, spawnGh } from '../../services/gh.mts';
 import { isGithubMediaHost, mediaLinks, takesGithubToken } from '../../services/links.mts';
 import { download, type FetchFn, kindOf, sourceOf } from '../../services/media.mts';

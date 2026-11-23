@@ -16,7 +16,7 @@
 // no seed gives `{key}`, and the runner refuses to open such a route until `lw qa world reset`
 // seeds it. A state with no address is `no-route`; a state whose addresses all need a handle that
 // no key names is `no-seed`. Both stay in the plan as owed states.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../kernel/index.mts';
 import type { Manifest, Shot } from './manifest.mts';
 import type { Leg, Surface } from './types.mts';
 

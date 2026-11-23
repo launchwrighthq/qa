@@ -1,8 +1,8 @@
 // Config of qa-device (QA spec 2.8, 2.9): key `qa.device` of config section `qa`. The core keeps
 // the key as an open record, and this module parses it. The keys of one device pass through
 // `deviceConfig` and are read here, by kind.
-import { LaunchwrightError, z } from '@launchwrighthq/kernel';
-import { type QaConfig as CoreQaConfig, qaConfigOf as coreQaConfigOf } from '@launchwrighthq/qa';
+import { LaunchwrightError, z } from '../kernel/index.mts';
+import { type QaConfig as CoreQaConfig, qaConfigOf as coreQaConfigOf } from '../index.mts';
 import { deviceKindNames } from './services/device-kinds.mts';
 
 /** The host proxy of a rig whose gateway does not hairpin (spec 2.9, `ingress: host-proxy`). */

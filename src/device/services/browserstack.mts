@@ -3,9 +3,9 @@
 // idle timeout and a per-run minute budget. The keys travel only in the Authorization header.
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { isRedirect } from '@launchwrighthq/kernel/fetch';
-import { readJsonOrNull } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import { isRedirect } from '../../kernel/services/fetch.mts';
+import { readJsonOrNull } from '../../kernel/services/fs.mts';
 import type { BrowserstackConfig, CloudDeviceKeys } from '../config.mts';
 import { deviceKind } from './device-kinds.mts';
 import type { DeviceDeps } from './process.mts';

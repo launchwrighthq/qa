@@ -21,7 +21,7 @@
 // There is no phase 3. A state that needs three facts at once is reported unreachable, with the
 // fields that were tried. The stream is finite (`MAX_CANDIDATES`), deduplicated by canonical JSON
 // and deterministic: the same corpus and shape give the same stream.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 
 /** The cap on one candidate stream, over every phase. A ten-field shape stays under it. */
 export const MAX_CANDIDATES = 500;

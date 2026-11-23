@@ -6,8 +6,8 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
-import { type Driver, LaunchwrightError, moduleFixture } from '@launchwrighthq/kernel';
-import { defineContract } from '@launchwrighthq/kernel/testing';
+import { type Driver, LaunchwrightError, moduleFixture } from '../kernel/index.mts';
+import { defineContract } from '../kernel/testing/index.mts';
 import { expect } from 'vitest';
 import { FAKE_CLIP, type FakeRoute } from '../drivers/target/fake.mts';
 import {

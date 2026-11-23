@@ -2,8 +2,8 @@
 // the PNG write. A device session drives a page through `evaluate`, so these take that function.
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { type Act, pngSize, type Settle } from '@launchwrighthq/qa';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import { type Act, pngSize, type Settle } from '../../index.mts';
 import type { Capture, QaTargetCapability, SessionLogLine } from '../drivers/target/contract.mts';
 import { actExpression, type PageAnswer, settleExpression } from './page-script.mts';
 import { type DeviceClock, type DeviceDeps, orFail } from './process.mts';

@@ -1,6 +1,6 @@
 // `lw qa worktree --set-menu`: points the menu button of the dev bot at the tunnel URL of the run,
 // through the Bot API client of the `telegram` module (`setChatMenuButton`).
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 import { type FetchFn, loadTelegram } from '../../services/peers.mts';
 
 export interface MenuOptions {

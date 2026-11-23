@@ -1,5 +1,5 @@
-import { CONFIG, provider } from '@launchwrighthq/kernel';
-import { QA_TARGETS, type QaConfig } from '@launchwrighthq/qa';
+import { CONFIG, provider } from '../kernel/index.mts';
+import { QA_TARGETS, type QaConfig } from '../index.mts';
 import { withDevice } from './config.mts';
 import { deviceTargets } from './services/targets.mts';
 

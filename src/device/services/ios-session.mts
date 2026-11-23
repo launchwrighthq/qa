@@ -2,8 +2,8 @@
 // inspector, with `location.href` as its only navigation and `Page.snapshotRect` as its screenshot.
 // `ios-simulator` opens URLs with `simctl`, films and photographs the whole screen with `simctl io`,
 // and reads the page through an inspector proxy on the simulator socket when one is configured.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import type { Act, Settle } from '@launchwrighthq/qa';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import type { Act, Settle } from '../../index.mts';
 import type { Capture, OpenOptions, QaSession, SessionLogLine, VideoCapture } from '../drivers/target/contract.mts';
 import { deviceKeys, iosDeviceKeys, type SimulatorDeviceKeys, simulatorDeviceKeys } from '../config.mts';
 import { hrefExpression, relativeRoute, ROUTE_EXPRESSION, routeUrl } from './page-script.mts';

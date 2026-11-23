@@ -2,7 +2,7 @@
 // that serves the interactive viewer and a GET and POST comment store, so a reviewer adds comments
 // in the browser. `export` resolves each open comment to its target and prints an agent task list.
 import { basename, isAbsolute, join, resolve } from 'node:path';
-import { LaunchwrightError, systemClock } from '@launchwrighthq/kernel';
+import { LaunchwrightError, systemClock } from '../kernel/index.mts';
 import { qaConfigOf } from '../config.mts';
 import { startCommentServer } from '../services/comment-server.mts';
 import { exportTaskList } from '../services/comment-export.mts';

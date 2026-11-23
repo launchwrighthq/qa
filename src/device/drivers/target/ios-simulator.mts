@@ -1,8 +1,8 @@
 // The `ios-simulator` qa.target driver (spec 2.8): `xcrun simctl` on a rig. It opens URLs with
 // `openurl`, photographs the screen with `io screenshot` and films it with `io recordVideo`. It has
 // no input, so `ready` is false until an input tool is configured, and the reason names the key.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import type { Leg } from '@launchwrighthq/qa';
+import { LaunchwrightError } from '../../../kernel/index.mts';
+import type { Leg } from '../../../index.mts';
 import { deviceKeys, simulatorDeviceKeys } from '../../config.mts';
 import { iosDevice, SimulatorSession, simulatorReadiness } from '../../services/ios-session.mts';
 import type { DeviceContext } from '../../services/rigs.mts';

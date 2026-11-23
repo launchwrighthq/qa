@@ -1,9 +1,9 @@
 // `lw qa intake`: reads a GitHub issue or a Telegram chat into issue records (spec 2.15). Output
 // names ids, counts and paths only: no reporter text, no reporter name, no token, no session.
 import { relative } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { parseCommandArgs, UsageError } from '@launchwrighthq/kernel/args';
-import { INTAKE_DIR, listIssues, type QaCommandOptions, qaConfig, type QaSubcommand, recordDir, recordId, writeIssue } from '@launchwrighthq/qa';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import { parseCommandArgs, UsageError } from '../../kernel/services/args.mts';
+import { INTAKE_DIR, listIssues, type QaCommandOptions, qaConfig, type QaSubcommand, recordDir, recordId, writeIssue } from '../../index.mts';
 import { type IntakeConfig, qaIntakeConfig as intakeSchema } from '../config.mts';
 import type { WindowBound } from '../drivers/intake/contract.mts';
 import { createIntakeDriver, type IntakeDeps } from '../services/registry.mts';

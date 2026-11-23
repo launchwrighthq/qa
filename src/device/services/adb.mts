@@ -1,7 +1,7 @@
 // adb against one device, local or on a rig (spec 2.8 `android-adb`). The adb client runs on this
 // machine; on an ssh rig it talks to the rig's adb server through the master, so binary output
 // (`screencap`, a recording) rides the same socket. Parsers are pure and take captured text.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 import { type DeviceDeps, orFail, out, type ProcessResult, type RunningProcess, said, type StartOptions } from './process.mts';
 import type { Rig } from './rigs.mts';
 

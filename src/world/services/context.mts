@@ -1,7 +1,7 @@
 // What the `lw qa world|fixture|job` commands share: the project facts, the QA database, the
 // overlay of the QA app, and argument parsing.
-import { type Clock, LaunchwrightError, systemClock } from '@launchwrighthq/kernel';
-import { parseCommandArgs, UsageError } from '@launchwrighthq/kernel/args';
+import { type Clock, LaunchwrightError, systemClock } from '../../kernel/index.mts';
+import { parseCommandArgs, UsageError } from '../../kernel/services/args.mts';
 import { qaConfig, type QaConfig, withAppPaths } from '../../config.mts';
 import { loadAppEntry, openWorld, qaDatabase, type QaOverlay, type QaWorld } from './app.mts';
 import { type CheckoutFacts, readCheckout } from './checkout.mts';

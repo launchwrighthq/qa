@@ -3,7 +3,7 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { appPath, type Clock, LaunchwrightError } from '@launchwrighthq/kernel';
+import { appPath, type Clock, LaunchwrightError } from '../../kernel/index.mts';
 import { loadDb } from '../../services/peers.mts';
 import type { QaWorld } from './app.mts';
 

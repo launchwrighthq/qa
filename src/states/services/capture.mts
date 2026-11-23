@@ -11,7 +11,7 @@
 // Every in-page step is a script expression string, so it runs through `RoutablePage.evaluate`
 // on any browser target, and a unit test can check the expression without a browser.
 import { posix } from 'node:path';
-import { LaunchwrightError, messageOf } from '@launchwrighthq/kernel';
+import { LaunchwrightError, messageOf } from '../../kernel/index.mts';
 import type { QaSession, RoutableLocator, RoutablePage, RoutedRoute } from '../../drivers/target/contract.mts';
 import { routeMatches } from '../../services/paths.mts';
 import type { Act, EvidenceKind, Settle } from '../../services/types.mts';

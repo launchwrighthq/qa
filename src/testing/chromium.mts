@@ -4,7 +4,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../kernel/index.mts';
 
 /** The Playwright browser cache of the account that runs the tests. */
 export const BROWSERS_PATH = join(userInfo().homedir, '.cache', 'ms-playwright');

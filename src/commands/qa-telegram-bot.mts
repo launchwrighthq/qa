@@ -3,7 +3,7 @@
 // it in the local run store. `destroy` revokes and deletes the bot, confirmed dead by a getMe 401.
 // The token lives only in `.lw/qa/bots`; no line here prints, logs or commits it.
 import { join } from 'node:path';
-import { type Clock, LaunchwrightError, optionalPeer, systemClock } from '@launchwrighthq/kernel';
+import { type Clock, LaunchwrightError, optionalPeer, systemClock } from '../kernel/index.mts';
 import { BOT_STORE_DIR, type BotRecord, type BotStore, fileBotStore } from '../services/bot-store.mts';
 import {
   BOTFATHER,

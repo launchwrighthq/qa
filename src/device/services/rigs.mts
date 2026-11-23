@@ -4,9 +4,9 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { sha256 } from '@launchwrighthq/kernel/fs';
-import { shq } from '@launchwrighthq/kernel/text';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import { sha256 } from '../../kernel/services/fs.mts';
+import { shq } from '../../kernel/services/text.mts';
 import type { DeviceConfig, QaConfig, RigConfig } from '../config.mts';
 import { type DeviceDeps, orFail, type ProcessResult, type RunOptions, said } from './process.mts';
 

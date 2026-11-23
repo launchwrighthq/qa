@@ -1,7 +1,7 @@
 // Driver kind `qa.target`: where a leg runs (spec 2.8). `playwright` and `fake` live here; the
 // device drivers (`android-adb`, `android-emulator`, `ios-webkit`, `ios-simulator`, `browserstack`)
 // come with the `device` submodule.
-import type { Driver } from '@launchwrighthq/kernel';
+import type { Driver } from '../../kernel/index.mts';
 import type { Act, Leg, Settle } from '../../services/types.mts';
 
 export const QA_TARGET_SPEC_VERSION = '1';

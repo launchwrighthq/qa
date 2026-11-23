@@ -2,7 +2,7 @@
 // the consumer supplies, reads the bot token from the reply, and deletes the bot after the run. The
 // library ships only the userbot-provider interface and this lifecycle, so it names no account. The
 // token is a secret: it never passes through a log line or a printed message here.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../kernel/index.mts';
 
 /** The @username of the BotFather account the lifecycle drives. */
 export const BOTFATHER = 'BotFather';

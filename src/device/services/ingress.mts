@@ -2,8 +2,8 @@
 // earlier run set. `host-proxy` starts the host proxy on the machine of the adb server, reverses
 // its port to the device and sets the guest `http_proxy`. A WebView reads the proxy when its
 // process starts, so `changed` tells the caller to restart the app it is about to open.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { shq } from '@launchwrighthq/kernel/text';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import { shq } from '../../kernel/services/text.mts';
 import type { Adb } from './adb.mts';
 import { HOST_PROXY_SCRIPT } from './host-proxy.mts';
 import { type DeviceDeps, orFail, out, poll } from './process.mts';

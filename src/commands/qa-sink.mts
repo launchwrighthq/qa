@@ -2,8 +2,8 @@
 // tunnel. A QA row or a webhook test points an outbound sender at the printed URL.
 import { randomInt } from 'node:crypto';
 import { join } from 'node:path';
-import { createContainer, LaunchwrightError, systemClock } from '@launchwrighthq/kernel';
-import { parseCommandArgs, UsageError } from '@launchwrighthq/kernel/args';
+import { createContainer, LaunchwrightError, systemClock } from '../kernel/index.mts';
+import { parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { type Tunnel, loadTunnel, type TunnelManagerInstance } from '../services/peers.mts';
 import { parseFaults } from '../sink/services/faults.mts';
 import { startSink } from '../sink/services/server.mts';

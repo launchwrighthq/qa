@@ -2,7 +2,7 @@
 // whose package root exports `qaExtension`. `lw qa` loads each one that the project config enables
 // from the project folder, so the core imports no file of an extension.
 import { pathToFileURL } from 'node:url';
-import { LaunchwrightError, resolveImport } from '@launchwrighthq/kernel';
+import { LaunchwrightError, resolveImport } from '../kernel/index.mts';
 import type { QaConfig } from '../config.mts';
 import type { QaTarget } from '../drivers/target/contract.mts';
 import type { QaSubcommand } from './qa.command.mts';

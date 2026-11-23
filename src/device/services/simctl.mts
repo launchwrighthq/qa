@@ -1,8 +1,8 @@
 // `xcrun simctl` on a rig (spec 2.8 `ios-simulator`): open a URL, take a screenshot, record a
 // video. `simctl` has no input verb and no page access. A simulator can hold a signed-in Telegram,
 // so nothing here boots, erases or shuts one down, and `openUrl` refuses a `tg://` link.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { shq } from '@launchwrighthq/kernel/text';
+import { LaunchwrightError } from '../../kernel/index.mts';
+import { shq } from '../../kernel/services/text.mts';
 import { orFail, said } from './process.mts';
 import { type Rig } from './rigs.mts';
 

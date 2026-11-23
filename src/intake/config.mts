@@ -1,6 +1,6 @@
 // Config of qa-intake (QA spec 2.15): key `qa.intake` of config section `qa`. The core keeps the
 // key as an open record, and this module parses it.
-import { z } from '@launchwrighthq/kernel';
+import { z } from '../kernel/index.mts';
 
 /** Key `qa.intake` of config section `qa`. */
 export const qaIntakeConfig = z

@@ -1,8 +1,8 @@
 // `lw qa states scan|plan|run|report` (spec 2.7, 2.14 rules C1, C2 and C4).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { type App, LaunchwrightError } from '@launchwrighthq/kernel';
-import { type CommandArgs, parseCommandArgs, UsageError } from '@launchwrighthq/kernel/args';
+import { type App, LaunchwrightError } from '../kernel/index.mts';
+import { type CommandArgs, parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { type QaConfig, qaConfigOf } from '../config.mts';
 import type { QaSession } from '../drivers/target/contract.mts';
 import { reportPaths } from '../services/ledger.mts';

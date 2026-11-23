@@ -3,8 +3,8 @@
 // and S3, the scan of the production client build for the dev-only marker.
 import { readdir, readFile } from 'node:fs/promises';
 import { basename, join, posix, relative, sep } from 'node:path';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
-import { pathKind, readTextOrNull } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError } from '../kernel/index.mts';
+import { pathKind, readTextOrNull } from '../kernel/services/fs.mts';
 
 /** The string that marks dev-only QA code. Inlined from client (services/qa-persona.mts). */
 const QA_DEV_MARKER = 'lw-qa-dev-only';

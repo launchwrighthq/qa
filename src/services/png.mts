@@ -1,7 +1,7 @@
 // PNG reading for the evidence checks (spec 2.11.2): the size from the IHDR chunk, and a decoder
 // for the luminance spread that finds a blank frame. Node `zlib` only, no dependency.
 import { deflateSync, inflateSync } from 'node:zlib';
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../kernel/index.mts';
 
 const MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 

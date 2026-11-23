@@ -11,7 +11,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { type Clock, LaunchwrightError, messageOf } from '@launchwrighthq/kernel';
+import { type Clock, LaunchwrightError, messageOf } from '../kernel/index.mts';
 import type { QaConfig } from '../config.mts';
 import type { QaSession, QaTarget, QaTargetCapability, QaTargetRegistry, SessionLogLine } from '../drivers/target/contract.mts';
 import { attemptFailures } from './evidence.mts';

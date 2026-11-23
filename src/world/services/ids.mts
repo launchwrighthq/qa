@@ -1,7 +1,7 @@
 // The ids of a persona. Each one is a pure function of the persona id, so two resets give the same
 // ids. `qaTelegramId` is inlined from client (services/qa-persona.mts), identical in behaviour, so
 // the engine needs no client peer: the Mini App launch and the seed still derive the same id.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 import type { PersonaIds } from './types.mts';
 
 /** The first Telegram id of the QA block, far below real user ids. */

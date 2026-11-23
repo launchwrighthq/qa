@@ -5,8 +5,8 @@
 // any create or drop of a name outside `<dev.project>_wt_`.
 import { copyFile, rename, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { LaunchwrightError, messageOf } from '@launchwrighthq/kernel';
-import { readTextOrNull } from '@launchwrighthq/kernel/fs';
+import { LaunchwrightError, messageOf } from '../../kernel/index.mts';
+import { readTextOrNull } from '../../kernel/services/fs.mts';
 import type { RunRecord } from '../../services/peers.mts';
 import { type CheckoutFacts, devProjectName, readCheckout } from './checkout.mts';
 import { databaseName, databaseOfUrl, type DbAdmin, hostOfUrl, remoteHostProblem, urlWithDatabase } from './stack.mts';
@@ -54,7 +54,8 @@ export interface WorktreePlan {
 
 function envFileName(sections: Record<string, unknown>): string {
   const dev = sections.dev as { envFiles?: { local?: unknown } } | undefined;
-  return typeof dev?.envFiles?.local === 'string' ? dev.envFiles.local : '.env.local'; // config key and file name, not hosts. publish-audit: allow
+  const name = dev?.envFiles?.local;
+  return typeof name === 'string' ? name : '.env.local';
 }
 
 /** The copy prefix of a project: `<dev.project>_wt_`. */

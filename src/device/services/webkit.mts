@@ -2,7 +2,7 @@
 // `ios-webkit`). iOS 12.2 and later route a page through the Target domain: a command travels in
 // `Target.sendMessageToTarget` and its reply comes back in `Target.dispatchMessageFromTarget`.
 // The proxy serves two things: the device list on one port and the pages of each device on another.
-import { LaunchwrightError } from '@launchwrighthq/kernel';
+import { LaunchwrightError } from '../../kernel/index.mts';
 import { type DeviceDeps, deferred } from './process.mts';
 
 /** One phone in the proxy device list. The id and the name are never printed. */
