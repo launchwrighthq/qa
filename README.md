@@ -29,7 +29,7 @@ allowBuilds:
   esbuild: true
 ```
 
-A Python consumer adds the same tag as a uv git dependency.
+The library is pure Node. It has no Python package.
 
 ## The `lw-qa` command
 
