@@ -54,8 +54,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
-    "build": "tsup",
-    "prepare": "tsup"
+    "build": "tsup"
   },
   "dependencies": {
     "smol-toml": "^1.9.1",
