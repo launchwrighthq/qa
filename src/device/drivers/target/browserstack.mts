@@ -1,13 +1,13 @@
 // The `browserstack` qa.target driver (spec 2.8): a real cloud phone on BrowserStack Automate over
 // W3C WebDriver. One target instance is one run: its minute budget starts with its first session.
 import { isCodedError } from '../../../kernel/index.mts';
-import type { Leg } from '../../../index.mts';
+import { credentialNeed, type Leg } from '../../../index.mts';
 import { cloudDeviceKeys, deviceKeys } from '../../config.mts';
 import { CloudSession, type RunBudget } from '../../services/cloud-session.mts';
 import { deviceKind } from '../../services/device-kinds.mts';
 import { checkBudget } from '../../services/browserstack.mts';
 import { type DeviceContext, resolveDevice } from '../../services/rigs.mts';
-import { type OpenOptions, QA_TARGET_SPEC_VERSION, type QaSession, type QaTarget, type QaTargetCapability, type TargetReadiness } from './contract.mts';
+import { type OpenOptions, QA_TARGET_SPEC_VERSION, type QaSession, type QaTarget, type QaTargetCapability, type TargetNeeds, type TargetReadiness } from './contract.mts';
 
 class BrowserstackTarget implements QaTarget {
   readonly name = 'browserstack';
@@ -41,6 +41,12 @@ class BrowserstackTarget implements QaTarget {
 
   open(opts: OpenOptions): Promise<QaSession> {
     return CloudSession.open(this.ctx, opts, this.budget, this.name);
+  }
+
+  /** The two secret store keys that the config maps into `qa.device.browserstack` (spec 2.6). */
+  needs(leg: Leg): TargetNeeds {
+    const cfg = this.ctx.config.device.browserstack;
+    return { credentials: [credentialNeed('BROWSERSTACK_USERNAME', cfg.username, [leg.name]), credentialNeed('BROWSERSTACK_ACCESS_KEY', cfg.accessKey, [leg.name])] };
   }
 }
 

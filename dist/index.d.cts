@@ -1,12 +1,12 @@
-import { a as QaSubcommand, P as Provider } from './extensions-D2fnlaXp.cjs';
-export { E as EXTENSION_PREFIX, b as QaCommandOptions, Q as QaExtension, S as SUBCOMMANDS, e as extensionNames, c as extensionTargets, l as loadExtensions, q as qaCommand } from './extensions-D2fnlaXp.cjs';
+import { a as QaSubcommand, P as Provider } from './extensions-BSzR-lI4.cjs';
+export { E as EXTENSION_PREFIX, b as QaCommandOptions, Q as QaExtension, S as SUBCOMMANDS, e as extensionNames, c as extensionTargets, l as loadExtensions, q as qaCommand } from './extensions-BSzR-lI4.cjs';
 import { C as Clock } from './clock-BUdCJ9bN.cjs';
-import { a as QaTargetRegistry, Q as QaTarget, L as Leg, A as Act, S as Settle, b as LedgerEntry, O as OpenTargetRegistry } from './contract-xgrBaS32.cjs';
-export { c as ACT_KINDS, d as ActKind, e as AttachmentKind, C as Capture, E as EvidenceKind, I as INTAKE_DIR, f as Isolation, g as OpenOptions, P as Provenance, h as QA_TARGET_CAPABILITIES, i as QA_TARGET_SPEC_VERSION, j as QaIssue, k as QaSession, l as QaTargetCapability, R as REPORT_STATUSES, m as ROW_FAILURES, n as RawMedia, o as ReportStatus, p as RowFailure, q as RowResult, r as SessionLogLine, s as SkipReason, t as Surface, T as TargetReadiness, V as VideoCapture } from './contract-xgrBaS32.cjs';
+import { a as QaTargetRegistry, Q as QaTarget, C as CredentialNeed, A as Act, S as Settle, L as LedgerEntry, O as OpenTargetRegistry } from './contract-DSRjkOLo.cjs';
+export { b as ACT_KINDS, c as ActKind, d as AttachmentKind, e as CONSENT_DIR, f as Capture, g as ConsentGrant, h as ConsentGroup, i as ConsentManifest, j as ConsentRecord, k as ConsentStore, D as DataNeed, E as EvidenceKind, G as GrantChoices, I as INTAKE_DIR, l as Isolation, m as Leg, M as ManifestInput, n as ManifestItem, o as OpenOptions, p as OutwardNeed, P as Provenance, q as QA_TARGET_CAPABILITIES, r as QA_TARGET_SPEC_VERSION, s as QaIssue, t as QaSession, u as QaTargetCapability, R as REPORT_STATUSES, v as ROW_FAILURES, w as RawMedia, x as ReportStatus, y as RowFailure, z as RowResult, B as SessionLogLine, F as SkipReason, H as Surface, T as TargetNeeds, J as TargetReadiness, V as VideoCapture, K as computeManifest, N as credentialNeed, U as diff, W as fileConsentStore, X as grant, Y as manifestHash, Z as missingCredentials, _ as recordGrants } from './contract-DSRjkOLo.cjs';
 import { Q as QaConfig } from './config-B-lxHEnb.cjs';
 export { L as LegConfig, q as qaConfig, a as qaConfigOf, w as withAppPaths } from './config-B-lxHEnb.cjs';
 export { i as isCodedError } from './errors-DgRPaUlC.cjs';
-export { I as IssueDraft, i as issueMarkdown, l as listIssues, r as readIssue, a as recordDir, b as recordId, w as writeIssue } from './records-Dp-XPGne.cjs';
+export { I as IssueDraft, i as issueMarkdown, l as listIssues, r as readIssue, a as recordDir, b as recordId, w as writeIssue } from './records-CiVGUy4n.cjs';
 import { T as Token } from './app-KXgbRXYO.cjs';
 import 'zod';
 
@@ -55,104 +55,6 @@ interface PngSize {
 /** The pixel size from the IHDR chunk, or null when the bytes are not a PNG header. */
 declare function pngSize(bytes: Uint8Array): PngSize | null;
 
-/** The four groups of a run contract manifest (spec 2.6). */
-type ConsentGroup = 'credentials' | 'devices' | 'outward' | 'data';
-/** One need the pass asks consent for. The printed manifest shows the title, never a value. */
-interface ManifestItem {
-    /** Stable unique id within the manifest, `<group>:<name>`. */
-    id: string;
-    group: ConsentGroup;
-    /** One short line the reviewer reads. */
-    title: string;
-    /** True when the item reaches outside and always needs an explicit grant (spec 2.6). */
-    outward: boolean;
-    /** A credentials item only: the environment key. Never the value. */
-    key?: string;
-    /** A credentials item only: whether the secret store holds a value. */
-    present?: boolean;
-    /** A credentials item that is set: a short sha256 of the value, 16 hex characters at most. */
-    fingerprint?: string;
-}
-/** The requirements manifest a pass computes before any outward action (spec 2.6). */
-interface ConsentManifest {
-    title: string;
-    /** The items, sorted by group then id, so the same needs give the same manifest. */
-    items: ManifestItem[];
-}
-/** A credential the pass needs. The caller gives set/empty and a short hash, never the value. */
-interface CredentialNeed {
-    key: string;
-    present: boolean;
-    /** A short sha256 of the value, 1 to 16 hex characters. Absent when empty. */
-    fingerprint?: string;
-}
-/** An outward action the pass will take (spec 2.6). Each always needs an explicit grant. */
-interface OutwardNeed {
-    /** `throwaway-bot`, `test-account`, `third-party-request`, `invoice`. */
-    id: string;
-    title: string;
-}
-/** A data or isolation step the pass will run (spec 2.6). */
-interface DataNeed {
-    /** `world-reset`, `per-pass-fork`, `dev-db-copy`. */
-    id: string;
-    title: string;
-}
-/** The input of a manifest: the title, the legs and the needs the caller read from the rows and config. */
-interface ManifestInput {
-    /** The pass or report title, for the printed manifest. */
-    title: string;
-    /** The legs the pass runs. A device leg adds one device item. */
-    legs: Leg[];
-    credentials?: CredentialNeed[];
-    outward?: OutwardNeed[];
-    data?: DataNeed[];
-}
-/** One recorded grant: the item id and how the reviewer gave it. */
-interface ConsentGrant {
-    id: string;
-    /** `item` for a per-item yes, `all` for an "allow all". */
-    via: 'item' | 'all';
-}
-/** The persisted consent for one manifest, keyed by its hash. Holds no secret value. */
-interface ConsentRecord {
-    hash: string;
-    grants: ConsentGrant[];
-}
-/** A per-item grant map, or the string `all`. */
-type GrantChoices = 'all' | Record<string, boolean>;
-/** The persistence of consent records, injected so a test uses an in-memory store (spec 2.6). */
-interface ConsentStore {
-    read(hash: string): Promise<ConsentRecord | null>;
-    write(hash: string, record: ConsentRecord): Promise<void>;
-}
-/**
- * The requirements manifest of a pass (spec 2.6). The caller reads the needs from the resolved
- * rows, the legs and the config. The items are sorted by group then id, so the same needs give the
- * same manifest and the same hash.
- */
-declare function computeManifest(input: ManifestInput): ConsentManifest;
-/** The stable sha256 of a manifest. The same needs give the same hash across runs (spec 2.6). */
-declare function manifestHash(manifest: ConsentManifest): string;
-/**
- * The consent record for a manifest and the reviewer's choices. `all` grants every listed item,
- * outward actions included, because the reviewer chose it with those actions in front of them. A
- * per-item map grants an item only when its choice is `true`, so an outward action always needs an
- * explicit grant (spec 2.6).
- */
-declare function grant(manifest: ConsentManifest, choices: GrantChoices): ConsentRecord;
-/**
- * The items still to ask, given a prior record (spec 2.6). An item a prior grant covers drops out,
- * so an unchanged manifest returns nothing and a grown manifest returns only its new items. A null
- * record, or none, asks every item.
- */
-declare function diff(prior: ConsentRecord | null, manifest: ConsentManifest): ManifestItem[];
-/**
- * A consent store that writes one JSON record per hash under `dir`, the project's `.lw/qa/consent`
- * folder. The record holds the grant and no secret value.
- */
-declare function fileConsentStore(dir: string): ConsentStore;
-
 /** The @username of the BotFather account the lifecycle drives. */
 declare const BOTFATHER = "BotFather";
 /** The exact confirmation BotFather asks for before it deletes a bot. */
@@ -172,6 +74,8 @@ interface UserbotProvider {
     lease(): Promise<UserbotLease>;
     /** Releases the lease after the run, when the provider needs it. */
     release?(lease: UserbotLease): Promise<void>;
+    /** The credentials a lease needs, set or empty, for the run contract (spec 2.6). Never a value. */
+    needs?(): CredentialNeed[];
 }
 /** The BotFather chat the lifecycle drives: one send, then its reply. A test scripts the replies. */
 interface BotFatherChat {
@@ -541,4 +445,4 @@ declare const MIN_VIDEO_S = 1;
 /** The registered `qa.target` drivers: `app.get(QA_TARGETS).get('playwright')`. Extension modules add theirs at boot. */
 declare const QA_TARGETS: Token<OpenTargetRegistry>;
 
-export { ANCHOR_KINDS, Act, BOTFATHER, BOT_STORE_DIR, type BotCommand, type BotFatherChat, type BotGetMe, type BotRecord, type BotStore, COMMENTS_DIR, type Comment, type CommentAnchor, type CommentReply, type CommentServer, type CommentServerOptions, type CommentStore, type ConfigureBotOptions, type ConsentGrant, type ConsentGroup, type ConsentManifest, type ConsentRecord, type ConsentStore, type CredentialNeed, DEFAULT_SCORE_WEIGHTS, DELETE_CONFIRM, type DataNeed, type DeadBot, type ExportContext, type FlowAnchor, type GaugeOptions, type GrantChoices, LedgerEntry, Leg, MIN_VIDEO_S, type ManifestInput, type ManifestItem, type NewBot, type NewComment, OpenTargetRegistry, type OutwardNeed, type PlaywrightTargetOptions, QA_TARGETS, QaConfig, QaSubcommand, QaTarget, QaTargetRegistry, type RegionAnchor, type ResolvedComment, SEVERITY_DEDUCTION, type ScoreDimension, type ScoreInput, type ScoreResult, type ScoreWeights, Settle, type SeverityCounts, type StepAnchor, type TextAnchor, type TimeAnchor, type UserbotLease, type UserbotProvider, addComment, botIdOf, commentsFile, computeManifest, computeScore, configureBot, createPlaywrightTarget, createStatesCommand, createTargetRegistry, destroyBot, diff, exportTaskList, extensionOf, fileBotStore, fileCommentStore, fileConsentStore, grant, makeComment, manifestHash, mimeOfExtension, newBot, parseBotToken, pngSize, qaProvider, renderScoreGauge, replyToComment, resolveComments, setStatus, startCommentServer, validateAnchor };
+export { ANCHOR_KINDS, Act, BOTFATHER, BOT_STORE_DIR, type BotCommand, type BotFatherChat, type BotGetMe, type BotRecord, type BotStore, COMMENTS_DIR, type Comment, type CommentAnchor, type CommentReply, type CommentServer, type CommentServerOptions, type CommentStore, type ConfigureBotOptions, CredentialNeed, DEFAULT_SCORE_WEIGHTS, DELETE_CONFIRM, type DeadBot, type ExportContext, type FlowAnchor, type GaugeOptions, LedgerEntry, MIN_VIDEO_S, type NewBot, type NewComment, OpenTargetRegistry, type PlaywrightTargetOptions, QA_TARGETS, QaConfig, QaSubcommand, QaTarget, QaTargetRegistry, type RegionAnchor, type ResolvedComment, SEVERITY_DEDUCTION, type ScoreDimension, type ScoreInput, type ScoreResult, type ScoreWeights, Settle, type SeverityCounts, type StepAnchor, type TextAnchor, type TimeAnchor, type UserbotLease, type UserbotProvider, addComment, botIdOf, commentsFile, computeScore, configureBot, createPlaywrightTarget, createStatesCommand, createTargetRegistry, destroyBot, exportTaskList, extensionOf, fileBotStore, fileCommentStore, makeComment, mimeOfExtension, newBot, parseBotToken, pngSize, qaProvider, renderScoreGauge, replyToComment, resolveComments, setStatus, startCommentServer, validateAnchor };

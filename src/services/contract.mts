@@ -5,9 +5,9 @@
 // once per item or takes a single "allow all", and persists the grant keyed by the manifest hash.
 // A rerun with the same manifest asks nothing; a grown manifest asks only the new items.
 //
-// This file never receives, stores or prints a secret value. A credential carries set/empty and a
-// short sha256 only. The caller computes that short hash and passes the key, never the value.
-import { mkdir, writeFile } from 'node:fs/promises';
+// The manifest never stores or prints a secret value. A credential carries set/empty and a short
+// sha256 only. `credentialNeed` turns a value into that pair at once and keeps no reference to it.
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LaunchwrightError } from '../kernel/index.mts';
 import { readTextOrNull, sha256 } from '../kernel/services/fs.mts';
@@ -34,6 +34,8 @@ export interface ManifestItem {
   present?: boolean;
   /** A credentials item that is set: a short sha256 of the value, 16 hex characters at most. */
   fingerprint?: string;
+  /** The legs that need the item, sorted. A pass that drops them drops the need. */
+  legs?: string[];
 }
 
 /** The requirements manifest a pass computes before any outward action (spec 2.6). */
@@ -49,6 +51,22 @@ export interface CredentialNeed {
   present: boolean;
   /** A short sha256 of the value, 1 to 16 hex characters. Absent when empty. */
   fingerprint?: string;
+  /** The legs that need the credential. */
+  legs?: string[];
+}
+
+/** The length of a credential fingerprint: enough to see a change, too short to guess the value. */
+const FINGERPRINT_LENGTH = 12;
+
+/** The need of one credential: set or empty, and a short sha256 when set. The value stays here. */
+export function credentialNeed(envKey: string, value: string | undefined, legs?: readonly string[]): CredentialNeed {
+  const present = value !== undefined && value !== '';
+  return {
+    key: envKey,
+    present,
+    ...(present ? { fingerprint: sha256(value).slice(0, FINGERPRINT_LENGTH) } : {}),
+    ...(legs && legs.length > 0 ? { legs: [...legs] } : {}),
+  };
 }
 
 /** An outward action the pass will take (spec 2.6). Each always needs an explicit grant. */
@@ -87,6 +105,10 @@ export interface ConsentGrant {
 export interface ConsentRecord {
   hash: string;
   grants: ConsentGrant[];
+  /** The manifest title the reviewer saw. */
+  title?: string;
+  /** The items the reviewer saw. A grant covers only an item that a recorded manifest lists. */
+  items?: ManifestItem[];
 }
 
 /** A per-item grant map, or the string `all`. */
@@ -96,7 +118,14 @@ export type GrantChoices = 'all' | Record<string, boolean>;
 export interface ConsentStore {
   read(hash: string): Promise<ConsentRecord | null>;
   write(hash: string, record: ConsentRecord): Promise<void>;
+  /** Every record, sorted by hash. */
+  list(): Promise<ConsentRecord[]>;
+  /** Removes the record of `hash`, or every record when `hash` is absent. Returns the count. */
+  remove(hash?: string): Promise<number>;
 }
+
+/** The consent store folder, relative to the project root (spec 2.6). */
+export const CONSENT_DIR = '.lw/qa/consent';
 
 /** A device target that needs a device or rig grant, and the line the reviewer reads. */
 const DEVICE_RIGS: Record<string, string> = {
@@ -120,6 +149,7 @@ function credentialItem(need: CredentialNeed): ManifestItem {
   }
   const item: ManifestItem = { id: `credentials:${need.key}`, group: 'credentials', title: `${need.key} (${need.present ? 'set' : 'empty'})`, outward: false, key: need.key, present: need.present };
   if (need.present && need.fingerprint !== undefined) item.fingerprint = need.fingerprint;
+  if (need.legs !== undefined && need.legs.length > 0) item.legs = [...new Set(need.legs)].sort();
   return item;
 }
 
@@ -150,7 +180,8 @@ function namedItem(group: 'outward' | 'data', need: OutwardNeed | DataNeed): Man
 export function computeManifest(input: ManifestInput): ConsentManifest {
   const items = new Map<string, ManifestItem>();
   const add = (item: ManifestItem): void => {
-    items.set(item.id, item);
+    const legs = [...new Set([...(items.get(item.id)?.legs ?? []), ...(item.legs ?? [])])].sort();
+    items.set(item.id, legs.length > 0 ? { ...item, legs } : item);
   };
   for (const need of input.credentials ?? []) add(credentialItem(need));
   for (const item of deviceItems(input.legs ?? [])) add(item);
@@ -194,14 +225,47 @@ export function grant(manifest: ConsentManifest, choices: GrantChoices): Consent
   return { hash: manifestHash(manifest), grants };
 }
 
+/** The ids that a set of records grants. */
+function grantedIds(prior: ConsentRecord | readonly ConsentRecord[] | null): Set<string> {
+  const records: readonly ConsentRecord[] = prior === null ? [] : Array.isArray(prior) ? prior : [prior as ConsentRecord];
+  return new Set(records.flatMap((record) => record.grants.map((g) => g.id)));
+}
+
 /**
- * The items still to ask, given a prior record (spec 2.6). An item a prior grant covers drops out,
- * so an unchanged manifest returns nothing and a grown manifest returns only its new items. A null
- * record, or none, asks every item.
+ * The items still to ask, given the prior records (spec 2.6). A grant is per item, so it covers the
+ * item in any manifest: an unchanged manifest returns nothing and a grown manifest returns only its
+ * new items. A null record, or none, asks every item.
  */
-export function diff(prior: ConsentRecord | null, manifest: ConsentManifest): ManifestItem[] {
-  const granted = new Set((prior?.grants ?? []).map((g) => g.id));
+export function diff(prior: ConsentRecord | readonly ConsentRecord[] | null, manifest: ConsentManifest): ManifestItem[] {
+  const granted = grantedIds(prior);
   return manifest.items.filter((item) => !granted.has(item.id));
+}
+
+/**
+ * The record of a manifest after a decision (spec 2.6). It keeps the prior grants of the listed
+ * items and adds `all` (every item) or the named ids. An id that the manifest does not list fails
+ * with `qa.consent.unlisted`, so an outward action is granted only when the reviewer saw it.
+ */
+export function recordGrants(manifest: ConsentManifest, prior: readonly ConsentRecord[], choice: 'all' | readonly string[]): ConsentRecord {
+  const listed = new Set(manifest.items.map((item) => item.id));
+  const unlisted = choice === 'all' ? [] : choice.filter((id) => !listed.has(id));
+  if (unlisted.length > 0) {
+    throw new LaunchwrightError('qa.consent.unlisted', `The manifest "${manifest.title}" does not list ${unlisted.join(', ')}. Grant only an item it lists: ${[...listed].join(', ') || 'none'}.`, {
+      context: { unlisted },
+    });
+  }
+  const before = new Map(prior.flatMap((record) => record.grants.map((g) => [g.id, g.via] as const)));
+  const grants: ConsentGrant[] = [];
+  for (const item of manifest.items) {
+    const via = before.get(item.id) ?? (choice === 'all' ? 'all' : choice.includes(item.id) ? 'item' : undefined);
+    if (via !== undefined) grants.push({ id: item.id, via });
+  }
+  return { hash: manifestHash(manifest), title: manifest.title, items: manifest.items, grants };
+}
+
+/** The credentials items with no value. A pass refuses to start while one stays in its manifest. */
+export function missingCredentials(manifest: ConsentManifest): ManifestItem[] {
+  return manifest.items.filter((item) => item.group === 'credentials' && item.present === false);
 }
 
 /**
@@ -229,5 +293,40 @@ export function fileConsentStore(dir: string): ConsentStore {
       await mkdir(dir, { recursive: true });
       await writeFile(file, `${JSON.stringify(record, null, 2)}\n`);
     },
+    async list() {
+      const records: ConsentRecord[] = [];
+      for (const hash of await recordHashes(dir)) {
+        const record = await this.read(hash);
+        if (record !== null) records.push(record);
+      }
+      return records;
+    },
+    async remove(hash) {
+      const hashes = hash === undefined ? await recordHashes(dir) : [hash];
+      let removed = 0;
+      for (const h of hashes) {
+        const file = fileFor(h);
+        if ((await readTextOrNull(file)) === null) continue;
+        await rm(file);
+        removed += 1;
+      }
+      return removed;
+    },
   };
+}
+
+/** The hashes of the records under `dir`, sorted. A missing folder holds none. */
+async function recordHashes(dir: string): Promise<string[]> {
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw new LaunchwrightError('qa.consent.list', `Cannot list the consent records in ${dir}.`, { cause });
+  }
+  return names
+    .filter((name) => name.endsWith('.json'))
+    .map((name) => name.slice(0, -'.json'.length))
+    .filter((hash) => HEX64.test(hash))
+    .sort();
 }

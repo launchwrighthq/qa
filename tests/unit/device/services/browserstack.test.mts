@@ -74,6 +74,18 @@ describe('BrowserStack minutes and keys', () => {
   it('splices the expression into the async script and awaits a promise', () => {
     expect(asyncScript('location.href;')).toContain('return (\nlocation.href\n);');
   });
+
+  it('declares both keys for the run contract as set or empty, never with a value (spec 2.6)', async () => {
+    const root = await tmpDir();
+    const set = createBrowserstackTarget(createDeviceContext(config(), fakeDeps({ root }))).needs?.(leg('bs-iphone'));
+    expect(set?.credentials?.map((c) => [c.key, c.present, c.legs])).toEqual([
+      ['BROWSERSTACK_USERNAME', true, ['safari-ios']],
+      ['BROWSERSTACK_ACCESS_KEY', true, ['safari-ios']],
+    ]);
+    expect(JSON.stringify(set)).not.toContain(BS_KEY);
+    const empty = createBrowserstackTarget(createDeviceContext(deviceConfig({ devices }), fakeDeps({ root }))).needs?.(leg('bs-iphone'));
+    expect(empty?.credentials?.map((c) => c.present)).toEqual([false, false]);
+  });
 });
 
 describe('the per-run minute budget', () => {

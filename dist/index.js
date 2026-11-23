@@ -6,13 +6,13 @@ import {
   loadExtensions,
   qaCommand,
   qaProvider
-} from "./chunk-3NHPBT7P.js";
+} from "./chunk-SYN6R5ZP.js";
 import {
   createStatesCommand
-} from "./chunk-GUHFATHG.js";
+} from "./chunk-UF3OGAIM.js";
 import {
   QA_TARGETS
-} from "./chunk-CWVGWAJ5.js";
+} from "./chunk-CR6DWKU7.js";
 import {
   BOTFATHER,
   BOT_STORE_DIR,
@@ -23,7 +23,7 @@ import {
   fileBotStore,
   newBot,
   parseBotToken
-} from "./chunk-SKL7TLL4.js";
+} from "./chunk-W4O3YTED.js";
 import {
   ANCHOR_KINDS,
   COMMENTS_DIR,
@@ -39,16 +39,20 @@ import {
   validateAnchor
 } from "./chunk-37DKYQMH.js";
 import {
+  createPlaywrightTarget,
+  createTargetRegistry
+} from "./chunk-NWIOKD2S.js";
+import {
+  CONSENT_DIR,
   computeManifest,
+  credentialNeed,
   diff,
   fileConsentStore,
   grant,
-  manifestHash
-} from "./chunk-SYG32WE6.js";
-import {
-  createPlaywrightTarget,
-  createTargetRegistry
-} from "./chunk-N3XSGPAN.js";
+  manifestHash,
+  missingCredentials,
+  recordGrants
+} from "./chunk-N6G3DBRC.js";
 import "./chunk-62VIRJ2H.js";
 import "./chunk-ZYIHPZ3V.js";
 import "./chunk-YDFQPHPI.js";
@@ -84,7 +88,7 @@ import {
 import {
   QA_TARGET_CAPABILITIES,
   QA_TARGET_SPEC_VERSION
-} from "./chunk-K3P52YYY.js";
+} from "./chunk-3TLMTKDL.js";
 import {
   MIN_VIDEO_S,
   pngSize
@@ -108,6 +112,7 @@ export {
   BOTFATHER,
   BOT_STORE_DIR,
   COMMENTS_DIR,
+  CONSENT_DIR,
   DEFAULT_SCORE_WEIGHTS,
   DELETE_CONFIRM,
   EXTENSION_PREFIX,
@@ -129,6 +134,7 @@ export {
   createPlaywrightTarget,
   createStatesCommand,
   createTargetRegistry,
+  credentialNeed,
   destroyBot,
   diff,
   exportTaskList,
@@ -146,6 +152,7 @@ export {
   makeComment,
   manifestHash,
   mimeOfExtension,
+  missingCredentials,
   newBot,
   parseBotToken,
   pngSize,
@@ -155,6 +162,7 @@ export {
   qaProvider,
   readIssue,
   recordDir,
+  recordGrants,
   recordId,
   renderScoreGauge,
   replyToComment,

@@ -253,6 +253,11 @@ lw-qa states run --slug <slug>     # each union member, mounted or intercepted
 lw-qa paths crawl --slug <slug>    # can a user get there, and a video of the taps
 ```
 
+Before the first row, `session run` prints the run contract: credentials, devices, outward actions
+and data steps, each with an item id. It exits 2 on an empty credential or an item with no grant.
+Show the list to the user, then rerun with `--allow <id>` per item or `--allow-all`, only when the
+user agrees. `lw-qa consent show|reset|grant <id>` reads and changes the records.
+
 The runner records the evidence of spec 2.11 for each row and leg, and nothing else may:
 
 | Evidence | When |

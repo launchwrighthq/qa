@@ -6,11 +6,14 @@ import {
   computeManifest,
   type ConsentRecord,
   type ConsentStore,
+  credentialNeed,
   diff,
   fileConsentStore,
   grant,
   type ManifestInput,
   manifestHash,
+  missingCredentials,
+  recordGrants,
 } from '../../src/services/contract.mts';
 import type { Leg } from '../../src/services/types.mts';
 
@@ -42,6 +45,15 @@ function memoryStore(): ConsentStore {
     },
     async write(hash, record) {
       records.set(hash, record);
+    },
+    async list() {
+      return [...records.keys()].sort().map((hash) => records.get(hash) as ConsentRecord);
+    },
+    async remove(hash) {
+      if (hash !== undefined) return records.delete(hash) ? 1 : 0;
+      const count = records.size;
+      records.clear();
+      return count;
     },
   };
 }
@@ -129,7 +141,77 @@ describe('run contract (spec 2.6, R5, R6)', () => {
   });
 });
 
+describe('run contract needs and per-item grants (spec 2.6, R5, R6)', () => {
+  const value = ['sample', 'value', '01'].join('-');
+
+  it('turns a value into set and a short hash, and an empty value into empty', () => {
+    const set = credentialNeed('QA_CLOUD_KEY', value, ['cloud-web']);
+    expect(set).toEqual({ key: 'QA_CLOUD_KEY', present: true, fingerprint: expect.stringMatching(/^[0-9a-f]{12}$/), legs: ['cloud-web'] });
+    expect(JSON.stringify(set)).not.toContain(value);
+    expect(credentialNeed('QA_CLOUD_KEY', '')).toEqual({ key: 'QA_CLOUD_KEY', present: false });
+    expect(credentialNeed('QA_CLOUD_KEY', undefined)).toEqual({ key: 'QA_CLOUD_KEY', present: false });
+  });
+
+  it('merges the legs of one credential that two legs need', () => {
+    const manifest = computeManifest({
+      title: 't',
+      legs: [],
+      credentials: [credentialNeed('QA_CLOUD_KEY', undefined, ['phone-b']), credentialNeed('QA_CLOUD_KEY', undefined, ['phone-a'])],
+    });
+    expect(manifest.items).toHaveLength(1);
+    expect(manifest.items[0]?.legs).toEqual(['phone-a', 'phone-b']);
+  });
+
+  it('names every empty credential and only those', () => {
+    expect(missingCredentials(computeManifest(sampleInput())).map((i) => i.key)).toEqual(['QA_TELEGRAM_SESSION']);
+  });
+
+  it('records the items the reviewer saw with the grants', () => {
+    const manifest = computeManifest(sampleInput());
+    const record = recordGrants(manifest, [], ['outward:invoice']);
+    expect(record.items).toEqual(manifest.items);
+    expect(record.title).toBe('Checkout pass');
+    expect(record.grants).toEqual([{ id: 'outward:invoice', via: 'item' }]);
+  });
+
+  it('refuses a grant for an item the manifest does not list', () => {
+    const manifest = computeManifest(sampleInput({ outward: [] }));
+    expect(() => recordGrants(manifest, [], ['outward:throwaway-bot'])).toThrow(expect.objectContaining({ code: 'qa.consent.unlisted' }));
+  });
+
+  it('asks only the new items when a grown manifest has a new hash', async () => {
+    const store = memoryStore();
+    const before = computeManifest(sampleInput());
+    const first = recordGrants(before, await store.list(), 'all');
+    await store.write(first.hash, first);
+    const after = computeManifest(sampleInput({ outward: [...(sampleInput().outward ?? []), { id: 'test-account', title: 'Create a test account' }] }));
+    expect(manifestHash(after)).not.toBe(manifestHash(before));
+    expect(await store.read(manifestHash(after))).toBeNull();
+    expect(diff(await store.list(), after).map((i) => i.id)).toEqual(['outward:test-account']);
+    const second = recordGrants(after, await store.list(), ['outward:test-account']);
+    expect(second.grants.find((g) => g.id === 'outward:test-account')).toEqual({ id: 'outward:test-account', via: 'item' });
+    expect(second.grants.find((g) => g.id === 'outward:invoice')).toEqual({ id: 'outward:invoice', via: 'all' });
+    expect(diff(second, after)).toEqual([]);
+  });
+});
+
 describe('fileConsentStore (spec 2.6)', () => {
+  it('lists every record and removes one or all', async () => {
+    const store = fileConsentStore(await tmpDir());
+    expect(await store.list()).toEqual([]);
+    expect(await store.remove()).toBe(0);
+    const a = grant(computeManifest(sampleInput()), 'all');
+    const b = grant(computeManifest(sampleInput({ title: 'Second pass' })), 'all');
+    await store.write(a.hash, a);
+    await store.write(b.hash, b);
+    expect((await store.list()).map((r) => r.hash)).toEqual([a.hash, b.hash].sort());
+    expect(await store.remove(a.hash)).toBe(1);
+    expect(await store.remove(a.hash)).toBe(0);
+    expect((await store.list()).map((r) => r.hash)).toEqual([b.hash]);
+    expect(await store.remove()).toBe(1);
+    expect(await store.list()).toEqual([]);
+  });
+
   it('writes and reads a record by its manifest hash', async () => {
     const dir = await tmpDir();
     const store = fileConsentStore(dir);

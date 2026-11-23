@@ -3,8 +3,10 @@ import { join } from 'node:path';
 import { tmpDir } from '../../../src/kernel/testing/index.mts';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { QaCommandOptions } from '../../../src/commands/qa.command.mts';
+import consent from '../../../src/commands/qa-consent.mts';
 import session from '../../../src/commands/qa-session.mts';
-import { computeManifest, manifestHash } from '../../../src/services/contract.mts';
+import { computeManifest, credentialNeed, manifestHash } from '../../../src/services/contract.mts';
+import { createFakeTarget } from '../../../src/testing/index.mts';
 import { readLedger, readResults } from '../../../src/services/ledger.mts';
 import type { Leg } from '../../../src/services/types.mts';
 import { commit, initRepo } from '../../support/git-repo.mts';
@@ -142,9 +144,87 @@ describe('lw qa session run contract (spec 2.6, R5)', () => {
 
   it('refuses a new need without allow all and exits 2', async () => {
     const path = devicePlan('contract-refuse', 'Device refuse');
+    // A grant covers its item in every manifest, so the grants of the tests above would cover this one.
+    expect(await consent.run(['reset'], cli().opts)).toBe(0);
     const c = cli({ config: deviceConfig });
     expect(await session.run(['run', path], c.opts)).toBe(2);
     expect(c.err.some((l) => l.includes('need a grant'))).toBe(true);
     expect(c.err.some((l) => l.includes('An Android device over adb'))).toBe(true);
+  });
+
+  it('asks only the new item of a grown manifest, and --allow grants that item', async () => {
+    const title = 'Device growth';
+    const path = devicePlan('contract-grow', title);
+    expect(await session.run(['run', path, '--allow-all'], cli({ config: deviceConfig }).opts)).toBe(0);
+    const grown = `docs/qa/contract-grow-more.shots.json`;
+    writeFileSync(join(repo, grown), JSON.stringify({ ...JSON.parse(readFileSync(join(repo, path), 'utf8')), shots: [...rows(path), row('home.iphone', ['safari-ios'])] }));
+    const config = { qa: { legs: { ...deviceConfig.qa.legs, 'safari-ios': { surface: 'web', target: 'ios-webkit' } }, baseUrls: {} } };
+    const refused = cli({ config });
+    expect(await session.run(['run', grown], refused.opts)).toBe(2);
+    expect(refused.err.filter((l) => l.startsWith('  ')).map((l) => l.trim().split(/\s+/)[0])).toEqual(['devices:ios-webkit']);
+    const granted = cli({ config });
+    expect(await session.run(['run', grown, '--allow', 'devices:ios-webkit'], granted.opts)).toBe(0);
+    expect(granted.out).toContain('run contract: recorded 1 grant(s) under .lw/qa/consent');
+    const again = cli({ config });
+    expect(await session.run(['run', grown], again.opts)).toBe(0);
+    expect(again.out).toContain('run contract: every item is granted; asking nothing');
+  });
+
+  it('lists the data steps of the selected rows', async () => {
+    const path = 'docs/qa/contract-data.shots.json';
+    writeFileSync(
+      join(repo, path),
+      JSON.stringify({
+        title: 'Data steps',
+        generated: '2026-11-21T00:00:00Z',
+        shots: [
+          { ...row('home.armed', ['web']), fixture: { arm: ['member-expiring'] } },
+          { ...row('home.forked', ['web']), fork: 'expiry' },
+        ],
+      }),
+    );
+    const c = cli();
+    expect(await session.run(['run', path], c.opts)).toBe(2);
+    expect(c.out.some((l) => l.includes('data:qa-world-arm') && l.includes('Arm 1 state(s) on the QA world database'))).toBe(true);
+    expect(c.out.some((l) => l.includes('data:qa-database-fork') && l.includes('row group(s) expiry'))).toBe(true);
+    const narrowed = cli();
+    expect(await session.run(['run', path, '--only', 'home.forked'], narrowed.opts)).toBe(2);
+    expect(narrowed.out.some((l) => l.includes('data:qa-world-arm'))).toBe(false);
+  });
+});
+
+/** One row of a plan on the given legs. */
+function row(id: string, legs: string[]) {
+  const [screen, state] = id.split('.') as [string, string];
+  return { id, screen, state, source: ['commit:abcdef1'], legs, route: '/', fixture: { arm: [] }, settle: { selector: 'body' }, expect: 'the page shows' };
+}
+
+function rows(path: string): unknown[] {
+  return (JSON.parse(readFileSync(join(repo, path), 'utf8')) as { shots: unknown[] }).shots;
+}
+
+describe('lw qa session run credentials (spec 2.6, R5)', () => {
+  const key = ['QA', 'CLOUD', 'KEY'].join('_');
+  const cloudConfig = { qa: { legs: { web: { surface: 'web', target: 'fake' }, 'cloud-web': { surface: 'web', target: 'cloud' } }, baseUrls: { web: 'http://web.test' } } };
+  const cloud = Object.assign(createFakeTarget(), { needs: (leg: Leg) => ({ credentials: [credentialNeed(key, undefined, [leg.name])] }) });
+
+  function cloudPlan(): string {
+    const path = 'docs/qa/contract-cloud.shots.json';
+    writeFileSync(join(repo, path), JSON.stringify({ title: 'Cloud', generated: '2026-11-21T00:00:00Z', shots: [row('home.cloud', ['web', 'cloud-web'])] }));
+    return path;
+  }
+
+  it('refuses to start with an empty credential, names the key and the leg, and exits 2', async () => {
+    const c = cli({ config: cloudConfig, targets: { cloud } });
+    expect(await session.run(['run', cloudPlan(), '--allow-all'], c.opts)).toBe(2);
+    expect(c.out.some((l) => l.includes(`credentials:${key}`) && l.includes('(empty)'))).toBe(true);
+    expect(c.err).toContain(`  ${key}  needed by leg cloud-web`);
+    expect(existsSync(join(repo, 'docs/qa/assets/contract-cloud'))).toBe(false);
+  });
+
+  it('starts once the leg that needs the credential is dropped', async () => {
+    const c = cli({ config: cloudConfig, targets: { cloud } });
+    expect(await session.run(['run', cloudPlan(), '--legs', 'web'], c.opts)).toBe(0);
+    expect(c.out.some((l) => l.includes(key))).toBe(false);
   });
 });

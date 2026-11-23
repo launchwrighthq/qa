@@ -14,6 +14,7 @@ export {
   type QaTargetCapability,
   type QaTargetRegistry,
   type SessionLogLine,
+  type TargetNeeds,
   type TargetReadiness,
   type VideoCapture,
 } from './drivers/target/contract.mts';
@@ -25,11 +26,13 @@ export { pngSize } from './services/png.mts';
 export { type IssueDraft, issueMarkdown, listIssues, readIssue, recordDir, recordId, writeIssue } from './services/records.mts';
 export {
   computeManifest,
+  CONSENT_DIR,
   type ConsentGrant,
   type ConsentGroup,
   type ConsentManifest,
   type ConsentRecord,
   type ConsentStore,
+  credentialNeed,
   type CredentialNeed,
   type DataNeed,
   diff,
@@ -39,7 +42,9 @@ export {
   type ManifestInput,
   type ManifestItem,
   manifestHash,
+  missingCredentials,
   type OutwardNeed,
+  recordGrants,
 } from './services/contract.mts';
 export {
   type BotCommand,

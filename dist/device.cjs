@@ -4779,7 +4779,16 @@ var init_records = __esm({
 });
 
 // src/services/contract.mts
-var import_promises7, import_node_path18;
+function credentialNeed(envKey, value, legs) {
+  const present = value !== void 0 && value !== "";
+  return {
+    key: envKey,
+    present,
+    ...present ? { fingerprint: sha256(value).slice(0, FINGERPRINT_LENGTH) } : {},
+    ...legs && legs.length > 0 ? { legs: [...legs] } : {}
+  };
+}
+var import_promises7, import_node_path18, FINGERPRINT_LENGTH;
 var init_contract2 = __esm({
   "src/services/contract.mts"() {
     "use strict";
@@ -4788,6 +4797,7 @@ var init_contract2 = __esm({
     import_node_path18 = require("path");
     init_kernel();
     init_fs();
+    FINGERPRINT_LENGTH = 12;
   }
 });
 
@@ -8247,6 +8257,7 @@ function createAndroidEmulatorTarget(ctx) {
 // src/device/drivers/target/browserstack.mts
 init_cjs_shims();
 init_kernel();
+init_src();
 init_config3();
 
 // src/device/services/cloud-session.mts
@@ -8476,6 +8487,11 @@ var BrowserstackTarget = class {
   }
   open(opts) {
     return CloudSession.open(this.ctx, opts, this.budget, this.name);
+  }
+  /** The two secret store keys that the config maps into `qa.device.browserstack` (spec 2.6). */
+  needs(leg) {
+    const cfg = this.ctx.config.device.browserstack;
+    return { credentials: [credentialNeed("BROWSERSTACK_USERNAME", cfg.username, [leg.name]), credentialNeed("BROWSERSTACK_ACCESS_KEY", cfg.accessKey, [leg.name])] };
   }
 };
 function createBrowserstackTarget(ctx) {

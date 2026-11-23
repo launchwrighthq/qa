@@ -9,6 +9,7 @@ export {
   type QaTarget,
   type QaTargetCapability,
   type SessionLogLine,
+  type TargetNeeds,
   type TargetReadiness,
   type VideoCapture,
 } from '../../../index.mts';

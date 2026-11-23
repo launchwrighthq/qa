@@ -2,6 +2,7 @@
 // device drivers (`android-adb`, `android-emulator`, `ios-webkit`, `ios-simulator`, `browserstack`)
 // come with the `device` submodule.
 import type { Driver } from '../../kernel/index.mts';
+import type { CredentialNeed, DataNeed, OutwardNeed } from '../../services/contract.mts';
 import type { Act, Leg, Settle } from '../../services/types.mts';
 
 export const QA_TARGET_SPEC_VERSION = '1';
@@ -108,6 +109,17 @@ export interface RoutablePage {
   locator(selector: string): RoutableLocator;
 }
 
+/**
+ * What a leg on a target needs before the pass starts (spec 2.6). The run contract lists each need,
+ * so a missing credential shows before the first row. A credential is a key and set or empty, never
+ * a value.
+ */
+export interface TargetNeeds {
+  credentials?: CredentialNeed[];
+  outward?: OutwardNeed[];
+  data?: DataNeed[];
+}
+
 export interface TargetReadiness {
   ready: boolean;
   /** Why the target is not ready, and the fix. */
@@ -124,6 +136,8 @@ export interface QaTarget extends Driver {
   readonly capabilities: ReadonlySet<QaTargetCapability>;
   ready(leg: Leg): Promise<TargetReadiness>;
   open(opts: OpenOptions): Promise<QaSession>;
+  /** The needs of a leg on this target, read from the config only. Absent when it needs nothing. */
+  needs?(leg: Leg): TargetNeeds;
 }
 
 /** The registered targets, by driver name. `get` fails with `qa.target.unknown`. */

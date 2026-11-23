@@ -3,6 +3,7 @@
 // library ships only the userbot-provider interface and this lifecycle, so it names no account. The
 // token is a secret: it never passes through a log line or a printed message here.
 import { LaunchwrightError } from '../kernel/index.mts';
+import type { CredentialNeed } from './contract.mts';
 
 /** The @username of the BotFather account the lifecycle drives. */
 export const BOTFATHER = 'BotFather';
@@ -26,6 +27,8 @@ export interface UserbotProvider {
   lease(): Promise<UserbotLease>;
   /** Releases the lease after the run, when the provider needs it. */
   release?(lease: UserbotLease): Promise<void>;
+  /** The credentials a lease needs, set or empty, for the run contract (spec 2.6). Never a value. */
+  needs?(): CredentialNeed[];
 }
 
 /** The BotFather chat the lifecycle drives: one send, then its reply. A test scripts the replies. */

@@ -1,4 +1,16 @@
 import {
+  isGithubMediaHost,
+  isGithubUpload,
+  mediaLinks,
+  takesGithubToken
+} from "./chunk-CIX36DE4.js";
+import {
+  download,
+  kindOf,
+  mimeOf,
+  sniffMime
+} from "./chunk-HVRFRQJC.js";
+import {
   INTAKE_DRIVERS,
   JOIN_GAP_MS,
   applyGroups,
@@ -14,34 +26,22 @@ import {
   stageBatch,
   writeCursor,
   writeProposal
-} from "./chunk-H323EBXL.js";
+} from "./chunk-5WJYHB7Y.js";
 import {
   FAKE_INTAKE_ITEMS,
   FakeIntakeDriver
 } from "./chunk-FI33MU4L.js";
 import {
-  isGithubMediaHost,
-  isGithubUpload,
-  mediaLinks,
-  takesGithubToken
-} from "./chunk-CIX36DE4.js";
-import {
-  download,
-  kindOf,
-  mimeOf,
-  sniffMime
-} from "./chunk-HVRFRQJC.js";
-import {
   QA_INTAKE_CAPABILITIES,
   QA_INTAKE_SPEC_VERSION
 } from "./chunk-K3F4HTKJ.js";
-import "./chunk-3NHPBT7P.js";
-import "./chunk-GUHFATHG.js";
-import "./chunk-CWVGWAJ5.js";
-import "./chunk-SKL7TLL4.js";
+import "./chunk-SYN6R5ZP.js";
+import "./chunk-UF3OGAIM.js";
+import "./chunk-CR6DWKU7.js";
+import "./chunk-W4O3YTED.js";
 import "./chunk-37DKYQMH.js";
-import "./chunk-SYG32WE6.js";
-import "./chunk-N3XSGPAN.js";
+import "./chunk-NWIOKD2S.js";
+import "./chunk-N6G3DBRC.js";
 import "./chunk-62VIRJ2H.js";
 import "./chunk-ZYIHPZ3V.js";
 import "./chunk-YDFQPHPI.js";
@@ -62,7 +62,7 @@ import {
 } from "./chunk-O5NSNELG.js";
 import "./chunk-B7UB2WOJ.js";
 import "./chunk-ZXEFVZDQ.js";
-import "./chunk-K3P52YYY.js";
+import "./chunk-3TLMTKDL.js";
 import "./chunk-XZN5EDSR.js";
 import "./chunk-3OHR7PBT.js";
 import "./chunk-H3DGWSMZ.js";
@@ -94,7 +94,7 @@ var qaIntakeProvider = provider({
 // src/intake/services/extension.mts
 var qaExtension = {
   name: "qa-intake",
-  subcommands: { intake: async () => (await import("./qa-intake-WD5OHCD7.js")).default }
+  subcommands: { intake: async () => (await import("./qa-intake-BTWBEZ4L.js")).default }
 };
 export {
   FAKE_INTAKE_ITEMS,

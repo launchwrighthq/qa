@@ -1,9 +1,11 @@
 // `lw qa telegram bot create|destroy` (spec 2.7): the throwaway Telegram bot lifecycle. `create`
 // drives BotFather through an authorized userbot the consumer supplies, reads the token, and stores
 // it in the local run store. `destroy` revokes and deletes the bot, confirmed dead by a getMe 401.
-// The token lives only in `.lw/qa/bots`; no line here prints, logs or commits it.
+// The token lives only in `.lw/qa/bots`; no line here prints, logs or commits it. Each verb is an
+// outward action, so it runs only with a grant of the run contract (spec 2.6).
 import { join } from 'node:path';
 import { type Clock, isCodedError, LaunchwrightError, systemClock } from '../kernel/index.mts';
+import { parseCommandArgs } from '../kernel/services/args.mts';
 import { BOT_STORE_DIR, type BotRecord, type BotStore, fileBotStore } from '../services/bot-store.mts';
 import {
   BOTFATHER,
@@ -15,16 +17,27 @@ import {
   type UserbotLease,
   type UserbotProvider,
 } from '../services/botfather.mts';
+import { type ConsentChoice, consentGate } from '../services/consent-gate.mts';
+import { computeManifest, type ConsentStore, credentialNeed, type CredentialNeed, type OutwardNeed } from '../services/contract.mts';
 import { BotApi, TelegramApiError } from '../telegram/bot-api.mts';
 import { connectUserClient, type UserClient } from '../telegram/mtproto.mts';
-import { parseArgs } from '../world/services/context.mts';
 import type { QaCommandOptions } from './qa.command.mts';
 
 const USAGE = [
-  'usage: lw qa telegram bot <create|destroy> [options]',
+  'usage: lw qa telegram bot <create|destroy> [options] [--allow-all | --allow <item-id>...]',
   '  create --name <name> --username <name>bot   create a throwaway bot through BotFather',
   '  destroy [--bot <id>]                         revoke and delete the bot(s), confirm each dead',
+  '  each verb is an outward action: it prints the run contract and needs a grant (spec 2.6)',
 ];
+
+/** The outward items of the two verbs. The ids stay stable, so a grant covers every later run. */
+const OUTWARD: Record<'create' | 'destroy', OutwardNeed> = {
+  create: { id: 'throwaway-bot-create', title: 'Create a throwaway bot through BotFather with the authorized userbot' },
+  destroy: { id: 'throwaway-bot-destroy', title: 'Revoke and delete throwaway bots through BotFather with the authorized userbot' },
+};
+
+/** The flags every verb takes: the grant flags of the run contract. */
+const GRANT_FLAGS = { switches: ['allow-all'], repeated: ['allow'] } as const;
 
 /** The commands the throwaway bot registers. One entry keeps the bot usable without a menu. */
 const DEFAULT_COMMANDS = [{ command: 'start', description: 'Start' }];
@@ -39,6 +52,10 @@ export interface BotDeps {
   getMe: BotGetMe;
   store: BotStore;
   clock: Clock;
+  /** The userbot credentials, set or empty, for the run contract. Absent when the provider declares none. */
+  credentials?: () => CredentialNeed[];
+  /** The consent store. Default: `.lw/qa/consent` under the project root. */
+  consent?: ConsentStore;
 }
 
 interface GramMessage {
@@ -46,6 +63,9 @@ interface GramMessage {
   message?: string;
   out?: boolean;
 }
+
+/** The environment keys a lease of `envUserbotProvider` needs. `QA_TELEGRAM_PROXY` is optional. */
+const USERBOT_KEYS = ['QA_TELEGRAM_API_ID', 'QA_TELEGRAM_API_HASH', 'QA_TELEGRAM_SESSION'] as const;
 
 /** Reads the userbot lease from the injected process environment. The consumer supplies the account. */
 export function envUserbotProvider(env: Record<string, string | undefined>): UserbotProvider {
@@ -63,6 +83,7 @@ export function envUserbotProvider(env: Record<string, string | undefined>): Use
       const proxy = env.QA_TELEGRAM_PROXY;
       return { apiId, apiHash, session, ...(proxy ? { proxy } : {}) };
     },
+    needs: () => USERBOT_KEYS.map((name) => credentialNeed(name, env[name])),
   };
 }
 
@@ -139,16 +160,27 @@ async function realBotDeps(opts: QaCommandOptions): Promise<BotDeps> {
     getMe: botApiGetMe,
     store: fileBotStore(join(opts.cwd, BOT_STORE_DIR)),
     clock: systemClock,
+    credentials: () => provider.needs?.() ?? [],
   };
 }
 
+/** Asks the run contract of one verb: the userbot credentials and the outward action (spec 2.6). */
+function allowed(verb: 'create' | 'destroy', choice: ConsentChoice, opts: QaCommandOptions, deps: BotDeps): Promise<boolean> {
+  const manifest = computeManifest({ title: `lw qa telegram bot ${verb}`, legs: [], credentials: deps.credentials?.() ?? [], outward: [OUTWARD[verb]] });
+  return consentGate(manifest, { cwd: opts.cwd, out: opts.out, err: opts.err, ...choice, ...(deps.consent ? { store: deps.consent } : {}) });
+}
+
+function choiceOf(parsed: { switches: ReadonlySet<string>; lists: { allow: string[] } }): ConsentChoice {
+  return { allowAll: parsed.switches.has('allow-all'), allow: parsed.lists.allow };
+}
+
 async function create(args: string[], opts: QaCommandOptions, deps: BotDeps): Promise<number> {
-  const { words, options } = parseArgs(args, [], ['name', 'username']);
-  const name = typeof options.name === 'string' ? options.name : undefined;
-  const username = typeof options.username === 'string' ? options.username : undefined;
-  if (words.length > 0 || name === undefined || username === undefined) {
+  const parsed = parseCommandArgs({ values: ['name', 'username'], ...GRANT_FLAGS }, args);
+  const { name, username } = parsed.values;
+  if (parsed.positionals.length > 0 || name === undefined || username === undefined) {
     throw new LaunchwrightError('qa.bot.usage', 'lw qa telegram bot create needs --name and --username.');
   }
+  if (!(await allowed('create', choiceOf(parsed), opts, deps))) return 2;
   const { chat, close } = await deps.openChat();
   try {
     const created = await newBot(chat, { name, username });
@@ -164,8 +196,8 @@ async function create(args: string[], opts: QaCommandOptions, deps: BotDeps): Pr
   }
 }
 
-async function pending(store: BotStore, bot: string | true | undefined): Promise<BotRecord[]> {
-  if (typeof bot === 'string') {
+async function pending(store: BotStore, bot: string | undefined): Promise<BotRecord[]> {
+  if (bot !== undefined) {
     const record = await store.read(Number(bot));
     if (!record) throw new LaunchwrightError('qa.bot.missing', `No throwaway bot ${bot} in the run store.`, { context: { bot } });
     return [record];
@@ -174,13 +206,14 @@ async function pending(store: BotStore, bot: string | true | undefined): Promise
 }
 
 async function destroy(args: string[], opts: QaCommandOptions, deps: BotDeps): Promise<number> {
-  const { words, options } = parseArgs(args, [], ['bot']);
-  if (words.length > 0) throw new LaunchwrightError('qa.bot.usage', 'lw qa telegram bot destroy takes no positional argument.');
-  const records = await pending(deps.store, options.bot);
+  const parsed = parseCommandArgs({ values: ['bot'], ...GRANT_FLAGS }, args);
+  if (parsed.positionals.length > 0) throw new LaunchwrightError('qa.bot.usage', 'lw qa telegram bot destroy takes no positional argument.');
+  const records = await pending(deps.store, parsed.values.bot);
   if (records.length === 0) {
     opts.out('no throwaway bot to destroy');
     return 0;
   }
+  if (!(await allowed('destroy', choiceOf(parsed), opts, deps))) return 2;
   const { chat, close } = await deps.openChat();
   try {
     for (const record of records) {

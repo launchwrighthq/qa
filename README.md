@@ -38,6 +38,7 @@ The package ships a real `bin`, `lw-qa`. A consumer runs a pass without the fram
 ```bash
 lw-qa session run docs/qa/<slug>.shots.json
 lw-qa session run docs/qa/<slug>.shots.json --legs desktop,mobile-web --allow-all
+lw-qa consent show
 lw-qa world status
 lw-qa report render docs/qa/<slug>.md
 ```
@@ -47,8 +48,8 @@ lw-qa report render docs/qa/<slug>.md
 ## Configure
 
 The library reads a plain local file, `qa.toml` (or `.lw/qa.toml`), in the project root. The config
-names the legs, the base URLs, the QA database, the app entry, the score weights and the consent
-store path. With no file, the default `desktop` leg uses the `playwright` target, and each row is
+names the legs, the base URLs, the QA database, the app entry and the score weights. The consent
+records go to `.lw/qa/consent`. With no file, the default `desktop` leg uses the `playwright` target, and each row is
 `not-run: no base URL` until you set `[baseUrls]`.
 
 The smallest config that passes with no browser runs one leg on the built-in `fake` target:
@@ -73,6 +74,38 @@ legs of the config.
 
 `lw-qa session run` exits 1 when a row failed, and also when no row and leg pair ran (every pair is
 `not-run`), so CI never reads an empty run as green.
+
+## Consent
+
+Before a pass opens a browser or touches a device, it prints a run contract. The contract lists
+every need of the selected rows and legs in four groups, each item with an id:
+
+| Group | Items |
+|---|---|
+| `credentials` | The keys that a leg's target declares, as set or empty, for example `BROWSERSTACK_ACCESS_KEY`. |
+| `devices` | The device or rig of each device leg. |
+| `outward` | An action that reaches outside, for example `outward:throwaway-bot-create`. |
+| `data` | `data:qa-world-arm` (states on the QA world database), `data:qa-database-fork` (a fork per row group). |
+
+An empty credential stops the pass with exit 2 and names the key and the leg. Set the key, or drop
+the leg with `--legs`. The contract never prints a value: a set key shows a short hash only.
+
+Each item needs a grant. `--allow-all` grants every item that the contract prints, and
+`--allow <item-id>` grants one item (repeat it per item). Without a grant the command exits 2 and
+lists the items. A grant is per item and persists under `.lw/qa/consent`. A rerun asks nothing,
+and a rerun with more needs asks only the new items.
+
+`lw-qa telegram bot create|destroy` and `lw-qa publish` are outward actions. They print their own
+contract and take the same flags.
+
+```bash
+lw-qa session run docs/qa/<slug>.shots.json --allow devices:android-adb --allow data:qa-world-arm
+lw-qa consent show                      # each record, its items and their grants
+lw-qa consent grant outward:throwaway-bot-create
+lw-qa consent reset [<hash>]            # every record, or one manifest hash
+```
+
+`lw-qa consent grant` grants only an item that a printed contract listed.
 
 ## Agent assets
 
@@ -108,8 +141,8 @@ The throwaway bot lifecycle drives BotFather through a user account that you aut
 to `.lw/qa/bots`.
 
 ```bash
-lw-qa telegram bot create --name "QA bot" --username my_qa_bot
-lw-qa telegram bot destroy
+lw-qa telegram bot create --name "QA bot" --username my_qa_bot --allow outward:throwaway-bot-create
+lw-qa telegram bot destroy --allow outward:throwaway-bot-destroy
 ```
 
 When BotFather refuses a step or asks for a wait, the command stops at once and sends nothing more.

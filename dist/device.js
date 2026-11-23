@@ -52,15 +52,17 @@ import {
   writeHeld,
   writePng
 } from "./chunk-33RJBPBQ.js";
-import "./chunk-3NHPBT7P.js";
-import "./chunk-GUHFATHG.js";
+import "./chunk-SYN6R5ZP.js";
+import "./chunk-UF3OGAIM.js";
 import {
   QA_TARGETS
-} from "./chunk-CWVGWAJ5.js";
-import "./chunk-SKL7TLL4.js";
+} from "./chunk-CR6DWKU7.js";
+import "./chunk-W4O3YTED.js";
 import "./chunk-37DKYQMH.js";
-import "./chunk-SYG32WE6.js";
-import "./chunk-N3XSGPAN.js";
+import "./chunk-NWIOKD2S.js";
+import {
+  credentialNeed
+} from "./chunk-N6G3DBRC.js";
 import "./chunk-62VIRJ2H.js";
 import "./chunk-ZYIHPZ3V.js";
 import "./chunk-YDFQPHPI.js";
@@ -76,7 +78,7 @@ import "./chunk-B7UB2WOJ.js";
 import "./chunk-ZXEFVZDQ.js";
 import {
   QA_TARGET_SPEC_VERSION
-} from "./chunk-K3P52YYY.js";
+} from "./chunk-3TLMTKDL.js";
 import "./chunk-XZN5EDSR.js";
 import "./chunk-3OHR7PBT.js";
 import "./chunk-H3DGWSMZ.js";
@@ -351,6 +353,11 @@ var BrowserstackTarget = class {
   open(opts) {
     return CloudSession.open(this.ctx, opts, this.budget, this.name);
   }
+  /** The two secret store keys that the config maps into `qa.device.browserstack` (spec 2.6). */
+  needs(leg) {
+    const cfg = this.ctx.config.device.browserstack;
+    return { credentials: [credentialNeed("BROWSERSTACK_USERNAME", cfg.username, [leg.name]), credentialNeed("BROWSERSTACK_ACCESS_KEY", cfg.accessKey, [leg.name])] };
+  }
 };
 function createBrowserstackTarget(ctx) {
   return new BrowserstackTarget(ctx);
@@ -445,7 +452,7 @@ var qaDeviceProvider = provider({
 // src/device/services/extension.mts
 var qaExtension = {
   name: "qa-device",
-  subcommands: { device: async () => (await import("./qa-device-AMANTL6F.js")).default },
+  subcommands: { device: async () => (await import("./qa-device-HON3E3BZ.js")).default },
   targets: (config, root) => deviceTargets(withDevice(config), systemDeviceDeps(root))
 };
 export {

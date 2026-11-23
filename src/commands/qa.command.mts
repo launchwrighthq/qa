@@ -48,7 +48,7 @@ export const SUBCOMMANDS = [
   'changes', 'session', 'sweep', 'report', 'publish', 'gc', 'check',
   'world', 'fixture', 'worktree', 'job',
   'states', 'paths',
-  'telegram', 'sink', 'comments',
+  'telegram', 'sink', 'comments', 'consent',
 ] as const;
 
 type CoreSubcommand = (typeof SUBCOMMANDS)[number];
@@ -74,6 +74,7 @@ const CORE: Readonly<Record<CoreSubcommand, () => Promise<{ default: QaSubcomman
   telegram: () => import('./qa-telegram.mts'),
   sink: () => import('./qa-sink.mts'),
   comments: () => import('./qa-comments.mts'),
+  consent: () => import('./qa-consent.mts'),
 };
 
 function isCore(sub: string): sub is CoreSubcommand {

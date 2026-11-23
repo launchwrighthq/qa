@@ -12,7 +12,7 @@ import {
   FAKE_CLIP,
   QA_TARGET_SPEC_VERSION,
   createFakeTarget
-} from "./chunk-K3P52YYY.js";
+} from "./chunk-3TLMTKDL.js";
 import {
   encodePng,
   pngSize

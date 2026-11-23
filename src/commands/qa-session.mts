@@ -1,15 +1,17 @@
 // `lw qa session resolve|check|run` (spec 2.4, 2.15.4).
 import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { isCodedError, LaunchwrightError, systemClock } from '../kernel/index.mts';
 import { parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { type QaConfig, qaConfigOf } from '../config.mts';
 import { git, repoRoot } from '../services/changes.mts';
-import { type ConsentManifest, computeManifest, diff, fileConsentStore, grant, manifestHash } from '../services/contract.mts';
+import type { QaTargetRegistry } from '../drivers/target/contract.mts';
+import { consentGate } from '../services/consent-gate.mts';
+import { type ConsentManifest, computeManifest, type CredentialNeed, type DataNeed, type OutwardNeed } from '../services/contract.mts';
 import { legDefinitions } from '../services/legs.mts';
-import { loadManifest, validateManifest } from '../services/manifest.mts';
+import { loadManifest, type Shot, validateManifest } from '../services/manifest.mts';
 import { resolveIssue, resolveSpec } from '../services/resolve.mts';
-import { type FixtureArming, type ForkRunner, runManifest } from '../services/runner.mts';
+import { type FixtureArming, type ForkRunner, forkLabel, runManifest } from '../services/runner.mts';
 import { createTargetRegistry } from '../services/targets.mts';
 import type { Leg, Surface } from '../services/types.mts';
 import { systemVideoTools } from '../services/video.mts';
@@ -21,11 +23,12 @@ const USAGE = [
   'usage: lw qa session resolve <spec.md>',
   '       lw qa session resolve --issue <id> [<id> ...]',
   '       lw qa session check <plan.shots.json>',
-  '       lw qa session run <plan.shots.json> [--legs a,b] [--only <id>,<id>] [--base [<surface>=]<url>]... [--allow-all]',
+  '       lw qa session run <plan.shots.json> [--legs a,b] [--only <id>,<id>] [--base [<surface>=]<url>]... [--allow-all] [--allow <item-id>]...',
   '  resolve   what the spec promised and what was built, or one row seed per intake issue, as JSON',
   '  check     validate a plan and print every problem',
   '  run       run every row on every leg, record the evidence, write the ledger and results.jsonl',
-  '  --allow-all   grant every run contract item once, so a rerun asks nothing (spec 2.6)',
+  '  --allow-all   grant every item of the run contract that the pass prints, so a rerun asks nothing (spec 2.6)',
+  '  --allow <id>  grant one printed item, for example data:qa-world-arm; repeat it per item',
 ];
 
 const SURFACES: readonly Surface[] = ['web', 'miniapp', 'bot'];
@@ -108,55 +111,56 @@ function revision(cwd: string): { commit: string; dirty: boolean } {
   return { commit, dirty: status.trim() !== '' };
 }
 
+/** The data and isolation steps of the selected rows: arming on the QA world, and forks (spec 2.4). */
+function dataNeeds(shots: readonly Shot[]): DataNeed[] {
+  const needs: DataNeed[] = [];
+  const armed = new Set(shots.filter((shot) => forkLabel(shot) === undefined).flatMap((shot) => shot.fixture.arm));
+  if (armed.size > 0) needs.push({ id: 'qa-world-arm', title: `Arm ${armed.size} state(s) on the QA world database, then disarm them` });
+  const labels = [...new Set(shots.map(forkLabel).filter((label): label is string => label !== undefined))].sort();
+  if (labels.length > 0) needs.push({ id: 'qa-database-fork', title: `Fork the QA database for row group(s) ${labels.join(', ')}, then drop each fork` });
+  return needs;
+}
+
 /**
  * The run contract manifest of a plan (spec 2.6). The legs its rows use, narrowed by `--legs` and
- * `--only`, give the needs. `computeManifest` turns a device leg into one device or rig item.
+ * `--only`, give the devices, and the `needs` hook of each leg's target gives its credentials and
+ * outward actions. The selected rows give the data steps. A leg with no registered target runs as
+ * `n/a`, so it adds no need.
  */
-async function consentManifest(planPath: string, config: QaConfig, filter: { legs: string[] | null; only: string[] | null }): Promise<ConsentManifest> {
+async function consentManifest(
+  planPath: string,
+  config: QaConfig,
+  filter: { legs: string[] | null; only: string[] | null },
+  targets: QaTargetRegistry,
+): Promise<ConsentManifest> {
   const defs = legDefinitions(config);
   const byName = new Map(defs.map((leg) => [leg.name, leg]));
   const plan = await loadManifest(planPath, { legs: defs.map((leg) => leg.name) });
   const used = new Set<string>();
+  const shots: Shot[] = [];
   for (const shot of plan.shots) {
     if (filter.only && !filter.only.includes(shot.id)) continue;
-    for (const name of shot.legs) {
-      if (!filter.legs || filter.legs.includes(name)) used.add(name);
-    }
+    const names = shot.legs.filter((name) => !filter.legs || filter.legs.includes(name));
+    if (names.length > 0) shots.push(shot);
+    for (const name of names) used.add(name);
   }
   const legs = [...used].map((name) => byName.get(name)).filter((leg): leg is Leg => leg !== undefined);
-  return computeManifest({ title: plan.title, legs });
-}
-
-/**
- * Prints the run contract once and reads the prior grant under `.lw/qa/consent` (spec 2.6). A
- * manifest with no need proceeds at once, and a need the record already covers asks nothing. With
- * `--allow-all` the pass records a grant for every item and proceeds. Without it, a new need stops
- * the pass, so an outward action never runs without an explicit grant. The print shows titles only.
- */
-async function runContract(opts: QaCommandOptions, manifest: ConsentManifest, allowAll: boolean): Promise<boolean> {
-  if (manifest.items.length === 0) return true;
-  const store = fileConsentStore(join(opts.cwd, '.lw/qa/consent'));
-  const hash = manifestHash(manifest);
-  const prior = await store.read(hash);
-  const pending = diff(prior, manifest);
-  opts.out(`run contract for "${manifest.title}": ${manifest.items.length} item(s) need consent`);
-  for (const item of manifest.items) opts.out(`  ${item.group.padEnd(11)} ${item.title}`);
-  if (pending.length === 0) {
-    opts.out('run contract: every item is granted; asking nothing');
-    return true;
+  const registered = new Set(targets.names());
+  const credentials: CredentialNeed[] = [];
+  const outward: OutwardNeed[] = [];
+  const data: DataNeed[] = dataNeeds(shots);
+  for (const leg of legs) {
+    if (!registered.has(leg.target)) continue;
+    const needs = targets.get(leg.target).needs?.(leg);
+    credentials.push(...(needs?.credentials ?? []));
+    outward.push(...(needs?.outward ?? []));
+    data.push(...(needs?.data ?? []));
   }
-  if (allowAll) {
-    await store.write(hash, grant(manifest, 'all'));
-    opts.out(`run contract: allow all recorded ${manifest.items.length} grant(s) under .lw/qa/consent`);
-    return true;
-  }
-  opts.err(`run contract: ${pending.length} item(s) need a grant. Re-run with --allow-all to grant them:`);
-  for (const item of pending) opts.err(`  ${item.outward ? 'outward ' : ''}${item.title}`);
-  return false;
+  return computeManifest({ title: plan.title, legs, credentials, outward, data });
 }
 
 async function run(args: string[], opts: QaCommandOptions, config: QaConfig): Promise<number> {
-  const parsed = parseCommandArgs({ values: ['legs', 'only'], switches: ['allow-all'], repeated: ['base'] }, args);
+  const parsed = parseCommandArgs({ values: ['legs', 'only'], switches: ['allow-all'], repeated: ['base', 'allow'] }, args);
   const [manifestArg, extra] = parsed.positionals;
   if (!manifestArg) throw new LaunchwrightError('qa.session.usage', 'run needs a plan path');
   if (extra !== undefined) throw new LaunchwrightError('qa.session.usage', `run does not know ${extra}`);
@@ -165,15 +169,17 @@ async function run(args: string[], opts: QaCommandOptions, config: QaConfig): Pr
   const baseUrls: Partial<Record<Surface, string>> = { ...config.baseUrls };
   for (const value of parsed.lists.base) baseFlag(value, baseUrls);
   const manifestPath = resolve(opts.cwd, manifestArg);
-  const contract = await consentManifest(manifestPath, config, { legs, only });
-  if (!(await runContract(opts, contract, parsed.switches.has('allow-all')))) return 2;
+  const targets = createTargetRegistry(config, opts.targets ?? {}, systemClock);
+  const contract = await consentManifest(manifestPath, config, { legs, only }, targets);
+  const choice = { allowAll: parsed.switches.has('allow-all'), allow: parsed.lists.allow };
+  if (!(await consentGate(contract, { cwd: opts.cwd, out: opts.out, err: opts.err, ...choice }))) return 2;
   const build = armingBuilder(opts);
   const fixtures = build?.();
   const summary = await runManifest(
     { manifestPath, legs, only },
     {
       config,
-      targets: createTargetRegistry(config, opts.targets ?? {}, systemClock),
+      targets,
       clock: systemClock,
       baseUrls,
       revision: revision(opts.cwd),
