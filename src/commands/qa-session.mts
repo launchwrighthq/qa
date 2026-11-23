@@ -14,7 +14,8 @@ import { createTargetRegistry } from '../services/targets.mts';
 import type { Leg, Surface } from '../services/types.mts';
 import { systemVideoTools } from '../services/video.mts';
 import * as world from '../world/index.mts';
-import { createFork, dropFork } from '../world/services/fork.mts';
+import { worldContext } from '../world/services/context.mts';
+import { worldForkRunner } from '../world/services/fork-server.mts';
 import type { QaCommandOptions, QaSubcommand } from './qa.command.mts';
 
 const USAGE = [
@@ -64,19 +65,22 @@ function armingBuilder(opts: QaCommandOptions): ((database?: string) => FixtureA
 }
 
 /**
- * The per-pass fork runner (spec 2.4, R3): it forks the QA database for a row group, arms the
- * group's facts on the fork, and drops the fork after the group. It names the QA database lazily, so
- * a pass with no fork group reads the checkout only when the first fork is created.
+ * The per-pass fork runner (spec 2.4, R3): `worldForkRunner` forks the QA database for a row group,
+ * serves the QA app on the fork, and drops the fork after the group. It reads the world context at
+ * the first fork, so a pass with no fork group reads neither the checkout nor the QA app entry.
  */
-function forkRunner(opts: QaCommandOptions, build: ((database?: string) => FixtureArming) | undefined): ForkRunner {
-  const root = opts.cwd;
-  const sections = opts.config ?? {};
-  let named: Promise<string> | null = null;
-  const database = (): Promise<string> => (named ??= world.readCheckout(root).then((checkout) => world.qaDatabase(sections, checkout)));
+function forkRunner(opts: QaCommandOptions): ForkRunner {
+  let built: Promise<ForkRunner> | null = null;
+  const runner = (): Promise<ForkRunner> =>
+    (built ??= (async () => {
+      const ctx = await worldContext({ cwd: opts.cwd, out: opts.out, err: opts.err, ...(opts.config ? { config: opts.config } : {}), ...(opts.env ? { env: opts.env } : {}) });
+      const entry = await world.loadAppEntry(ctx.root, ctx.qa);
+      return worldForkRunner({ root: ctx.root, sections: ctx.sections, env: ctx.env, overlay: ctx.overlay, entry, registry: ctx.registry, out: opts.out });
+    })());
   return {
-    create: async (label) => createFork({ root, sections, database: await database(), label, out: opts.out }),
-    drop: async (name) => dropFork({ root, sections, database: await database(), name, out: opts.out }),
-    ...(build ? { arming: (db: string) => build(db) } : {}),
+    create: async (label) => (await runner()).create(label),
+    drop: async (name) => (await runner()).drop(name),
+    serve: async (database) => (await runner()).serve(database),
   };
 }
 
@@ -179,7 +183,7 @@ async function run(args: string[], opts: QaCommandOptions, config: QaConfig): Pr
       revision: revision(opts.cwd),
       videoTools: systemVideoTools(),
       ...(fixtures ? { fixtures } : {}),
-      fork: forkRunner(opts, build),
+      fork: forkRunner(opts),
       out: opts.out,
       err: opts.err,
     },

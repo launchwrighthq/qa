@@ -21,6 +21,7 @@ import { type EvidencePathOptions, evidencePath, expectedPageErrors, loadManifes
 import type { EvidenceKind, Isolation, Leg, LedgerEntry, RowFailure, RowResult, Surface } from './types.mts';
 import { measureVideo, type VideoMeasure, type VideoTools } from './video.mts';
 import { STATES_HARNESS_PATH } from '../states/services/mount.mts';
+import { isLoopbackHost } from '../world/services/stack.mts';
 
 /**
  * The provenance of the files of a row (spec 2.7). A route on the state page `/__states` proves
@@ -39,19 +40,59 @@ export interface FixtureArming {
   disarm(): Promise<void>;
 }
 
+/** The QA app booted on a fork database and served on a loopback port (spec 2.4, R3). */
+export interface ForkServer {
+  /** The origin of the server: `http://127.0.0.1:<port>`. */
+  url: string;
+  /** Fixture arming bound to the app on the fork, so the group arms its single-instance state there. */
+  arming: FixtureArming;
+  /** Stops the server and shuts the app down. */
+  close(): Promise<void>;
+}
+
 /**
  * A per-pass database fork for a row group that needs an isolated single-instance state (spec 2.4,
- * R3). The runner forks the QA database once per `fork` label, arms the group's facts on the fork,
- * runs the group, then drops the fork in a `finally`. The world submodule builds this from
- * `createFork`, `dropFork` and the fixture arming of the fork database.
+ * R3). For each `fork` label the runner forks the QA database, serves the QA app on the fork, arms
+ * the group's facts in that app, and points the rows at it. After the group it stops the server and
+ * drops the fork, also after a failure. The world submodule gives `worldForkRunner`.
  */
 export interface ForkRunner {
   /** Creates a fork for `label` and gives its database name. */
   create(label: string): Promise<string>;
   /** Drops a fork by its database name. The runner calls it after the group, also after a failure. */
   drop(database: string): Promise<void>;
-  /** Fixture arming bound to the fork database, so the group arms its single-instance state there. */
-  arming?(database: string): FixtureArming;
+  /** Boots the QA app on the fork database and serves it on a free loopback port. */
+  serve(database: string): Promise<ForkServer>;
+}
+
+/** The fork groups that run at the same time when `RunnerDeps.forkConcurrency` is not set. */
+export const FORK_CONCURRENCY = 2;
+
+/** The base URL of each surface for one group of rows, and the reason a surface cannot run there. */
+export interface SurfaceView {
+  baseUrls: Partial<Record<Surface, string>>;
+  blocked: Partial<Record<Surface, string>>;
+}
+
+/**
+ * The surfaces of a fork group (spec 2.4, R3). A surface whose base URL is the QA API (a loopback
+ * host on `apiPort`) moves to the fork server, with its path kept. Any other surface is blocked: its
+ * client, such as a dev server with a fixed proxy or the fake Bot API with its webhook, reaches the
+ * shared QA API, so a shot there would show the shared world and not the fork.
+ */
+export function forkView(baseUrls: Partial<Record<Surface, string>>, apiPort: number, forkUrl: string, label: string): SurfaceView {
+  const view: SurfaceView = { baseUrls: {}, blocked: {} };
+  for (const [surface, url] of Object.entries(baseUrls) as Array<[Surface, string]>) {
+    const parsed = new URL(url);
+    if (isLoopbackHost(parsed.hostname) && Number(parsed.port) === apiPort) {
+      view.baseUrls[surface] = `${forkUrl}${parsed.pathname.replace(/\/+$/, '')}`;
+    } else {
+      view.blocked[surface] =
+        `the ${surface} base URL ${url} is not the QA API on port ${apiPort}, so its client reads the shared QA database and cannot show fork ${label}. ` +
+        `Serve the ${surface} surface from the QA app (qa.baseUrls.${surface} = http://127.0.0.1:${apiPort}), or run the row without a fork`;
+    }
+  }
+  return view;
 }
 
 /** Where a signal handler goes. Default: `process`. */
@@ -74,6 +115,8 @@ export interface RunnerDeps {
   fixtures?: FixtureArming;
   /** Forks the QA database for a row group that declares a `fork` label (spec 2.4, R3). */
   fork?: ForkRunner;
+  /** The fork groups that run at the same time. Default `FORK_CONCURRENCY`. */
+  forkConcurrency?: number;
   /** The sentences of the project's boot-failure screen (spec 2.11.2 `not-booted`). */
   bootFailureSentences?: readonly string[];
   signals?: SignalSource;
@@ -164,6 +207,8 @@ class Run {
   private readonly slug: string;
   private readonly paths: ReturnType<typeof reportPaths>;
   private readonly ready = new Map<string, { ready: boolean; reason?: string }>();
+  /** The ledger and `results.jsonl` writes, one at a time: fork groups run rows at the same time. */
+  private writes: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly deps: RunnerDeps,
@@ -178,14 +223,30 @@ class Run {
     return this.slug;
   }
 
+  private serial<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.writes.then(fn, fn);
+    this.writes = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  /** Appends one row result to `results.jsonl`. */
+  record(result: RowResult): Promise<void> {
+    return this.serial(() => appendResult(this.paths.results, result));
+  }
+
   /** The leg as a result before any session: `n/a` or `not-run` with the reason, or null to run it. */
-  private async gate(shot: Shot, leg: Leg, target: QaTarget | null, needs: QaTargetCapability[]): Promise<Pick<RowResult, 'status' | 'reason'> | null> {
+  private async gate(shot: Shot, leg: Leg, target: QaTarget | null, needs: QaTargetCapability[], view: SurfaceView): Promise<Pick<RowResult, 'status' | 'reason'> | null> {
     if (!target) return { status: 'n/a', reason: 'no target' };
     const missing = needs.filter((cap) => !target.capabilities.has(cap));
     if (missing.length > 0) return { status: 'n/a', reason: `the ${target.name} target has no ${missing.join(', ')} capability` };
     const unfilled = UNFILLED.exec(shot.route);
     if (unfilled) return { status: 'not-run', reason: `the route ${shot.route} has an unfilled handle {${unfilled[1]}}. Run lw qa world reset, then plan the sweep again` };
-    if (this.deps.baseUrls[leg.surface] === undefined) {
+    const blocked = view.blocked[leg.surface];
+    if (blocked !== undefined) return { status: 'not-run', reason: blocked };
+    if (view.baseUrls[leg.surface] === undefined) {
       return { status: 'not-run', reason: `no base URL for the ${leg.surface} surface. Pass --base ${leg.surface}=<url> or set qa.baseUrls.${leg.surface}` };
     }
     let readiness = this.ready.get(leg.name);
@@ -197,10 +258,10 @@ class Run {
     return null;
   }
 
-  async row(shot: Shot, leg: Leg, target: QaTarget | null): Promise<RowResult> {
+  async row(shot: Shot, leg: Leg, target: QaTarget | null, view: SurfaceView): Promise<RowResult> {
     const started = this.deps.clock.now();
     const needs: QaTargetCapability[] = ['screenshot', ...(shot.act && shot.act.length > 0 ? (['input'] as const) : [])];
-    const gated = await this.gate(shot, leg, target, needs);
+    const gated = await this.gate(shot, leg, target, needs, view);
     if (gated || !target) return { row: shot.id, leg: leg.name, failures: [], attempts: 0, ms: 0, status: gated?.status ?? 'n/a', reason: gated?.reason ?? 'no target' };
 
     const device = !BROWSER_TARGETS.has(target.name);
@@ -209,11 +270,13 @@ class Run {
     const limit = device ? this.deps.config.evidence.attempts : 1;
     let last: Attempt = { failures: [], notes: [], entries: [] };
     let attempts = 0;
-    await dropRowLeg(this.reportDir, this.slug, shot.id, leg.name);
+    await this.serial(() => dropRowLeg(this.reportDir, this.slug, shot.id, leg.name));
+    const baseUrl = view.baseUrls[leg.surface] as string;
     while (attempts < limit) {
       attempts += 1;
-      last = await this.attempt(shot, leg, target, { attempt: attempts, video, device });
-      await appendLedger(this.reportDir, this.slug, last.entries);
+      last = await this.attempt(shot, leg, target, { attempt: attempts, video, device, baseUrl });
+      const entries = last.entries;
+      await this.serial(() => appendLedger(this.reportDir, this.slug, entries));
       if (last.failures.length === 0) break;
     }
     const notes = [...last.notes];
@@ -233,7 +296,7 @@ class Run {
     return evidencePath(this.slug, leg, row, kind, opts);
   }
 
-  private async attempt(shot: Shot, leg: Leg, target: QaTarget, opts: { attempt: number; video: boolean; device: boolean }): Promise<Attempt> {
+  private async attempt(shot: Shot, leg: Leg, target: QaTarget, opts: { attempt: number; video: boolean; device: boolean; baseUrl: string }): Promise<Attempt> {
     const { attempt } = opts;
     const files: Array<{ rel: string; kind: EvidenceKind; at: string }> = [];
     const pngs: string[] = [];
@@ -252,7 +315,7 @@ class Run {
     try {
       session = await target.open({
         leg,
-        baseUrl: this.deps.baseUrls[leg.surface] as string,
+        baseUrl: opts.baseUrl,
         outDir: this.paths.assets,
         ...(shot.fixture.persona ? { persona: shot.fixture.persona } : {}),
       });
@@ -371,9 +434,6 @@ class Run {
     return measureVideo(path, this.deps.videoTools);
   }
 
-  get resultsPath(): string {
-    return this.paths.results;
-  }
 }
 
 /** The message of `err`, after its code when it has one. */
@@ -410,11 +470,37 @@ function forkGroups(plan: PlanItem[]): { shared: PlanItem[]; groups: Map<string,
   return { shared, groups };
 }
 
+/** Runs `fn` over `items` with at most `limit` calls at a time. Every item runs; the errors come back. */
+async function pool<T>(items: readonly T[], limit: number, fn: (item: T) => Promise<void>): Promise<unknown[]> {
+  const errors: unknown[] = [];
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const item = items[next] as T;
+      next += 1;
+      try {
+        await fn(item);
+      } catch (err) {
+        errors.push(err);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+  return errors;
+}
+
+/** One error from the errors of several fork groups. */
+function oneError(errors: readonly unknown[]): unknown {
+  if (errors.length === 1) return errors[0];
+  return new LaunchwrightError('qa.session.fork', `${errors.length} fork groups failed: ${errors.map(failureText).join('; ')}`, { cause: new AggregateError(errors) });
+}
+
 /**
- * Runs a plan. The rows on the shared QA world arm once, run, then disarm. Each fork group forks the
- * QA database, arms its single-instance facts on the fork, runs, then disarms and drops the fork
- * (spec 2.4, R3). It disarms and drops in `finally` and on SIGINT and SIGTERM, also after a failure,
- * and appends one `RowResult` per row and leg to `results.jsonl`.
+ * Runs a plan. The rows on the shared QA world arm once, run, then disarm. Then the fork groups run,
+ * `forkConcurrency` at a time (spec 2.4, R3): each forks the QA database, serves the QA app on the
+ * fork, arms its facts there, runs its rows against that server, then stops the server and drops the
+ * fork. Each teardown runs in `finally` and on SIGINT and SIGTERM, also after a failure. One
+ * `RowResult` per row and leg goes to `results.jsonl`.
  */
 export async function runManifest(opts: RunOptions, deps: RunnerDeps): Promise<RunSummary> {
   const legs = new Map(legDefinitions(deps.config).map((l) => [l.name, l]));
@@ -423,27 +509,38 @@ export async function runManifest(opts: RunOptions, deps: RunnerDeps): Promise<R
   const run = new Run(deps, opts.manifestPath);
   const registered = new Set(deps.targets.names());
   const { shared, groups } = forkGroups(plan);
+  const sharedView: SurfaceView = { baseUrls: deps.baseUrls, blocked: {} };
 
   const warnings: string[] = [];
   const results: RowResult[] = [];
 
-  // One teardown runs at a time: the phase in progress sets it, the `finally` and the signal
-  // handler call it. Each phase clears it when it finishes, so the next phase sets a fresh one.
-  let teardown: (() => Promise<void>) | null = null;
-  const runTeardown = async (): Promise<void> => {
-    const current = teardown;
-    teardown = null;
-    if (current) await current();
+  // The teardowns of the phases in progress. A phase adds its own and removes it when it ends; the
+  // signal handler runs every one that is still there.
+  const active = new Set<() => Promise<void>>();
+  const runActive = async (): Promise<void> => {
+    const list = [...active];
+    active.clear();
+    const failed = (await Promise.allSettled(list.map((t) => t()))).flatMap((r) => (r.status === 'rejected' ? [r.reason as unknown] : []));
+    if (failed.length > 0) throw oneError(failed);
+  };
+  const withTeardown = async (teardown: () => Promise<void>, body: () => Promise<void>): Promise<void> => {
+    active.add(teardown);
+    try {
+      await body();
+    } finally {
+      active.delete(teardown);
+      await teardown();
+    }
   };
 
   const signals = deps.signals ?? process;
   const exit = deps.exit ?? ((code: number) => process.exit(code));
   const onSignal = (code: number) => () => {
-    deps.err('interrupted: disarming the fixtures before exit');
-    runTeardown().then(
+    deps.err('interrupted: disarming the fixtures and dropping the forks before exit');
+    runActive().then(
       () => exit(code),
       (err: unknown) => {
-        deps.err(`disarm failed: ${failureText(err)}. Run lw qa fixture disarm before anyone uses the QA database.`);
+        deps.err(`disarm failed: ${failureText(err)}. Run lw qa fixture disarm and lw qa world fork drop before anyone uses the QA database.`);
         exit(code);
       },
     );
@@ -466,56 +563,100 @@ export async function runManifest(opts: RunOptions, deps: RunnerDeps): Promise<R
     }
   };
 
-  const runRows = async (group: PlanItem[]): Promise<void> => {
+  const report = async (shot: Shot, leg: Leg, result: RowResult): Promise<void> => {
+    await run.record(result);
+    results.push(result);
+    deps.out(`${result.status.padEnd(8)}  ${leg.name.padEnd(16)} ${shot.id}${result.failures.length > 0 ? ` (${result.failures.join(', ')})` : ''}${result.reason ? `: ${result.reason}` : ''}`);
+  };
+
+  const runRows = async (group: PlanItem[], view: SurfaceView): Promise<void> => {
     for (const { shot, legs: legNames } of group) {
       for (const name of legNames) {
         const leg = legs.get(name) as Leg;
         const target = registered.has(leg.target) ? deps.targets.get(leg.target) : null;
-        const result = await run.row(shot, leg, target);
-        await appendResult(run.resultsPath, result);
-        results.push(result);
-        deps.out(`${result.status.padEnd(8)}  ${leg.name.padEnd(16)} ${shot.id}${result.failures.length > 0 ? ` (${result.failures.join(', ')})` : ''}${result.reason ? `: ${result.reason}` : ''}`);
+        await report(shot, leg, await run.row(shot, leg, target, view));
       }
     }
   };
 
-  // Arms the group, runs its rows, then disarms it and drops its fork (also after a failure).
-  const runPhase = async (group: PlanItem[], arming: FixtureArming | undefined, label: string | null, dropFork?: () => Promise<void>): Promise<void> => {
-    teardown = once(async () => {
+  /** Marks every row and leg of a group `not-run`, for a fork that did not start. */
+  const notRunGroup = async (group: PlanItem[], reason: string): Promise<void> => {
+    warnings.push(reason);
+    for (const { shot, legs: legNames } of group) {
+      for (const name of legNames) await report(shot, legs.get(name) as Leg, { row: shot.id, leg: name, status: 'not-run', reason, failures: [], attempts: 0, ms: 0 });
+    }
+  };
+
+  // Arms a group on the shared QA world, runs its rows, then disarms it (also after a failure).
+  const sharedPhase = async (group: PlanItem[], label: string | null): Promise<void> => {
+    const arming = deps.fixtures;
+    const teardown = once(async () => {
+      if (!arming) return;
+      deps.out('disarm    the fixtures of this run');
+      await arming.disarm();
+    });
+    await withTeardown(teardown, async () => {
+      await armGroup(group, arming, label);
+      await runRows(group, sharedView);
+    });
+  };
+
+  // Postgres copies a template for one `create database` at a time, so the forks are created in turn.
+  let creating: Promise<unknown> = Promise.resolve();
+  const createInTurn = (forker: ForkRunner, label: string): Promise<string> => {
+    const next = creating.then(
+      () => forker.create(label),
+      () => forker.create(label),
+    );
+    creating = next.catch(() => undefined);
+    return next;
+  };
+
+  const forkPhase = async (forker: ForkRunner, label: string, group: PlanItem[]): Promise<void> => {
+    let database: string;
+    try {
+      database = await createInTurn(forker, label);
+    } catch (err) {
+      await notRunGroup(group, `fork ${label} was not created: ${failureText(err)}`);
+      return;
+    }
+    deps.out(`fork      ${label} -> ${database}`);
+    let server: ForkServer | null = null;
+    const teardown = once(async () => {
       try {
-        if (arming) {
-          deps.out('disarm    the fixtures of this run');
-          await arming.disarm();
-        }
+        if (server) await server.close();
       } finally {
-        if (dropFork) await dropFork();
+        await forker.drop(database);
       }
     });
-    try {
-      await armGroup(group, arming, label);
-      await runRows(group);
-    } finally {
-      await runTeardown();
-    }
+    await withTeardown(teardown, async () => {
+      try {
+        server = await forker.serve(database);
+      } catch (err) {
+        await notRunGroup(group, `the QA app did not start on fork ${label}: ${failureText(err)}`);
+        return;
+      }
+      deps.out(`serve     fork ${label} on ${server.url}`);
+      await armGroup(group, server.arming, label);
+      await runRows(group, forkView(deps.baseUrls, deps.config.apiPort, server.url, label));
+    });
   };
 
   try {
-    await runPhase(shared, deps.fixtures, null);
-    for (const [label, group] of groups) {
-      if (!deps.fork) {
+    await sharedPhase(shared, null);
+    const forker = deps.fork;
+    if (!forker) {
+      for (const [label, group] of groups) {
         warnings.push(`the fork group "${label}" is not isolated: no fork runner was given, so it ran on the shared QA world`);
-        await runPhase(group, deps.fixtures, label);
-        continue;
+        await sharedPhase(group, label);
       }
-      const forker = deps.fork;
-      const database = await forker.create(label);
-      deps.out(`fork      ${label} -> ${database}`);
-      const arming = forker.arming ? forker.arming(database) : deps.fixtures;
-      await runPhase(group, arming, label, () => forker.drop(database));
+    } else {
+      const errors = await pool([...groups], deps.forkConcurrency ?? FORK_CONCURRENCY, ([label, group]) => forkPhase(forker, label, group));
+      if (errors.length > 0) throw oneError(errors);
     }
   } finally {
     try {
-      await runTeardown();
+      await runActive();
     } finally {
       signals.off('SIGINT', onInt);
       signals.off('SIGTERM', onTerm);

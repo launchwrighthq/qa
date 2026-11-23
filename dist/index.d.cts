@@ -3,6 +3,7 @@ export { E as EXTENSION_PREFIX, b as QaCommandOptions, Q as QaExtension, S as SU
 import { C as Clock } from './clock-BUdCJ9bN.cjs';
 import { a as QaTargetRegistry, Q as QaTarget, L as Leg, A as Act, S as Settle, b as LedgerEntry, O as OpenTargetRegistry } from './contract-xgrBaS32.cjs';
 export { c as ACT_KINDS, d as ActKind, e as AttachmentKind, C as Capture, E as EvidenceKind, I as INTAKE_DIR, f as Isolation, g as OpenOptions, P as Provenance, h as QA_TARGET_CAPABILITIES, i as QA_TARGET_SPEC_VERSION, j as QaIssue, k as QaSession, l as QaTargetCapability, R as REPORT_STATUSES, m as ROW_FAILURES, n as RawMedia, o as ReportStatus, p as RowFailure, q as RowResult, r as SessionLogLine, s as SkipReason, t as Surface, T as TargetReadiness, V as VideoCapture } from './contract-xgrBaS32.cjs';
+import { L as ListenQaApp } from './api-Bi3rHZ5i.cjs';
 import { Q as QaConfig } from './config-B-lxHEnb.cjs';
 export { L as LegConfig, q as qaConfig, a as qaConfigOf, w as withAppPaths } from './config-B-lxHEnb.cjs';
 export { i as isCodedError } from './errors-DgRPaUlC.cjs';
@@ -21,8 +22,12 @@ interface RunDeps {
     };
 }
 
+/** What a test passes to the states command: run fakes, and the listen of the QA app on a fork. */
+type StatesOverrides = Partial<RunDeps> & {
+    listen?: ListenQaApp;
+};
 /** Builds the subcommand. A test passes fake targets, a fake clock and a fixed revision. */
-declare function createStatesCommand(overrides?: Partial<RunDeps>): QaSubcommand;
+declare function createStatesCommand(overrides?: StatesOverrides): QaSubcommand;
 
 interface PlaywrightTargetOptions {
     clock?: Clock;

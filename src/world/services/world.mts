@@ -6,6 +6,7 @@ import { type Clock, LaunchwrightError, messageOf } from '../../kernel/index.mts
 import { readTextOrNull } from '../../kernel/services/fs.mts';
 import { loadAuth, loadDb } from '../../services/peers.mts';
 import { openWorld, type QaAppEntry, type QaOverlay, type QaWorld } from './app.mts';
+import { seededName, snapshotSeeded } from './fork.mts';
 import { personaIds, QA_PROVIDER } from './ids.mts';
 import { assertRegistry, listWorld, registryHash } from './registry.mts';
 import { dbAdmin, type DbAdmin, type DbSection, qaDbSection } from './stack.mts';
@@ -168,6 +169,8 @@ export async function resetWorld(o: ResetOptions): Promise<WorldStamp> {
   const db = qaDbSection((o.sections.db ?? {}) as DbSection, o.overlay.database, o.root);
   o.out(`resetting ${o.overlay.database}`);
   await rmStamp(o.root);
+  const snapshot = { root: o.root, db, database: o.overlay.database };
+  await snapshotSeeded(snapshot, 'drop');
   await recreate(o, db);
   const world = await openWorld(o.entry, o.sections, o.env, { ...o.overlay, registryHash: hash });
   let entries: WorldEntry[];
@@ -176,6 +179,8 @@ export async function resetWorld(o: ResetOptions): Promise<WorldStamp> {
   } finally {
     await world.close();
   }
+  await snapshotSeeded(snapshot, 'replace');
+  o.out(`snapshot ${seededName(o.overlay.database)}: each fork copies it`);
   const stamp: WorldStamp = { database: o.overlay.database, hash, seededAt: o.clock.date().toISOString(), entries };
   await writeJson(join(o.root, STAMP_FILE), stamp);
   o.out(`seeded ${entries.length} entries, registry ${stamp.hash}`);

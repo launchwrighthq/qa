@@ -35,23 +35,29 @@ __export(world_exports, {
   cleanupWorktrees: () => cleanupWorktrees,
   copyName: () => copyName,
   copyPrefix: () => copyPrefix,
+  createFork: () => createFork,
   databaseName: () => databaseName,
   dbAdmin: () => dbAdmin,
   defineWorld: () => defineWorld,
   devProjectName: () => devProjectName,
   disarmFact: () => disarmFact,
+  dropFork: () => dropFork,
   factById: () => factById,
   featuresWithoutWorld: () => featuresWithoutWorld,
   fixtureArming: () => fixtureArming,
+  forkName: () => forkName,
+  forkUndoFile: () => forkUndoFile,
   idProblem: () => idProblem,
   importFromProject: () => importFromProject,
   importProjectJobs: () => importProjectJobs,
   isLoopbackHost: () => isLoopbackHost,
   listJobs: () => listJobs,
   listWorld: () => listWorld,
+  listenQaApp: () => listenQaApp,
   loadAppEntry: () => loadAppEntry,
   loadRegistry: () => loadRegistry,
   loadWorlds: () => loadWorlds,
+  openFork: () => openFork,
   openWorld: () => openWorld,
   parseShift: () => parseShift,
   personaById: () => personaById,
@@ -77,10 +83,13 @@ __export(world_exports, {
   runJob: () => runJob,
   runWorktree: () => runWorktree,
   seedWorld: () => seedWorld,
+  seededName: () => seededName,
+  serveFork: () => serveFork,
   setEnvLine: () => setEnvLine,
   setMenuButton: () => setMenuButton,
   urlWithDatabase: () => urlWithDatabase,
   worldFiles: () => worldFiles,
+  worldForkRunner: () => worldForkRunner,
   worldLintFindings: () => worldLintFindings,
   worldStatus: () => worldStatus
 });
@@ -454,6 +463,7 @@ async function loadPeer(spec, module2) {
   return mod;
 }
 var loadDb = () => loadPeer("@launchwrighthq/db", "db");
+var loadHttp = () => loadPeer("@launchwrighthq/http", "http");
 var loadAuth = () => loadPeer("@launchwrighthq/auth", "auth");
 
 // src/world/services/checkout.mts
@@ -756,8 +766,8 @@ async function openWorld(entry, sections, env, overlay) {
     }
     throw cause;
   }
-  const { DEFAULT_TENANT_ID } = await loadDb();
-  return { app, tenantId: DEFAULT_TENANT_ID, database: overlay.database, sections: qa, close: () => app.shutdown() };
+  const tenantId = entry.tenantId ?? (await loadDb()).DEFAULT_TENANT_ID;
+  return { app, tenantId, database: overlay.database, sections: qa, close: () => app.shutdown() };
 }
 
 // src/kernel/services/args.mts
@@ -1044,6 +1054,61 @@ var import_node_path9 = require("path");
 // src/world/services/world.mts
 var import_promises6 = require("fs/promises");
 var import_node_path8 = require("path");
+
+// src/world/services/fork.mts
+var FORK_MARK = "_fork_";
+function forkName(database, label) {
+  checkIdentifier(database);
+  return `${database}${FORK_MARK}${databaseName(label)}`.slice(0, 63);
+}
+function seededName(database) {
+  checkIdentifier(database);
+  return `${database}${FORK_MARK}_seeded`.slice(0, 63);
+}
+function isForkOf(database, name) {
+  return name.startsWith(`${database}${FORK_MARK}`);
+}
+async function createFork(o) {
+  const db = qaDbSection(o.sections.db ?? {}, o.database, o.root);
+  assertQaTarget(db, o.database, o.root);
+  const name = forkName(o.database, o.label);
+  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n));
+  try {
+    const seeded = seededName(o.database);
+    const template = await admin.exists(seeded) ? seeded : o.database;
+    o.out(`forking ${template} to ${name}`);
+    await admin.create(name, template);
+  } finally {
+    await admin.close();
+  }
+  return name;
+}
+async function dropFork(o) {
+  if (!isForkOf(o.database, o.name)) {
+    throw new LaunchwrightError("qa.fork.name", `${o.name} is not a fork of ${o.database}, so lw qa will not drop it.`, { context: { database: o.name } });
+  }
+  const db = qaDbSection(o.sections.db ?? {}, o.database, o.root);
+  assertQaTarget(db, o.database, o.root);
+  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n));
+  try {
+    await admin.drop(o.name);
+    o.out(`dropped ${o.name}`);
+  } finally {
+    await admin.close();
+  }
+}
+async function snapshotSeeded(o, action) {
+  const seeded = seededName(o.database);
+  const admin = o.admin ?? await dbAdmin(o.db, o.root, (n) => n === seeded);
+  try {
+    await admin.drop(seeded);
+    if (action === "replace") await admin.create(seeded, o.database);
+  } finally {
+    if (!o.admin) await admin.close();
+  }
+}
+
+// src/world/services/world.mts
 var STAMP_FILE = ".lw/qa/world.json";
 function isStamp(value) {
   const s = value;
@@ -1157,6 +1222,8 @@ async function resetWorld(o) {
   const db = qaDbSection(o.sections.db ?? {}, o.overlay.database, o.root);
   o.out(`resetting ${o.overlay.database}`);
   await rmStamp(o.root);
+  const snapshot = { root: o.root, db, database: o.overlay.database };
+  await snapshotSeeded(snapshot, "drop");
   await recreate(o, db);
   const world = await openWorld(o.entry, o.sections, o.env, { ...o.overlay, registryHash: hash });
   let entries;
@@ -1165,6 +1232,8 @@ async function resetWorld(o) {
   } finally {
     await world.close();
   }
+  await snapshotSeeded(snapshot, "replace");
+  o.out(`snapshot ${seededName(o.overlay.database)}: each fork copies it`);
   const stamp = { database: o.overlay.database, hash, seededAt: o.clock.date().toISOString(), entries };
   await writeJson((0, import_node_path8.join)(o.root, STAMP_FILE), stamp);
   o.out(`seeded ${entries.length} entries, registry ${stamp.hash}`);
@@ -1191,26 +1260,30 @@ async function worldStatus(o) {
 
 // src/world/services/fixture.mts
 var UNDO_FILE = ".lw/qa/fixture.json";
-async function readUndo(root, database) {
-  const text2 = await readTextOrNull((0, import_node_path9.join)(root, UNDO_FILE));
+function forkUndoFile(database) {
+  return `.lw/qa/fork/${database}.fixture.json`;
+}
+async function readUndo(root, database, file = UNDO_FILE) {
+  const text2 = await readTextOrNull((0, import_node_path9.join)(root, file));
   if (text2 === null) return { database, armed: [] };
   let record;
   try {
     record = JSON.parse(text2);
   } catch (cause) {
-    throw new LaunchwrightError("qa.fixture.read", `${UNDO_FILE} is not JSON. Restore it from the run log, or delete it after lw qa world reset.`, { cause });
+    throw new LaunchwrightError("qa.fixture.read", `${file} is not JSON. Restore it from the run log, or delete it after lw qa world reset.`, { cause });
   }
   if (record.armed.length > 0 && record.database !== database) {
-    throw new LaunchwrightError("qa.fixture.database", `${UNDO_FILE} holds facts armed on ${record.database}, not on ${database}. Disarm them on that database first.`, {
+    throw new LaunchwrightError("qa.fixture.database", `${file} holds facts armed on ${record.database}, not on ${database}. Disarm them on that database first.`, {
       context: { database: record.database }
     });
   }
   return { database, armed: record.armed };
 }
-function writeUndo(root, record) {
-  return writeJson((0, import_node_path9.join)(root, UNDO_FILE), record);
+function writeUndo(root, record, file) {
+  return writeJson((0, import_node_path9.join)(root, file), record);
 }
 async function armFact(world, registry, root, factId, opts = {}) {
+  const file = opts.undoFile ?? UNDO_FILE;
   const fact = factById(registry, factId);
   if (fact.arm === void 0) {
     throw new LaunchwrightError("qa.fixture.no-arm", `Fact ${fact.id} (${fact.file}) has no arm(). Seed it with lw qa world reset, or give it arm() and undo().`, {
@@ -1218,26 +1291,26 @@ async function armFact(world, registry, root, factId, opts = {}) {
     });
   }
   const persona = opts.persona === void 0 ? void 0 : personaIds(personaById(registry, opts.persona).id);
-  const record = await readUndo(root, world.database);
+  const record = await readUndo(root, world.database, file);
   if (record.armed.some((a) => a.fact === fact.id)) {
     throw new LaunchwrightError("qa.fixture.armed", `Fact ${fact.id} is armed already. Run lw qa fixture disarm first.`, { context: { fact: fact.id } });
   }
   const entry = { fact: fact.id, ...persona ? { persona: persona.persona } : {}, steps: [] };
   record.armed.push(entry);
-  await writeUndo(root, record);
+  await writeUndo(root, record, file);
   await fact.arm({
     app: world.app,
     tenantId: world.tenantId,
     ...persona ? { persona } : {},
     async record(step) {
       entry.steps.push(step);
-      await writeUndo(root, record);
+      await writeUndo(root, record, file);
     }
   });
   return entry;
 }
-async function disarmFact(world, registry, root) {
-  const record = await readUndo(root, world.database);
+async function disarmFact(world, registry, root, file = UNDO_FILE) {
+  const record = await readUndo(root, world.database, file);
   const done = [];
   while (record.armed.length > 0) {
     const entry = record.armed[record.armed.length - 1];
@@ -1246,10 +1319,10 @@ async function disarmFact(world, registry, root) {
     while (entry.steps.length > 0) {
       await fact.undo(world, entry.steps[entry.steps.length - 1]);
       entry.steps.pop();
-      await writeUndo(root, record);
+      await writeUndo(root, record, file);
     }
     record.armed.pop();
-    await writeUndo(root, record);
+    await writeUndo(root, record, file);
     done.push(entry.fact);
   }
   return done;
@@ -1280,6 +1353,93 @@ async function fixtureArming(opts) {
         await close();
       }
     }
+  };
+}
+
+// src/world/services/api.mts
+var listenQaApp = async (handler, app, port) => {
+  const { serveNode } = await loadHttp();
+  const { server } = serveNode(handler, port, { hostname: "127.0.0.1", app, signals: false });
+  if (!server.listening) await new Promise((resolve6, reject) => {
+    server.once("listening", resolve6);
+    server.once("error", (cause) => reject(new LaunchwrightError("qa.world.listen", `Cannot listen on 127.0.0.1:${port}: ${cause.message}`, { cause })));
+  });
+  return {
+    port: server.address().port,
+    close: () => new Promise((resolve6, reject) => {
+      server.close((err) => err ? reject(new LaunchwrightError("qa.world.close", `Cannot close the QA API server: ${err.message}`, { cause: err })) : resolve6());
+      server.closeAllConnections?.();
+    })
+  };
+};
+
+// src/world/services/fork-server.mts
+var import_promises7 = require("fs/promises");
+var import_node_path10 = require("path");
+async function serveFork(o, database) {
+  const world = await openWorld(o.entry, o.sections, o.env, { ...o.overlay, database });
+  let listening = null;
+  try {
+    listening = await (o.listen ?? listenQaApp)(o.entry.serve(world.app), world.app, 0);
+  } finally {
+    if (listening === null) await world.close();
+  }
+  const server = listening;
+  const undoFile = forkUndoFile(database);
+  let closing = null;
+  const close = async () => {
+    try {
+      await server.close();
+    } finally {
+      try {
+        await world.close();
+      } finally {
+        await (0, import_promises7.rm)((0, import_node_path10.join)(o.root, undoFile), { force: true });
+      }
+    }
+  };
+  return {
+    database,
+    world,
+    url: `http://127.0.0.1:${server.port}`,
+    arming: {
+      async arm(state, a) {
+        await armFact(world, o.registry, o.root, state, { ...a.persona === void 0 ? {} : { persona: a.persona }, undoFile });
+      },
+      disarm: async () => void 0
+    },
+    close: () => closing ??= close()
+  };
+}
+async function openFork(o, label) {
+  const runner = worldForkRunner(o);
+  const database = await runner.create(label);
+  let instance = null;
+  try {
+    instance = await serveFork(o, database);
+  } finally {
+    if (instance === null) await runner.drop(database);
+  }
+  const served = instance;
+  const db = async () => o.entry.db?.(served.world.app) ?? served.world.app.get((await loadDb()).DB);
+  return {
+    ...served,
+    execute: async (sql) => (await db()).execute(sql),
+    async release() {
+      try {
+        await served.close();
+      } finally {
+        await runner.drop(database);
+      }
+    }
+  };
+}
+function worldForkRunner(o) {
+  const fork = { root: o.root, sections: o.sections, database: o.overlay.database, out: o.out };
+  return {
+    create: (label) => createFork({ ...fork, label }),
+    drop: (name) => dropFork({ ...fork, name }),
+    serve: (database) => serveFork(o, database)
   };
 }
 
@@ -1317,24 +1477,24 @@ var ShiftClock = class {
 };
 
 // src/world/services/jobs.mts
-var import_promises7 = require("fs/promises");
-var import_node_path10 = require("path");
+var import_promises8 = require("fs/promises");
+var import_node_path11 = require("path");
 var import_node_url3 = require("url");
 function jobsDirOf(sections = {}) {
   return `${appPath(sections, "node", "apps/api")}/src/jobs`;
 }
 var JOBS_DIR = jobsDirOf();
 async function importProjectJobs(root, jobsDir = JOBS_DIR) {
-  const dir = (0, import_node_path10.join)(root, jobsDir);
+  const dir = (0, import_node_path11.join)(root, jobsDir);
   let names;
   try {
-    names = await (0, import_promises7.readdir)(dir);
+    names = await (0, import_promises8.readdir)(dir);
   } catch (cause) {
     if (cause.code === "ENOENT") return [];
     throw new LaunchwrightError("qa.job.read", `Cannot read ${dir}.`, { cause });
   }
   const files = names.filter((n) => n.endsWith(".job.mts")).sort();
-  for (const file of files) await import((0, import_node_url3.pathToFileURL)((0, import_node_path10.join)(dir, file)).href);
+  for (const file of files) await import((0, import_node_url3.pathToFileURL)((0, import_node_path11.join)(dir, file)).href);
   return files;
 }
 function listJobs(registry) {
@@ -1476,8 +1636,8 @@ async function setMenuButton(o) {
 }
 
 // src/world/services/worktree.mts
-var import_promises8 = require("fs/promises");
-var import_node_path11 = require("path");
+var import_promises9 = require("fs/promises");
+var import_node_path12 = require("path");
 var DEFAULT_LOCAL_ENV_FILE = [".env", "local"].join(".");
 function envFileName(sections) {
   const dev = sections.dev;
@@ -1488,7 +1648,7 @@ function copyPrefix(sections, checkout) {
   return `${databaseName(devProjectName(sections, checkout))}_wt_`;
 }
 function copyName(prefix, toplevel) {
-  return `${prefix}${databaseName((0, import_node_path11.basename)(toplevel))}`.slice(0, 63);
+  return `${prefix}${databaseName((0, import_node_path12.basename)(toplevel))}`.slice(0, 63);
 }
 async function planWorktree(o) {
   const checkout = await readCheckout(o.root);
@@ -1502,11 +1662,11 @@ async function planWorktree(o) {
     throw new LaunchwrightError("qa.worktree.driver", "The project uses PGlite. lw qa worktree copies a Postgres database; a PGlite project gives each worktree its own data folder.");
   }
   const name = envFileName(o.sections);
-  const envFile = (0, import_node_path11.join)(o.root, name);
-  const mainEnvFile = (0, import_node_path11.join)(checkout.mainRoot, name);
+  const envFile = (0, import_node_path12.join)(o.root, name);
+  const mainEnvFile = (0, import_node_path12.join)(checkout.mainRoot, name);
   if (await readTextOrNull(envFile) === null) {
     if (await readTextOrNull(mainEnvFile) === null) throw new LaunchwrightError("qa.worktree.env", `No ${name} in this worktree and none in the main checkout to copy.`);
-    await (0, import_promises8.copyFile)(mainEnvFile, envFile);
+    await (0, import_promises9.copyFile)(mainEnvFile, envFile);
     o.out(`copied ${name} from the main checkout`);
   }
   const values = o.deps.parseEnv(await readTextOrNull(envFile) ?? "");
@@ -1533,8 +1693,8 @@ function setEnvLine(text2, key, value) {
 }
 async function writePrivate(path, text2) {
   const tmp = `${path}.${process.pid}.tmp`;
-  await (0, import_promises8.writeFile)(tmp, text2, { mode: 384 });
-  await (0, import_promises8.rename)(tmp, path);
+  await (0, import_promises9.writeFile)(tmp, text2, { mode: 384 });
+  await (0, import_promises9.rename)(tmp, path);
 }
 function menuWatcher(o) {
   let done = false;
@@ -1575,7 +1735,7 @@ async function runWorktree(o) {
     }
     await writePrivate(plan.envFile, setEnvLine(original, "DATABASE_URL", copyUrl));
     o.out(`DATABASE_URL names ${plan.copy}`);
-    const dir = (0, import_node_path11.join)(o.root, typeof o.sections.db?.migrations === "string" ? o.sections.db.migrations : "packages/db/migrations");
+    const dir = (0, import_node_path12.join)(o.root, typeof o.sections.db?.migrations === "string" ? o.sections.db.migrations : "packages/db/migrations");
     const applied = await o.deps.migrate(copyUrl, dir);
     o.out(`migrated ${plan.copy}: ${applied.length} migration(s)`);
     code = await o.deps.runDev({ root: o.root, commonDir: plan.checkout.commonDir, err: menuWatcher(o) });
@@ -1631,23 +1791,29 @@ async function cleanupWorktrees(o) {
   cleanupWorktrees,
   copyName,
   copyPrefix,
+  createFork,
   databaseName,
   dbAdmin,
   defineWorld,
   devProjectName,
   disarmFact,
+  dropFork,
   factById,
   featuresWithoutWorld,
   fixtureArming,
+  forkName,
+  forkUndoFile,
   idProblem,
   importFromProject,
   importProjectJobs,
   isLoopbackHost,
   listJobs,
   listWorld,
+  listenQaApp,
   loadAppEntry,
   loadRegistry,
   loadWorlds,
+  openFork,
   openWorld,
   parseShift,
   personaById,
@@ -1673,10 +1839,13 @@ async function cleanupWorktrees(o) {
   runJob,
   runWorktree,
   seedWorld,
+  seededName,
+  serveFork,
   setEnvLine,
   setMenuButton,
   urlWithDatabase,
   worldFiles,
+  worldForkRunner,
   worldLintFindings,
   worldStatus
 });

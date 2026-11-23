@@ -212,7 +212,7 @@ var init_clock = __esm({
       now: () => Date.now(),
       date: () => new Date(Date.now()),
       sleep(ms, signal) {
-        return new Promise((resolve5, reject) => {
+        return new Promise((resolve10, reject) => {
           if (signal?.aborted) {
             reject(abortError(signal));
             return;
@@ -223,7 +223,7 @@ var init_clock = __esm({
           };
           const timer = setTimeout(() => {
             signal?.removeEventListener("abort", onAbort);
-            resolve5();
+            resolve10();
           }, ms);
           signal?.addEventListener("abort", onAbort, { once: true });
         });
@@ -476,6 +476,29 @@ var init_manifest = __esm({
 });
 
 // src/kernel/services/peers.mts
+function packageOf(specifier) {
+  const parts = specifier.split("/");
+  return specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0] ?? specifier;
+}
+function missingSpecifier(message) {
+  return /['"]([^'"]+)['"]/.exec(message)?.[1];
+}
+function isMissingPeer(cause, name) {
+  if (cause?.code !== "ERR_MODULE_NOT_FOUND") return false;
+  const missing = missingSpecifier(String(cause.message ?? ""));
+  return missing === name || missing === packageOf(name);
+}
+async function optionalPeer(name, load) {
+  try {
+    return await (load ? load() : import(
+      /* @vite-ignore */
+      name
+    ));
+  } catch (cause) {
+    if (isMissingPeer(cause, name)) return void 0;
+    throw new LaunchwrightError("kernel.peer.load", `Cannot load the optional peer ${name}`, { cause, context: { name } });
+  }
+}
 var init_peers = __esm({
   "src/kernel/services/peers.mts"() {
     "use strict";
@@ -784,6 +807,14 @@ function isMissing(err) {
 function readError(path, cause) {
   return new LaunchwrightError("kernel.fs.read", `Cannot read ${path}`, { cause, context: { path } });
 }
+async function pathKind(path) {
+  try {
+    return (await (0, import_promises2.stat)(path)).isDirectory() ? "dir" : "file";
+  } catch (cause) {
+    if (isMissing(cause)) return "missing";
+    throw readError(path, cause);
+  }
+}
 async function readTextOrNull(path) {
   try {
     return await (0, import_promises2.readFile)(path, "utf8");
@@ -793,10 +824,10 @@ async function readTextOrNull(path) {
   }
 }
 async function readJsonOrNull(path) {
-  const text = await readTextOrNull(path);
-  if (text === null) return null;
+  const text2 = await readTextOrNull(path);
+  if (text2 === null) return null;
   try {
-    return JSON.parse(text);
+    return JSON.parse(text2);
   } catch (cause) {
     throw new LaunchwrightError("kernel.fs.json", `${path} is not valid JSON`, { cause, context: { path } });
   }
@@ -908,6 +939,11 @@ async function appendLedger(reportDir, slug, entries) {
   const byPath = new Map(current.entries.map((e) => [e.path, e]));
   for (const e of entries) byPath.set(e.path, e);
   return writeLedger(path, { format: LEDGER_FORMAT, slug, entries: [...byPath.values()] });
+}
+async function appendResult(path, result) {
+  await (0, import_promises3.mkdir)((0, import_node_path4.dirname)(path), { recursive: true });
+  await (0, import_promises3.writeFile)(path, `${JSON.stringify(result)}
+`, { flag: "a" });
 }
 var import_promises3, import_node_path4, LEDGER_FILE, RESULTS_FILE, LEDGER_FORMAT, assetsRel, isObject;
 var init_ledger = __esm({
@@ -1215,8 +1251,8 @@ function candidatePlan(shape, corpus, options = {}) {
     const key = canonical(candidate);
     if (seen.has(key)) return;
     seen.add(key);
-    const { changes, text } = describeCandidate(candidate, base);
-    plan2.push({ candidate, base, baseIndex, changes, text });
+    const { changes, text: text2 } = describeCandidate(candidate, base);
+    plan2.push({ candidate, base, baseIndex, changes, text: text2 });
   };
   for (const [i, base] of corpus.entries()) {
     if (full()) break;
@@ -1256,8 +1292,8 @@ function describeCandidate(candidate, corpusEntry) {
     if (had && has && same(corpusEntry[field], candidate[field])) continue;
     changes.push({ field, from: had ? corpusEntry[field] : ABSENT, to: has ? candidate[field] : ABSENT });
   }
-  const text = changes.length === 0 ? "unchanged from the corpus entry" : changes.map((c) => `${c.field}: ${show(c.from)} -> ${show(c.to)}`).join(", ");
-  return { changes, text };
+  const text2 = changes.length === 0 ? "unchanged from the corpus entry" : changes.map((c) => `${c.field}: ${show(c.from)} -> ${show(c.to)}`).join(", ");
+  return { changes, text: text2 };
 }
 function unreachable(union, tried) {
   const covered = union.covered ?? [];
@@ -1439,33 +1475,33 @@ async function installSubstitution(page, spec) {
   const handler = async (route) => {
     try {
       const response = await route.fetch();
-      const text = await response.text();
+      const text2 = await response.text();
       const status = response.status();
       const headers = freshHeaders(response.headers());
       let parsed;
       try {
-        parsed = JSON.parse(text);
+        parsed = JSON.parse(text2);
       } catch {
         state.errors.push(`${spec.url}: the response is not JSON, so no subject can be put into it`);
-        await route.fulfill({ status, headers, body: text });
+        await route.fulfill({ status, headers, body: text2 });
         return;
       }
       const container = getAtPath(parsed, spec.container);
       if (!Array.isArray(container)) {
         const what = container === void 0 ? "not in the response" : "not an array";
         state.errors.push(`${spec.url}: "${spec.container}" is ${what}, so the descriptor assumes a shape the server does not send`);
-        await route.fulfill({ status, headers, body: text });
+        await route.fulfill({ status, headers, body: text2 });
         return;
       }
       collect2(parsed, container);
       if (state.subjects === null) {
         state.hits += 1;
-        await route.fulfill({ status, headers, body: text });
+        await route.fulfill({ status, headers, body: text2 });
         return;
       }
       if (!setAtPath(parsed, spec.container, [...state.subjects])) {
         state.errors.push(`${spec.url}: "${spec.container}" could not be written back`);
-        await route.fulfill({ status, headers, body: text });
+        await route.fulfill({ status, headers, body: text2 });
         return;
       }
       state.hits += 1;
@@ -1544,14 +1580,14 @@ async function snapshotTree(page, options = {}) {
 }
 function diffNodes(a, b) {
   const out2 = [];
-  const walk2 = (x, y, path) => {
+  const walk3 = (x, y, path) => {
     if (x.self !== y.self || x.children.length !== y.children.length) {
       out2.push(path);
       return;
     }
-    for (let i = 0; i < x.children.length; i += 1) walk2(x.children[i], y.children[i], [...path, i]);
+    for (let i = 0; i < x.children.length; i += 1) walk3(x.children[i], y.children[i], [...path, i]);
   };
-  walk2(a, b, []);
+  walk3(a, b, []);
   return out2;
 }
 function commonAncestor(paths) {
@@ -2057,8 +2093,8 @@ function isProductSource(rel) {
   if (/\.(test|spec)\.(tsx?|mts)$/.test(base)) return false;
   return !segments.some((s) => s === "__tests__" || s === "__mocks__" || s === "node_modules");
 }
-function parseSource(rel, text) {
-  return import_typescript.default.createSourceFile(rel, text, import_typescript.default.ScriptTarget.ES2022, true, rel.endsWith(".tsx") ? import_typescript.default.ScriptKind.TSX : import_typescript.default.ScriptKind.TS);
+function parseSource(rel, text2) {
+  return import_typescript.default.createSourceFile(rel, text2, import_typescript.default.ScriptTarget.ES2022, true, rel.endsWith(".tsx") ? import_typescript.default.ScriptKind.TSX : import_typescript.default.ScriptKind.TS);
 }
 function walk(node, visit) {
   visit(node);
@@ -2102,8 +2138,8 @@ function ignoreReason(node, file, sf) {
     };
   }
   const [tag] = tags;
-  const text = (import_typescript.default.getTextOfJSDocComment(tag?.comment) ?? "").replace(/\s+/g, " ").trim();
-  const directive = /^ignore(?:\s+(.*))?$/.exec(text);
+  const text2 = (import_typescript.default.getTextOfJSDocComment(tag?.comment) ?? "").replace(/\s+/g, " ").trim();
+  const directive = /^ignore(?:\s+(.*))?$/.exec(text2);
   if (!directive) {
     return {
       reason: null,
@@ -2112,7 +2148,7 @@ function ignoreReason(node, file, sf) {
         file,
         line,
         union: name,
-        message: `${file}:${line} "${name}" has @${IGNORE_TAG} "${text}". The only directive is "ignore <reason>".`
+        message: `${file}:${line} "${name}" has @${IGNORE_TAG} "${text2}". The only directive is "ignore <reason>".`
       }
     };
   }
@@ -2339,28 +2375,28 @@ function literalValue(node) {
   }
   return void 0;
 }
-function fieldFor(typeNode, resolve5, hops = 0) {
+function fieldFor(typeNode, resolve10, hops = 0) {
   if (!typeNode) return { kind: "opaque" };
   const keyword = KEYWORD_KINDS.get(typeNode.kind);
   if (keyword) return { kind: keyword };
   if (import_typescript.default.isUnionTypeNode(typeNode)) {
     const present = typeNode.types.filter((t) => !isNullish(t));
     const nullable = present.length !== typeNode.types.length;
-    const inner = unionField(present, resolve5, hops);
+    const inner = unionField(present, resolve10, hops);
     if (!inner) return { kind: "opaque" };
     return nullable ? { kind: "nullable", of: inner } : inner;
   }
   if (import_typescript.default.isTypeReferenceNode(typeNode) && hops < MAX_TYPE_HOPS) {
     const name = referencedName(typeNode);
-    const aliased = name ? resolve5(name) : null;
-    if (aliased) return fieldFor(aliased, resolve5, hops + 1);
+    const aliased = name ? resolve10(name) : null;
+    if (aliased) return fieldFor(aliased, resolve10, hops + 1);
   }
   return { kind: "opaque" };
 }
-function unionField(present, resolve5, hops) {
+function unionField(present, resolve10, hops) {
   if (present.length === 0) return null;
   if (present.length === 1) {
-    const only = fieldFor(present[0], resolve5, hops);
+    const only = fieldFor(present[0], resolve10, hops);
     return only.kind === "nullable" ? { kind: "opaque" } : only;
   }
   const values = present.map((t) => import_typescript.default.isLiteralTypeNode(t) ? literalValue(t.literal) : void 0);
@@ -2435,10 +2471,10 @@ function partsOf(name, composedOf) {
 }
 function analyzeSources(input) {
   const { sources, extraTypes = [], roots, generated } = input;
-  const parsed = sources.map(({ file, text }) => ({ file, sf: parseSource(file, text) }));
+  const parsed = sources.map(({ file, text: text2 }) => ({ file, sf: parseSource(file, text2) }));
   const problems = [];
   const declaredIn = /* @__PURE__ */ new Map();
-  for (const { file, sf } of [...parsed, ...extraTypes.map(({ file: file2, text }) => ({ file: file2, sf: parseSource(file2, text) }))]) {
+  for (const { file, sf } of [...parsed, ...extraTypes.map(({ file: file2, text: text2 }) => ({ file: file2, sf: parseSource(file2, text2) }))]) {
     for (const decl of findTypeDeclarations(sf, file)) {
       const seen = declaredIn.get(decl.name);
       if (seen === void 0) declaredIn.set(decl.name, decl);
@@ -2629,7 +2665,7 @@ function resolveSpecifier(fromFile, specifier, files, aliases = {}) {
   return null;
 }
 function buildGraph(sources, aliases = {}) {
-  const parsed = new Map(sources.map(({ file, text }) => [file, parseSource(file, text)]));
+  const parsed = new Map(sources.map(({ file, text: text2 }) => [file, parseSource(file, text2)]));
   const files = new Set(parsed.keys());
   const edges = /* @__PURE__ */ new Map();
   for (const [file, sf] of parsed) {
@@ -2804,13 +2840,13 @@ function jsxTagsIn(node) {
   visit(node);
   return found;
 }
-function componentPages(component, sf, resolve5, seen = /* @__PURE__ */ new Set(), depth = 0) {
+function componentPages(component, sf, resolve10, seen = /* @__PURE__ */ new Set(), depth = 0) {
   if (component === null || seen.has(component) || depth > MAX_HOPS) return [];
   seen.add(component);
   const imports = importedNames(sf);
   const specifier = imports.get(component);
   if (specifier !== void 0) {
-    const file = resolve5(specifier);
+    const file = resolve10(specifier);
     return file === null ? [] : [file];
   }
   const declaration = localConstants(sf).get(component);
@@ -2818,7 +2854,7 @@ function componentPages(component, sf, resolve5, seen = /* @__PURE__ */ new Set(
   const pages = [];
   for (const tag of jsxTagsIn(declaration)) {
     if (tag === component) continue;
-    pages.push(...componentPages(tag, sf, resolve5, seen, depth + 1));
+    pages.push(...componentPages(tag, sf, resolve10, seen, depth + 1));
   }
   return [...new Set(pages)];
 }
@@ -2849,12 +2885,12 @@ function buildRouteMap(input) {
   const tables = input.tables.map((table) => {
     const sf = parsed.get(table.file);
     if (!sf) return { table, found: false, routes: [] };
-    const resolve5 = (specifier) => resolveSpecifier(table.file, specifier, files, aliases);
+    const resolve10 = (specifier) => resolveSpecifier(table.file, specifier, files, aliases);
     const routes = routeRows(sf).map((row) => ({
       path: row.path,
       dynamic: row.dynamic,
       source: row.source,
-      pages: row.pageName !== null ? [pageFileFor(row.pageName, input.pageRoots, files)].filter((f) => f !== null) : componentPages(row.component, sf, resolve5)
+      pages: row.pageName !== null ? [pageFileFor(row.pageName, input.pageRoots, files)].filter((f) => f !== null) : componentPages(row.component, sf, resolve10)
     }));
     return { table, found: true, routes };
   });
@@ -2916,8 +2952,8 @@ function attachRoutes(inventory, map) {
     })
   };
 }
-function aliasesFromTsconfig(text, dir) {
-  const parsed = import_typescript2.default.parseConfigFileTextToJson("tsconfig.json", text);
+function aliasesFromTsconfig(text2, dir) {
+  const parsed = import_typescript2.default.parseConfigFileTextToJson("tsconfig.json", text2);
   const options = parsed.config?.compilerOptions;
   const base = import_node_path7.posix.join(dir, options?.baseUrl ?? ".");
   const out2 = {};
@@ -3054,417 +3090,138 @@ var init_check = __esm({
   }
 });
 
-// src/states/services/forge.mts
-async function captureForged(seed, member, ctx) {
-  const started = ctx.now();
-  const id = `${seed.union}.${member}`;
-  const rel = statePath(ctx.slug, id, "forged", "json");
-  const file = import_node_path9.posix.join(ctx.reportDir, rel);
-  const artifact = {
-    union: seed.union,
-    member,
-    via: seed.via,
-    provenance: "forged",
-    fields: seed.fields,
-    reason: seed.reason,
-    note: FORGE_CAVEAT
-  };
-  (0, import_node_fs7.mkdirSync)((0, import_node_path9.dirname)(file), { recursive: true });
-  (0, import_node_fs7.writeFileSync)(file, `${JSON.stringify(artifact, null, 2)}
-`);
-  await ctx.record({ file, kind: "log", row: id });
-  return {
-    id,
-    union: seed.union,
-    member,
-    ok: true,
-    subject: null,
-    context: null,
-    provenance: "forged",
-    // No feature function runs over a forged seed. Null is "not checked", never "it agreed".
-    verified: null,
-    error: null,
-    expect: `forged seed via ${seed.via}: a live apply renders ${seed.union}=${member}. Not proven here.`,
-    ms: ctx.now() - started
-  };
-}
-var import_node_fs7, import_node_path9, FORGE_CAVEAT;
-var init_forge = __esm({
-  "src/states/services/forge.mts"() {
-    "use strict";
-    init_cjs_shims();
-    import_node_fs7 = require("fs");
-    import_node_path9 = require("path");
-    init_inventory();
-    FORGE_CAVEAT = "A forged capture records the inferred seed only. A live apply needs a running app on the real route to render and photograph the state.";
-  }
-});
-
-// src/states/services/loop.mts
-function reasonOf(row) {
-  return FAIL_REASONS.includes(row?.reason) ? row?.reason : "crashed";
-}
-function parseInventory(text, source) {
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch (cause) {
-    throw new LaunchwrightError("qa.states.inventory", `${source} is not JSON. Run "lw qa states scan" again.`, { cause, context: { source } });
-  }
-  const errors = validateInventory(parsed);
-  if (errors.length > 0) {
-    throw new LaunchwrightError("qa.states.inventory", `The inventory in ${source} is invalid, ${errors.length} problem(s):
-${errors.map((e) => `  ${e}`).join("\n")}`, {
-      context: { source, errors }
-    });
-  }
-  return parsed;
-}
-function unionFiles(union) {
-  const files = /* @__PURE__ */ new Set([union.file]);
-  for (const site of union.inputs) {
-    files.add(site.file);
-    if (site.componentFile) files.add(site.componentFile);
-  }
-  for (const site of union.outputs) files.add(site.file);
-  return [...files].filter(Boolean).sort();
-}
-function narrowInventory(inv, paths) {
-  const files = new Set(paths.files ?? []);
-  const dirs = (paths.dirs ?? []).filter(Boolean).map((d) => d.replace(/\/+$/, ""));
-  const touches = (path) => files.has(path) || dirs.some((dir) => path.startsWith(`${dir}/`));
-  const kept = [];
-  const dropped = [];
-  for (const union of inv.unions) {
-    if (unionFiles(union).some(touches)) kept.push(union);
-    else dropped.push(union.name);
-  }
-  return { inventory: { ...inv, unions: kept }, kept: kept.map((u) => u.name), dropped };
-}
-function neitherUnions(inv) {
-  return inv.unions.filter((union) => union.kind === "neither");
-}
-function subjectLabel(union) {
-  for (const site of union.inputs) if (site.component) return site.component;
-  for (const site of union.outputs) if (site.fn) return site.fn;
-  for (const site of union.inputs) if (site.interface) return site.interface;
-  return union.file.split("/").pop() ?? union.name;
-}
-function issueFor(union) {
-  const members = union.members.map((m) => `\`${m}\``).join(" ");
-  const title = `qa states: \`${union.name}\` is neither an input nor an output`;
-  const body = [
-    `File: \`${union.file}:${union.line}\``,
-    `Members (${union.members.length}): ${members}`,
-    "",
-    `\`${union.name}\` is an exported closed union, so the QA state run counts its ${union.members.length} members.`,
-    "It can reach none of them. No field of a props type holds the type, so a mount cannot set it.",
-    "No function returns it, so the solver has nothing to run. The state exists only inside a conditional.",
-    "",
-    "Declare it in one of two ways:",
-    "",
-    `- give the component that branches on it a prop of type \`${union.name}\`, which makes it an input; or`,
-    `- move the conditional into an exported function that returns \`${union.name}\`, which makes it an output.`,
-    "",
-    "Or mark it `@qa-states ignore <reason>` when nothing can ever render it.",
-    "",
-    "Found by `lw qa states scan`."
-  ].join("\n");
-  return { title, body };
-}
-function refusalLines(inventory, rows) {
-  const lines = [];
-  for (const union of neitherUnions(inventory)) {
-    lines.push(
-      `${union.name} (${union.file}) is neither an input nor an output: nothing takes it and nothing returns it, so no mechanism can reach its ${union.members.length} member(s). The state exists only inside a conditional, and the fix is to declare it.`
-    );
-  }
-  for (const row of rows) {
-    if (row.ok) continue;
-    const reason = reasonOf(row);
-    if (reason === "no-mechanism") continue;
-    lines.push(`${row.id}: ${refusalFor(row)}.`);
-  }
-  return lines;
-}
-function parseResults(text) {
-  const attempts = [];
-  const malformed = [];
-  for (const line of text.split("\n")) {
-    if (line.trim() === "") continue;
-    let parsed;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      malformed.push(line.slice(0, 200));
-      continue;
+// src/services/legs.mts
+function legDefinitions(config) {
+  const merged = new Map(Object.entries(DEFAULT_LEGS));
+  for (const [name, def] of Object.entries(config.legs ?? {})) {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+      throw new LaunchwrightError("qa.legs.name", `qa.legs.${name}: a leg name is kebab case, for example "tablet-web"`, {
+        context: { leg: name }
+      });
     }
-    if (parsed && typeof parsed === "object" && typeof parsed.id === "string") attempts.push(parsed);
-    else malformed.push(line.slice(0, 200));
+    if (def === false) merged.delete(name);
+    else merged.set(name, def);
   }
-  return { attempts, malformed };
+  return [...merged].map(([name, def]) => ({ name, ...def }));
 }
-function mergeRows(captures, attempts, options = {}) {
-  const notRun = options.notRun ?? {};
-  const blocked = options.blocked ?? {};
-  const byId = /* @__PURE__ */ new Map();
-  for (const attempt of attempts) byId.set(attempt.id, attempt);
-  const rows = [];
-  const claimed = /* @__PURE__ */ new Set();
-  for (const capture of captures) {
-    const attempt = byId.get(capture.id);
-    if (attempt) {
-      claimed.add(capture.id);
-      rows.push({ ...capture, ...attempt, ok: attempt.ok === true, reported: true });
-      continue;
-    }
-    const blockedWhy = blocked[capture.union];
-    const notRunWhy = capture.mechanism === null ? void 0 : notRun[capture.mechanism];
-    if (capture.mechanism === null) rows.push({ ...capture, ok: false, reported: false, reason: "no-mechanism" });
-    else if (blockedWhy !== void 0) rows.push({ ...capture, ok: false, reported: false, reason: "blocked", why: blockedWhy });
-    else if (notRunWhy !== void 0) rows.push({ ...capture, ok: false, reported: false, reason: "not-run", why: notRunWhy });
-    else rows.push({ ...capture, ok: false, reported: false, reason: "crashed", error: UNREPORTED });
-  }
-  for (const attempt of attempts) {
-    if (claimed.has(attempt.id)) continue;
-    rows.push({ ...attempt, ok: attempt.ok === true, reported: true, extra: true });
-  }
-  return rows;
-}
-function cell(text) {
-  return String(text ?? "").replace(/\r?\n/g, " ").replace(/\|/g, "\\|").trim();
-}
-function provenanceLabel(provenance) {
-  if (provenance === "live") return null;
-  if (provenance && PROVENANCE.includes(provenance)) return `(${provenance})`;
-  return "(provenance not reported)";
-}
-function verifiedCell(row) {
-  if (row.verified === true) return row.answered ? `yes (${cell(row.answered)})` : "yes";
-  if (row.verified === false) return "no";
-  return "not verified";
-}
-function stateCell(union, row) {
-  if (row.member === null) return "`null` (the function returned nothing)";
-  if (row.member !== void 0) return cell(row.member);
-  const key = row.id.startsWith(`${union.name}.`) ? row.id.slice(union.name.length + 1) : row.id;
-  return cell(key.replace(/#/g, ", ").replace(/-/g, " "));
-}
-function orderRows(union, rows) {
-  const planned = rows.filter((row) => !row.extra);
-  const extras = rows.filter((row) => row.extra);
-  const taken = /* @__PURE__ */ new Set();
-  const out2 = [];
-  for (const row of planned) {
-    out2.push(row);
-    if (row.member === null || row.member === void 0) continue;
-    for (const extra of extras) {
-      if (taken.has(extra) || !extra.id.startsWith(`${union.name}.${row.member}#`)) continue;
-      taken.add(extra);
-      out2.push(extra);
-    }
-  }
-  for (const extra of extras) if (!taken.has(extra)) out2.push(extra);
-  return out2;
-}
-function refusalFor(row) {
-  const reason = reasonOf(row);
-  if (reason === "unreachable") return `no candidate produced it (tried ${(row.fieldsTried ?? []).join(", ") || "nothing"})`;
-  if (reason === "identical") return `identical to ${row.sameAs ?? "another member"}: the DOM diff is empty`;
-  if (reason === "state-mismatch") return `intended ${row.intended ?? row.member ?? "?"}, the function answered ${row.actual ?? "?"}`;
-  if (reason === "unmountable") return `cannot mount ${row.component ?? "the component"}: ${row.missingProp ?? "missing prop not reported"}`;
-  if (reason === "blocked" || reason === "not-run") return row.why ?? row.error ?? SENTENCES[reason];
-  return row.error ?? SENTENCES[reason];
-}
-function unionOf(inventory, id) {
-  let best = null;
-  for (const union of inventory.unions) {
-    if (!id.startsWith(`${union.name}.`)) continue;
-    if (!best || union.name.length > best.name.length) best = union;
-  }
-  return best;
-}
-function renderReport(args) {
-  const { inventory, rows, slug, narrowedBy = null, notRun = {} } = args;
-  const out2 = [];
-  const totals = { covered: 0, planned: 0 };
-  out2.push(`## State coverage${slug ? `: ${slug}` : ""}`);
-  out2.push("");
-  if (narrowedBy) out2.push(`Narrowed to ${narrowedBy}: ${inventory.unions.length} union(s) its files declare or consume.`);
-  out2.push(
-    "A shot marked `(intercepted)` comes through a rewritten API response: the component is real and the data is synthetic. `(mounted)` is the harness drawing the component directly. A shot with no label comes from live data."
-  );
-  for (const [mechanism, why] of Object.entries(notRun)) {
-    out2.push("");
-    out2.push(`Mechanism \`${mechanism}\` did not run: ${why}. Every capture it owns is uncovered below.`);
-  }
-  out2.push("");
-  for (const union of inventory.unions) {
-    const mine = rows.filter((row) => row.id.startsWith(`${union.name}.`));
-    const { covered, planned } = coverageFor(union, mine);
-    totals.covered += covered;
-    totals.planned += planned;
-    out2.push(`### ${subjectLabel(union)}: ${union.name}, ${covered} of ${planned} renderings`);
-    out2.push("");
-    out2.push("| State | Shot | Expect | Verified |");
-    out2.push("|---|---|---|---|");
-    for (const row of orderRows(union, mine)) {
-      const label = provenanceLabel(row.provenance);
-      const shot = row.ok ? [row.subject ? `![${cell(row.id)}](${row.subject})` : "shot, but no path reported", label].filter(Boolean).join(" ") : "not shot";
-      const expect = row.ok ? cell(row.expect ?? "-") : cell(refusalFor(row));
-      out2.push(`| ${stateCell(union, row)} | ${shot} | ${expect || "-"} | ${verifiedCell(row)} |`);
-    }
-    out2.push("");
-  }
-  const orphans = rows.filter((row) => row.extra && !unionOf(inventory, row.id));
-  if (orphans.length > 0) {
-    out2.push("### Reported by the runner, and in no union of the inventory");
-    out2.push("");
-    for (const row of orphans) out2.push(`- \`${cell(row.id)}\` (${row.ok ? "ok" : "failed"})`);
-    out2.push("");
-  }
-  out2.push(`${inventory.unions.length} union(s), ${totals.covered} of ${totals.planned} renderings.`);
-  return out2.join("\n");
-}
-function groupFor(union, captures, defaultLeg) {
-  const delivery = union.delivery ?? null;
-  const missing = [];
-  const route = typeof delivery?.route === "string" && delivery.route !== "" ? delivery.route : null;
-  if (!route) missing.push("route");
-  const intercept = delivery?.intercept;
-  if (typeof intercept?.url !== "string" || intercept.url === "") missing.push("intercept.url");
-  if (typeof intercept?.container !== "string" || intercept.container === "") missing.push("intercept.container");
-  const settle = delivery?.settle ?? null;
-  if (!settle || !settle.selector && !settle.artwork && !settle.video && !settle.busy) missing.push("settle");
-  const site = solveSite(union);
-  const shape = site?.params[0]?.shape ?? null;
-  if (!site) missing.push("verify");
-  else if (!shape) missing.push("solve.shape");
-  if (captures.length === 1 && delivery?.contrast === void 0) missing.push("contrast");
-  if (missing.length > 0 || !delivery || !route || !intercept || !settle || !site || !shape) return { group: null, missing };
-  const group = {
-    id: union.name,
-    union: union.name,
-    leg: delivery.leg ?? defaultLeg,
-    route,
-    provenance: "intercepted",
-    intercept: { url: intercept.url, container: intercept.container },
-    settle,
-    ...delivery.act ? { act: delivery.act } : {},
-    verify: { module: site.file, export: site.fn, async: site.async, ...delivery.verifyArgs ? { args: delivery.verifyArgs } : {} },
-    solve: {
-      shape,
-      pivots: { literals: site.pivots.literals, names: site.pivots.names },
-      ...delivery.pivotModules ? { pivotModules: delivery.pivotModules } : {},
-      ...typeof delivery.limit === "number" ? { limit: delivery.limit } : {},
-      ...typeof delivery.batchSize === "number" ? { batchSize: delivery.batchSize } : {}
-    },
-    members: captures.map((capture) => ({ id: capture.id, member: capture.member, expect: capture.member })),
-    ...delivery.contrast === void 0 ? {} : { contrast: delivery.contrast },
-    ...delivery.diffRoot ? { diffRoot: delivery.diffRoot } : {},
-    ...delivery.ignoreAttributes ? { ignoreAttributes: delivery.ignoreAttributes } : {},
-    ...typeof delivery.maxSubjectAreaRatio === "number" ? { maxSubjectAreaRatio: delivery.maxSubjectAreaRatio } : {}
-  };
-  return { group, missing: null };
-}
-function groupsFor(inventory, captures, defaultLeg) {
-  const groups = [];
-  const blocked = {};
-  for (const union of inventory.unions) {
-    const mine = captures.filter((capture) => capture.union === union.name && capture.mechanism === "solve");
-    if (mine.length === 0) continue;
-    const built = groupFor(union, mine, defaultLeg);
-    if (built.group) groups.push(built.group);
-    else {
-      blocked[union.name] = `no capture group could be built. Missing: ${built.missing.join(", ")}. A delivery descriptor beside the union in the inventory gives the route, the intercept and the settle. The shape and the pivots come from the scan`;
-    }
-  }
-  return { groups, blocked };
-}
-function mergeDelivery(inventory, delivery) {
-  return { ...inventory, unions: inventory.unions.map((union) => delivery[union.name] ? { ...union, delivery: delivery[union.name] } : union) };
-}
-function buildPlan(args) {
-  const { inventory: scanned, narrow } = args;
-  const inventory = narrow ? narrowInventory(scanned, narrow).inventory : scanned;
-  return {
-    generated: args.generated,
-    slug: args.slug,
-    source: args.source,
-    scanned: scanned.unions.length,
-    narrowedBy: narrow?.label ?? null,
-    inventory,
-    captures: plannedCaptures(inventory)
-  };
-}
-function renderPlan(plan2) {
-  const out2 = [];
-  const byMechanism = /* @__PURE__ */ new Map();
-  for (const capture of plan2.captures) {
-    const key = capture.mechanism ?? "none";
-    byMechanism.set(key, (byMechanism.get(key) ?? 0) + 1);
-  }
-  out2.push(`inventory  ${plan2.source}, ${plan2.scanned} union(s)`);
-  if (plan2.narrowedBy) out2.push(`narrowed   ${plan2.inventory.unions.length} of ${plan2.scanned} union(s) kept by ${plan2.narrowedBy}`);
-  const parts = ["mount", "solve", "none"].filter((key) => byMechanism.has(key)).map((key) => `${key} ${byMechanism.get(key)}`).join(", ");
-  out2.push(`captures   ${plan2.captures.length}${parts ? ` (${parts})` : ""}`);
-  out2.push("");
-  for (const union of plan2.inventory.unions) {
-    const mine = plan2.captures.filter((capture) => capture.union === union.name);
-    out2.push(
-      `  ${union.name.padEnd(24)} ${union.kind.padEnd(8)} ${String(mechanismFor(union.kind) ?? "none").padEnd(6)} ${String(mine.length).padStart(3)} capture(s)  ${union.file}`
-    );
-  }
-  return out2;
-}
-function renderNeither(inventory) {
-  const neither = neitherUnions(inventory);
-  if (neither.length === 0) return [];
-  const out2 = ["", `REFUSED   ${neither.length} union(s) are neither an input nor an output (spec 2.14 rule C1). Each one earns an issue:`];
-  for (const union of neither) {
-    const issue = issueFor(union);
-    out2.push("", `-- issue ${"-".repeat(60)}`, issue.title, "", issue.body, "-".repeat(69));
-  }
-  return out2;
-}
-function finishRun(args) {
-  const { plan: plan2, attempts, malformed = [], notRun = {}, blocked = {} } = args;
-  const rows = mergeRows(plan2.captures, attempts, { notRun, blocked });
-  const lines = [renderReport({ inventory: plan2.inventory, rows, slug: plan2.slug, narrowedBy: plan2.narrowedBy, notRun })];
-  for (const line of malformed) lines.push(`malformed result line, not read: ${line}`);
-  const refusals = refusalLines(plan2.inventory, rows);
-  if (refusals.length > 0) {
-    lines.push("", `REFUSED   ${refusals.length}, and each one is a failure:`);
-    for (const line of refusals) lines.push(`  ${line}`);
-  }
-  const neither = renderNeither(plan2.inventory);
-  lines.push(...neither);
-  const notRunCount = Object.keys(notRun).length;
-  const failed = rows.filter((row) => !row.ok).length;
-  const refused = neitherUnions(plan2.inventory).length;
-  lines.push("");
-  if (failed === 0 && refused === 0 && notRunCount === 0) lines.push("every planned rendering was captured.");
-  else lines.push(`${failed} rendering(s) uncovered, ${refused} union(s) refused, ${notRunCount} mechanism(s) not run.`);
-  return { lines, code: failed > 0 || refused > 0 || notRunCount > 0 ? 1 : 0, rows };
-}
-var SENTENCES, UNREPORTED;
-var init_loop = __esm({
-  "src/states/services/loop.mts"() {
+var CHROME_MAJOR, DESKTOP_USER_AGENT, DEFAULT_LEGS;
+var init_legs = __esm({
+  "src/services/legs.mts"() {
     "use strict";
     init_cjs_shims();
     init_kernel();
-    init_inventory();
-    SENTENCES = {
-      unreachable: "no candidate input produced this member",
-      identical: "the DOM diff between two members is empty",
-      "state-mismatch": "the feature's own function disagreed after injection",
-      unmountable: "the harness could not mount the component",
-      "no-mechanism": "the union is neither an input nor an output, so nothing can reach it",
-      blocked: "the run could not build a capture group the runner would accept",
-      "not-run": "the mechanism was not run",
-      crashed: "the capture failed, and the runner reported only a sentence"
-    };
-    UNREPORTED = "the runner exited without reporting this capture";
+    CHROME_MAJOR = 145;
+    DESKTOP_USER_AGENT = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`;
+    DEFAULT_LEGS = Object.freeze({
+      desktop: {
+        surface: "web",
+        target: "playwright",
+        browser: "chromium",
+        viewport: { width: 1440, height: 900 },
+        deviceScaleFactor: 1,
+        userAgent: DESKTOP_USER_AGENT
+      },
+      "mobile-web": { surface: "web", target: "playwright", browser: "chromium", descriptor: "Pixel 7", userAgent: DESKTOP_USER_AGENT },
+      miniapp: { surface: "miniapp", target: "playwright", browser: "chromium", descriptor: "Pixel 7" },
+      "telegram-fake": { surface: "bot", target: "playwright", browser: "chromium", viewport: { width: 1280, height: 800 } },
+      "telegram-android": { surface: "miniapp", target: "android-adb" },
+      "safari-ios": { surface: "web", target: "ios-webkit" }
+    });
+  }
+});
+
+// src/services/manifest.mts
+var import_promises4;
+var init_manifest2 = __esm({
+  "src/services/manifest.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_promises4 = require("fs/promises");
+    init_kernel();
+    init_legs();
+    init_types();
+  }
+});
+
+// src/services/png.mts
+function pngSize(bytes) {
+  if (bytes.length < 24) return null;
+  for (let i = 0; i < MAGIC.length; i += 1) if (bytes[i] !== MAGIC[i]) return null;
+  if (String.fromCharCode(bytes[12], bytes[13], bytes[14], bytes[15]) !== "IHDR") return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const width = view.getUint32(16);
+  const height = view.getUint32(20);
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+function encodePng(width, height, rgba) {
+  if (rgba.length !== width * height * 4) {
+    throw new LaunchwrightError("qa.png.size", `encodePng: ${rgba.length} bytes is not ${width}x${height} RGBA`);
+  }
+  const raw = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    raw[y * (width * 4 + 1)] = 0;
+    Buffer.from(rgba.buffer, rgba.byteOffset + y * width * 4, width * 4).copy(raw, y * (width * 4 + 1) + 1);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr.set([8, 6, 0, 0, 0], 8);
+  return Buffer.concat([Buffer.from(MAGIC), chunk("IHDR", ihdr), chunk("IDAT", (0, import_node_zlib.deflateSync)(raw)), chunk("IEND", Buffer.alloc(0))]);
+}
+function crc32(bytes) {
+  let c = 4294967295;
+  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 255] ^ c >>> 8;
+  return (c ^ 4294967295) >>> 0;
+}
+function chunk(type, data) {
+  const out2 = Buffer.alloc(12 + data.length);
+  out2.writeUInt32BE(data.length, 0);
+  out2.write(type, 4, "ascii");
+  Buffer.from(data).copy(out2, 8);
+  out2.writeUInt32BE(crc32(out2.subarray(4, 8 + data.length)), 8 + data.length);
+  return out2;
+}
+var import_node_zlib, MAGIC, CRC_TABLE;
+var init_png = __esm({
+  "src/services/png.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_zlib = require("zlib");
+    init_kernel();
+    MAGIC = [137, 80, 78, 71, 13, 10, 26, 10];
+    CRC_TABLE = (() => {
+      const table = new Uint32Array(256);
+      for (let n = 0; n < 256; n += 1) {
+        let c = n;
+        for (let k = 0; k < 8; k += 1) c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+        table[n] = c >>> 0;
+      }
+      return table;
+    })();
+  }
+});
+
+// src/services/video.mts
+var import_node_child_process, MIN_VIDEO_S;
+var init_video = __esm({
+  "src/services/video.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_child_process = require("child_process");
+    init_kernel();
+    MIN_VIDEO_S = 1;
+  }
+});
+
+// src/services/evidence.mts
+var init_evidence = __esm({
+  "src/services/evidence.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_ledger();
+    init_manifest2();
+    init_png();
+    init_video();
   }
 });
 
@@ -3588,8 +3345,8 @@ async function captureMounted(session, r, ctx) {
     const held = await session.currentRoute();
     if (!held.startsWith(STATES_HARNESS_PATH)) throw new CaptureFailure("blocked", `the page left the harness for ${held}`);
     const subject = statePath(ctx.slug, r.capture.id, "subject");
-    await session.screenshot(import_node_path10.posix.join(ctx.reportDir, subject));
-    await ctx.record({ file: import_node_path10.posix.join(ctx.reportDir, subject), kind: "screenshot", row: r.capture.id });
+    await session.screenshot(import_node_path9.posix.join(ctx.reportDir, subject));
+    await ctx.record({ file: import_node_path9.posix.join(ctx.reportDir, subject), kind: "screenshot", row: r.capture.id });
     result.subject = subject;
     result.expect = expectation(r);
     result.ok = true;
@@ -3600,12 +3357,12 @@ async function captureMounted(session, r, ctx) {
   result.ms = ctx.now() - started;
   return result;
 }
-var import_node_path10, STATES_HARNESS_PATH, HARNESS_ATTRIBUTE, SUBJECT_CHILD, HARNESS_ERROR, DEFAULT_MOUNT_SETTLE, memberKey, condense;
+var import_node_path9, STATES_HARNESS_PATH, HARNESS_ATTRIBUTE, SUBJECT_CHILD, HARNESS_ERROR, DEFAULT_MOUNT_SETTLE, memberKey, condense;
 var init_mount = __esm({
   "src/states/services/mount.mts"() {
     "use strict";
     init_cjs_shims();
-    import_node_path10 = require("path");
+    import_node_path9 = require("path");
     init_names();
     init_capture();
     init_inventory();
@@ -3619,176 +3376,208 @@ var init_mount = __esm({
   }
 });
 
-// src/services/changes.mts
-function git(repo, args, opts = {}) {
-  const res = (0, import_node_child_process.spawnSync)("git", args, { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: GIT_TIMEOUT_MS, killSignal: "SIGKILL" });
-  if (res.error) throw new LaunchwrightError("qa.git", `Cannot run git ${args.join(" ")}: ${res.error.message}`, { cause: res.error, context: { repo } });
-  if (res.status !== 0) {
-    if (opts.allowFail) return null;
-    throw new LaunchwrightError("qa.git", `git ${args.join(" ")} failed: ${(res.stderr ?? "").trim()}`, { context: { repo, args } });
-  }
-  return res.stdout;
+// src/services/peers.mts
+async function loadPeer(spec, module2) {
+  const mod = await optionalPeer(spec, () => import(spec));
+  if (!mod) throw new LaunchwrightError(`qa.${module2}.module`, `This lw qa command needs the ${module2} module. Run lw add ${module2}.`);
+  return mod;
 }
-var import_node_child_process, import_node_fs8, import_node_path11, RECORD, FIELD, LOG_FORMAT, GIT_TIMEOUT_MS;
-var init_changes = __esm({
-  "src/services/changes.mts"() {
-    "use strict";
-    init_cjs_shims();
-    import_node_child_process = require("child_process");
-    import_node_fs8 = require("fs");
-    import_node_path11 = require("path");
-    init_kernel();
-    RECORD = "";
-    FIELD = "";
-    LOG_FORMAT = `${RECORD}%H${FIELD}%h${FIELD}%cI${FIELD}%an${FIELD}%s`;
-    GIT_TIMEOUT_MS = 12e4;
-  }
-});
-
-// src/services/legs.mts
-function legDefinitions(config) {
-  const merged = new Map(Object.entries(DEFAULT_LEGS));
-  for (const [name, def] of Object.entries(config.legs ?? {})) {
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
-      throw new LaunchwrightError("qa.legs.name", `qa.legs.${name}: a leg name is kebab case, for example "tablet-web"`, {
-        context: { leg: name }
-      });
-    }
-    if (def === false) merged.delete(name);
-    else merged.set(name, def);
-  }
-  return [...merged].map(([name, def]) => ({ name, ...def }));
-}
-var CHROME_MAJOR, DESKTOP_USER_AGENT, DEFAULT_LEGS;
-var init_legs = __esm({
-  "src/services/legs.mts"() {
+var loadDb, loadHttp;
+var init_peers2 = __esm({
+  "src/services/peers.mts"() {
     "use strict";
     init_cjs_shims();
     init_kernel();
-    CHROME_MAJOR = 145;
-    DESKTOP_USER_AGENT = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`;
-    DEFAULT_LEGS = Object.freeze({
-      desktop: {
-        surface: "web",
-        target: "playwright",
-        browser: "chromium",
-        viewport: { width: 1440, height: 900 },
-        deviceScaleFactor: 1,
-        userAgent: DESKTOP_USER_AGENT
-      },
-      "mobile-web": { surface: "web", target: "playwright", browser: "chromium", descriptor: "Pixel 7", userAgent: DESKTOP_USER_AGENT },
-      miniapp: { surface: "miniapp", target: "playwright", browser: "chromium", descriptor: "Pixel 7" },
-      "telegram-fake": { surface: "bot", target: "playwright", browser: "chromium", viewport: { width: 1280, height: 800 } },
-      "telegram-android": { surface: "miniapp", target: "android-adb" },
-      "safari-ios": { surface: "web", target: "ios-webkit" }
-    });
+    loadDb = () => loadPeer("@launchwrighthq/db", "db");
+    loadHttp = () => loadPeer("@launchwrighthq/http", "http");
   }
 });
 
-// src/services/manifest.mts
-var import_promises4;
-var init_manifest2 = __esm({
-  "src/services/manifest.mts"() {
-    "use strict";
-    init_cjs_shims();
-    import_promises4 = require("fs/promises");
-    init_kernel();
-    init_legs();
-    init_types();
-  }
-});
-
-// src/services/png.mts
-function pngSize(bytes) {
-  if (bytes.length < 24) return null;
-  for (let i = 0; i < MAGIC.length; i += 1) if (bytes[i] !== MAGIC[i]) return null;
-  if (String.fromCharCode(bytes[12], bytes[13], bytes[14], bytes[15]) !== "IHDR") return null;
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const width = view.getUint32(16);
-  const height = view.getUint32(20);
-  return width > 0 && height > 0 ? { width, height } : null;
+// src/world/services/stack.mts
+function isLoopbackHost(host) {
+  return LOOPBACK_HOSTS.includes(host.replace(/^\[|\]$/g, ""));
 }
-function encodePng(width, height, rgba) {
-  if (rgba.length !== width * height * 4) {
-    throw new LaunchwrightError("qa.png.size", `encodePng: ${rgba.length} bytes is not ${width}x${height} RGBA`);
-  }
-  const raw = Buffer.alloc((width * 4 + 1) * height);
-  for (let y = 0; y < height; y += 1) {
-    raw[y * (width * 4 + 1)] = 0;
-    Buffer.from(rgba.buffer, rgba.byteOffset + y * width * 4, width * 4).copy(raw, y * (width * 4 + 1) + 1);
-  }
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr.set([8, 6, 0, 0, 0], 8);
-  return Buffer.concat([Buffer.from(MAGIC), chunk("IHDR", ihdr), chunk("IDAT", (0, import_node_zlib.deflateSync)(raw)), chunk("IEND", Buffer.alloc(0))]);
+function databaseName(text2) {
+  const name = text2.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^[^a-z]+/, "").replace(/_+$/, "");
+  return (name === "" ? "app" : name).slice(0, 63);
 }
-function crc32(bytes) {
-  let c = 4294967295;
-  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 255] ^ c >>> 8;
-  return (c ^ 4294967295) >>> 0;
+function checkIdentifier(name) {
+  if (!/^[a-z][a-z0-9_]{0,62}$/.test(name)) {
+    throw new LaunchwrightError("qa.stack.name", `"${name}" is not a plain database name (lower case letters, digits and _, a letter first).`, { context: { database: name } });
+  }
+  return name;
 }
-function chunk(type, data) {
-  const out2 = Buffer.alloc(12 + data.length);
-  out2.writeUInt32BE(data.length, 0);
-  out2.write(type, 4, "ascii");
-  Buffer.from(data).copy(out2, 8);
-  out2.writeUInt32BE(crc32(out2.subarray(4, 8 + data.length)), 8 + data.length);
+function pgliteDir(root, name) {
+  return (0, import_node_path10.resolve)(root, PGLITE_DIR, checkIdentifier(name));
+}
+function parsePgUrl(url) {
+  if (!URL.canParse(url)) return "the database URL cannot be parsed";
+  const parsed = new URL(url);
+  if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") return `${parsed.protocol.replace(":", "")} is not a postgres URL`;
+  return parsed;
+}
+function databaseOfUrl(url) {
+  const parsed = parsePgUrl(url);
+  if (typeof parsed === "string") throw new LaunchwrightError("qa.stack.url", `Refusing: ${parsed}.`);
+  return decodeURIComponent(parsed.pathname.replace(/^\//, ""));
+}
+function hostOfUrl(url) {
+  const parsed = parsePgUrl(url);
+  return typeof parsed === "string" ? "an unreadable host" : parsed.host;
+}
+function urlWithDatabase(url, name) {
+  const parsed = parsePgUrl(url);
+  if (typeof parsed === "string") throw new LaunchwrightError("qa.stack.url", `Refusing: ${parsed}.`);
+  parsed.pathname = `/${checkIdentifier(name)}`;
+  return parsed.toString();
+}
+function remoteHostProblem(url) {
+  const parsed = parsePgUrl(url);
+  if (typeof parsed === "string") return parsed;
+  const host = parsed.hostname;
+  return isLoopbackHost(host) ? null : `host ${host} is not this machine, and lw qa writes and drops databases on this machine only`;
+}
+function qaTargetProblem(db, database, root) {
+  if ((db.driver ?? "pg") === "pglite") {
+    if (typeof db.dataDir !== "string" || db.dataDir === "") return "the PGlite database has no data folder, so it is the in-memory database of the process";
+    const dir = (0, import_node_path10.isAbsolute)(db.dataDir) ? db.dataDir : (0, import_node_path10.resolve)(root, db.dataDir);
+    return dir === pgliteDir(root, database) ? null : `the PGlite folder ${dir} is not ${pgliteDir(root, database)}`;
+  }
+  if (typeof db.url !== "string" || db.url === "") return "no database URL at all";
+  const remote = remoteHostProblem(db.url);
+  if (remote) return remote;
+  const name = databaseOfUrl(db.url);
+  return name === database ? null : `database ${name || "(none named)"} is not ${database}, and lw qa may only touch ${database}`;
+}
+function assertQaTarget(db, database, root) {
+  const problem = qaTargetProblem(db, database, root);
+  if (problem) throw new LaunchwrightError("qa.stack.target", `Refusing: ${problem}.`, { context: { database } });
+}
+function qaDbSection(db, database, root) {
+  checkIdentifier(database);
+  if ((db.driver ?? "pg") === "pglite") return { ...db, driver: "pglite", dataDir: pgliteDir(root, database) };
+  if (typeof db.url !== "string" || db.url === "") {
+    throw new LaunchwrightError("qa.stack.url", "Config db.url is not set, so the QA world has no server. Set DATABASE_URL in the env file of the run.");
+  }
+  const out2 = { ...db, url: urlWithDatabase(db.url, database) };
+  assertQaTarget(out2, database, root);
   return out2;
 }
-var import_node_zlib, MAGIC, CRC_TABLE;
-var init_png = __esm({
-  "src/services/png.mts"() {
-    "use strict";
-    init_cjs_shims();
-    import_node_zlib = require("zlib");
-    init_kernel();
-    MAGIC = [137, 80, 78, 71, 13, 10, 26, 10];
-    CRC_TABLE = (() => {
-      const table = new Uint32Array(256);
-      for (let n = 0; n < 256; n += 1) {
-        let c = n;
-        for (let k = 0; k < 8; k += 1) c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
-        table[n] = c >>> 0;
+function guard(allowed, name, what) {
+  checkIdentifier(name);
+  if (!allowed(name)) throw new LaunchwrightError("qa.stack.guard", `Refusing to ${what} database ${name}: lw qa may not touch it.`, { context: { database: name } });
+  return name;
+}
+function quoted(name) {
+  return `"${checkIdentifier(name)}"`;
+}
+async function pgAdmin(url, allowed) {
+  const remote = remoteHostProblem(url);
+  if (remote) throw new LaunchwrightError("qa.stack.host", `Refusing: ${remote}.`, { context: { host: hostOfUrl(url) } });
+  const { createDb } = await loadDb();
+  const db = await createDb({ driver: "pg", url: urlWithDatabase(url, MAINTENANCE_DATABASE) });
+  const names = async () => {
+    const result = await db.execute("select datname from pg_database where not datistemplate");
+    return result.rows.map((r) => r.datname);
+  };
+  return {
+    exists: async (name) => (await names()).includes(checkIdentifier(name)),
+    async create(name, template) {
+      guard(allowed, name, "create");
+      try {
+        await db.execute(`create database ${quoted(name)}${template === void 0 ? "" : ` template ${quoted(template)}`}`);
+      } catch (cause) {
+        const message = messageOf(cause);
+        if (template !== void 0 && /being accessed by other users/.test(message)) {
+          throw new LaunchwrightError("qa.stack.copy", `Cannot copy ${template}: other sessions use it. Stop the run that holds it (lw stop in its checkout), then try again.`, {
+            cause,
+            context: { database: name, template }
+          });
+        }
+        throw new LaunchwrightError("qa.stack.create", `Cannot create database ${name}: ${message}`, { cause, context: { database: name } });
       }
-      return table;
-    })();
-  }
-});
-
-// src/services/video.mts
-var import_node_child_process2, MIN_VIDEO_S;
-var init_video = __esm({
-  "src/services/video.mts"() {
+    },
+    async drop(name) {
+      guard(allowed, name, "drop");
+      await db.execute(
+        `select pg_terminate_backend(pid) from pg_stat_activity where datname = '${checkIdentifier(name)}' and usename = current_user and pid <> pg_backend_pid()`
+      );
+      await db.execute(`drop database if exists ${quoted(name)}`);
+    },
+    list: async (prefix) => (await names()).filter((n) => n.startsWith(prefix)).sort(),
+    close: () => db.close()
+  };
+}
+function pgliteAdmin(root, allowed) {
+  const dir = (0, import_node_path10.resolve)(root, PGLITE_DIR);
+  return {
+    async exists(name) {
+      return await pathKind(pgliteDir(root, name)) === "dir";
+    },
+    async create(name, template) {
+      guard(allowed, name, "create");
+      if (template === void 0) await (0, import_promises5.mkdir)(pgliteDir(root, name), { recursive: true });
+      else await (0, import_promises5.cp)(pgliteDir(root, template), pgliteDir(root, name), { recursive: true, errorOnExist: true, force: false });
+    },
+    async drop(name) {
+      guard(allowed, name, "drop");
+      await (0, import_promises5.rm)(pgliteDir(root, name), { recursive: true, force: true });
+    },
+    async list(prefix) {
+      let names;
+      try {
+        names = await (0, import_promises5.readdir)(dir);
+      } catch (cause) {
+        if (cause.code === "ENOENT") return [];
+        throw new LaunchwrightError("qa.stack.read", `Cannot read ${dir}.`, { cause });
+      }
+      return names.filter((n) => n.startsWith(prefix)).sort();
+    },
+    close: async () => void 0
+  };
+}
+function dbAdmin(db, root, allowed) {
+  if ((db.driver ?? "pg") === "pglite") return Promise.resolve(pgliteAdmin(root, allowed));
+  if (typeof db.url !== "string" || db.url === "") throw new LaunchwrightError("qa.stack.url", "Config db.url is not set, so lw qa has no database server.");
+  return pgAdmin(db.url, allowed);
+}
+var import_promises5, import_node_path10, LOOPBACK_HOSTS, MAINTENANCE_DATABASE, PGLITE_DIR;
+var init_stack = __esm({
+  "src/world/services/stack.mts"() {
     "use strict";
     init_cjs_shims();
-    import_node_child_process2 = require("child_process");
+    import_promises5 = require("fs/promises");
+    import_node_path10 = require("path");
     init_kernel();
-    MIN_VIDEO_S = 1;
-  }
-});
-
-// src/services/evidence.mts
-var init_evidence = __esm({
-  "src/services/evidence.mts"() {
-    "use strict";
-    init_cjs_shims();
-    init_ledger();
-    init_manifest2();
-    init_png();
-    init_video();
+    init_fs();
+    init_peers2();
+    LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "::1"];
+    MAINTENANCE_DATABASE = "postgres";
+    PGLITE_DIR = ".lw/qa/pglite";
   }
 });
 
 // src/services/runner.mts
-var import_node_fs9, import_promises5, import_node_path12;
+function forkView(baseUrls, apiPort, forkUrl, label) {
+  const view = { baseUrls: {}, blocked: {} };
+  for (const [surface, url] of Object.entries(baseUrls)) {
+    const parsed = new URL(url);
+    if (isLoopbackHost(parsed.hostname) && Number(parsed.port) === apiPort) {
+      view.baseUrls[surface] = `${forkUrl}${parsed.pathname.replace(/\/+$/, "")}`;
+    } else {
+      view.blocked[surface] = `the ${surface} base URL ${url} is not the QA API on port ${apiPort}, so its client reads the shared QA database and cannot show fork ${label}. Serve the ${surface} surface from the QA app (qa.baseUrls.${surface} = http://127.0.0.1:${apiPort}), or run the row without a fork`;
+    }
+  }
+  return view;
+}
+var import_node_fs7, import_promises6, import_node_path11;
 var init_runner = __esm({
   "src/services/runner.mts"() {
     "use strict";
     init_cjs_shims();
-    import_node_fs9 = require("fs");
-    import_promises5 = require("fs/promises");
-    import_node_path12 = require("path");
+    import_node_fs7 = require("fs");
+    import_promises6 = require("fs/promises");
+    import_node_path11 = require("path");
     init_kernel();
     init_evidence();
     init_ledger();
@@ -3796,6 +3585,131 @@ var init_runner = __esm({
     init_manifest2();
     init_video();
     init_mount();
+    init_stack();
+  }
+});
+
+// src/states/services/forge-seed.mts
+function seedFile(state) {
+  if (!/^[A-Za-z0-9_$-]+\.[A-Za-z0-9_$.-]+$/.test(state)) throw new LaunchwrightError("qa.forge.state", `${state} is not a state id <union>.<member>.`, { context: { state } });
+  return `${FORGE_DIR}/${state}.seed.json`;
+}
+function draftSeed(proposal, member) {
+  return {
+    state: `${proposal.union}.${member}`,
+    accepted: false,
+    via: proposal.via,
+    route: null,
+    ...proposal.via === "app-service" ? { module: "" } : { rows: [] },
+    fields: proposal.fields,
+    reason: proposal.reason,
+    note: DRAFT_NOTE
+  };
+}
+function writeDraft(root, proposal, member) {
+  const path = (0, import_node_path12.join)(root, seedFile(`${proposal.union}.${member}`));
+  if ((0, import_node_fs8.existsSync)(path)) return false;
+  (0, import_node_fs8.mkdirSync)((0, import_node_path12.dirname)(path), { recursive: true });
+  (0, import_node_fs8.writeFileSync)(path, `${JSON.stringify(draftSeed(proposal, member), null, 2)}
+`);
+  return true;
+}
+function readSeed(path) {
+  let value;
+  try {
+    value = JSON.parse((0, import_node_fs8.readFileSync)(path, "utf8"));
+  } catch (cause) {
+    throw new LaunchwrightError("qa.forge.seed", `Cannot read ${path} as JSON.`, { cause, context: { path } });
+  }
+  const parsed = seedSchema.safeParse(value);
+  if (!parsed.success) {
+    const keys = parsed.error.issues.map((i) => `${i.path.map(String).join(".") || "(root)"} ${i.message}`);
+    throw new LaunchwrightError("qa.forge.seed", `${path} is not a seed file: ${keys.join("; ")}`, { context: { path } });
+  }
+  return parsed.data;
+}
+function acceptedSeed(seed) {
+  if (!seed.accepted) return "it is a draft: a reviewer sets accepted to true";
+  if (seed.route === null) return "it names no route";
+  if (seed.via === "app-service" && !seed.module) return "via app-service needs a module";
+  if (seed.via === "direct-write" && (seed.rows ?? []).length === 0) return "via direct-write needs rows";
+  return seed;
+}
+function quoteName(name) {
+  return name.split(".").map((part) => `"${part}"`).join(".");
+}
+function literal(value, tenantId) {
+  if (value === null) return "null";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new LaunchwrightError("qa.forge.row", `${value} is not a finite number.`);
+    return String(value);
+  }
+  const text2 = value === "{tenantId}" ? tenantId : value;
+  return `'${text2.replaceAll("'", "''")}'`;
+}
+function rowStatements(rows, tenantId) {
+  return rows.map((row) => {
+    const columns = Object.keys(row.values);
+    if (columns.length === 0) throw new LaunchwrightError("qa.forge.row", `A row of ${row.table} has no values.`, { context: { table: row.table } });
+    const values = columns.map((c) => literal(row.values[c] ?? null, tenantId));
+    return `insert into ${quoteName(row.table)} (${columns.map(quoteName).join(", ")}) values (${values.join(", ")})`;
+  });
+}
+var import_node_fs8, import_node_path12, FORGE_DIR, cell, seedRow, seedSchema, DRAFT_NOTE;
+var init_forge_seed = __esm({
+  "src/states/services/forge-seed.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_fs8 = require("fs");
+    import_node_path12 = require("path");
+    init_kernel();
+    FORGE_DIR = ".lw/qa/forge";
+    cell = import_zod6.z.union([import_zod6.z.string(), import_zod6.z.number(), import_zod6.z.boolean(), import_zod6.z.null()]);
+    seedRow = import_zod6.z.object({ table: import_zod6.z.string().regex(/^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/i), values: import_zod6.z.record(import_zod6.z.string().regex(/^[a-z_][a-z0-9_]*$/i), cell) });
+    seedSchema = import_zod6.z.object({
+      state: import_zod6.z.string(),
+      accepted: import_zod6.z.boolean(),
+      via: import_zod6.z.enum(["app-service", "direct-write"]),
+      /** The route that renders the state on the QA app. */
+      route: import_zod6.z.string().startsWith("/").nullable(),
+      persona: import_zod6.z.string().optional(),
+      settle: import_zod6.z.object({ selector: import_zod6.z.string(), artwork: import_zod6.z.boolean(), video: import_zod6.z.boolean(), busy: import_zod6.z.boolean(), timeout: import_zod6.z.number().positive() }).partial().optional(),
+      /** app-service: a project-relative module whose default export writes the state through `ctx.app`. */
+      module: import_zod6.z.string().optional(),
+      /** direct-write: the rows to insert. */
+      rows: import_zod6.z.array(seedRow).optional(),
+      fields: import_zod6.z.array(import_zod6.z.object({ interface: import_zod6.z.string(), field: import_zod6.z.string(), file: import_zod6.z.string() })).optional(),
+      reason: import_zod6.z.string().optional(),
+      note: import_zod6.z.string().optional()
+    });
+    DRAFT_NOTE = "Draft. Set route to the page that renders the state. For via app-service, set module to a project module whose default export writes the state through ctx.app. For via direct-write, list rows. Then set accepted to true and run lw qa states forge.";
+  }
+});
+
+// src/services/changes.mts
+function git(repo, args, opts = {}) {
+  const res = (0, import_node_child_process2.spawnSync)("git", args, { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: GIT_TIMEOUT_MS, killSignal: "SIGKILL" });
+  if (res.error) throw new LaunchwrightError("qa.git", `Cannot run git ${args.join(" ")}: ${res.error.message}`, { cause: res.error, context: { repo } });
+  if (res.status !== 0) {
+    if (opts.allowFail) return null;
+    throw new LaunchwrightError("qa.git", `git ${args.join(" ")} failed: ${(res.stderr ?? "").trim()}`, { context: { repo, args } });
+  }
+  return res.stdout;
+}
+var import_node_child_process2, import_node_fs9, import_node_path13, RECORD, FIELD, LOG_FORMAT, GIT_TIMEOUT_MS;
+var init_changes = __esm({
+  "src/services/changes.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_child_process2 = require("child_process");
+    import_node_fs9 = require("fs");
+    import_node_path13 = require("path");
+    init_kernel();
+    RECORD = "";
+    FIELD = "";
+    LOG_FORMAT = `${RECORD}%H${FIELD}%h${FIELD}%cI${FIELD}%an${FIELD}%s`;
+    GIT_TIMEOUT_MS = 12e4;
   }
 });
 
@@ -3822,7 +3736,7 @@ function fakePng(width, height, flat = false) {
   return Buffer.from(encodePng(width, height, rgba));
 }
 function write(path, bytes) {
-  (0, import_node_fs10.mkdirSync)((0, import_node_path13.dirname)(path), { recursive: true });
+  (0, import_node_fs10.mkdirSync)((0, import_node_path14.dirname)(path), { recursive: true });
   (0, import_node_fs10.writeFileSync)(path, bytes);
 }
 function capabilityError(target, capability, what) {
@@ -3833,13 +3747,13 @@ function capabilityError(target, capability, what) {
 function createFakeTarget(opts = {}) {
   return new FakeTargetImpl(opts);
 }
-var import_node_fs10, import_node_path13, FAKE_SHOT_SIZE, FAKE_CLIP_MS, DEFAULT_CAPABILITIES, CLIP_BASE64, FAKE_CLIP, FakeSession, FakeTargetImpl;
+var import_node_fs10, import_node_path14, FAKE_SHOT_SIZE, FAKE_CLIP_MS, DEFAULT_CAPABILITIES, CLIP_BASE64, FAKE_CLIP, FakeSession, FakeTargetImpl;
 var init_fake = __esm({
   "src/drivers/target/fake.mts"() {
     "use strict";
     init_cjs_shims();
     import_node_fs10 = require("fs");
-    import_node_path13 = require("path");
+    import_node_path14 = require("path");
     init_kernel();
     init_png();
     init_contract();
@@ -4066,13 +3980,13 @@ async function signIn(context, opts) {
 function createPlaywrightTarget(opts = {}) {
   return new PlaywrightTarget(opts);
 }
-var import_node_fs11, import_node_path14, PERSONA_SESSION_ROUTE, CAPABILITIES, MIN_CLIP_MS, importPlaywright, SETTLE_SCRIPTS, PlaywrightSession, PlaywrightTarget;
+var import_node_fs11, import_node_path15, PERSONA_SESSION_ROUTE, CAPABILITIES, MIN_CLIP_MS, importPlaywright, SETTLE_SCRIPTS, PlaywrightSession, PlaywrightTarget;
 var init_playwright = __esm({
   "src/drivers/target/playwright.mts"() {
     "use strict";
     init_cjs_shims();
     import_node_fs11 = require("fs");
-    import_node_path14 = require("path");
+    import_node_path15 = require("path");
     init_kernel();
     init_png();
     init_video();
@@ -4203,7 +4117,7 @@ var init_playwright = __esm({
         return relativeRoute(this.opts.baseUrl, this.page.url());
       }
       async screenshot(path) {
-        (0, import_node_fs11.mkdirSync)((0, import_node_path14.dirname)(path), { recursive: true });
+        (0, import_node_fs11.mkdirSync)((0, import_node_path15.dirname)(path), { recursive: true });
         const png = await this.page.screenshot({ path, animations: "disabled", fullPage: false });
         const size = pngSize(png);
         if (size === null) throw new LaunchwrightError("qa.target.screenshot", `Leg ${this.opts.leg.name} wrote a screenshot that is not a PNG: ${path}.`);
@@ -4211,7 +4125,7 @@ var init_playwright = __esm({
       }
       async startVideo(path) {
         if (this.videoPath !== null) throw new LaunchwrightError("qa.target.video", `Leg ${this.opts.leg.name} already records ${this.videoPath}.`);
-        (0, import_node_fs11.mkdirSync)((0, import_node_path14.dirname)(path), { recursive: true });
+        (0, import_node_fs11.mkdirSync)((0, import_node_path15.dirname)(path), { recursive: true });
         const size = this.page.viewportSize() ?? void 0;
         await this.page.screencast.start({ path, ...size ? { size } : {} });
         this.videoPath = path;
@@ -4229,7 +4143,7 @@ var init_playwright = __esm({
       async trace(path) {
         if (!this.tracing) return null;
         this.tracing = false;
-        (0, import_node_fs11.mkdirSync)((0, import_node_path14.dirname)(path), { recursive: true });
+        (0, import_node_fs11.mkdirSync)((0, import_node_path15.dirname)(path), { recursive: true });
         await this.context.tracing.stop({ path });
         return path;
       }
@@ -4397,7 +4311,7 @@ function ledgerRecorder(args) {
     async record({ file, kind, row }) {
       entries.push(
         await ledgerEntry(args.reportDir, {
-          path: (0, import_node_path15.relative)(args.reportDir, file).split("\\").join("/"),
+          path: (0, import_node_path16.relative)(args.reportDir, file).split("\\").join("/"),
           kind,
           capturedAt: args.clock.date().toISOString(),
           commit: args.revision.commit,
@@ -4418,12 +4332,12 @@ function ledgerRecorder(args) {
     }
   };
 }
-var import_node_path15;
+var import_node_path16;
 var init_run = __esm({
   "src/states/services/run.mts"() {
     "use strict";
     init_cjs_shims();
-    import_node_path15 = require("path");
+    import_node_path16 = require("path");
     init_kernel();
     init_changes();
     init_ledger();
@@ -4434,6 +4348,1025 @@ var init_run = __esm({
   }
 });
 
+// src/states/services/forge.mts
+async function runModule(root, module2, ctx) {
+  const file = (0, import_node_path17.isAbsolute)(module2) ? module2 : (0, import_node_path17.resolve)(root, module2);
+  let mod;
+  try {
+    mod = await import((0, import_node_url2.pathToFileURL)(file).href);
+  } catch (cause) {
+    throw new LaunchwrightError("qa.forge.module", `Cannot load the seed module ${module2}: ${messageOf(cause)}`, { cause, context: { module: module2 } });
+  }
+  if (typeof mod.default !== "function") throw new LaunchwrightError("qa.forge.module", `${module2} must export a default function (ctx) that writes the state.`, { context: { module: module2 } });
+  await mod.default(ctx);
+}
+async function writeState(seed, fork, root) {
+  const member = seed.state.slice(seed.state.indexOf(".") + 1);
+  try {
+    if (seed.via === "app-service") {
+      const ctx = { ...fork.world, state: seed.state, member, ...seed.persona === void 0 ? {} : { persona: seed.persona } };
+      await runModule(root, seed.module, ctx);
+    } else {
+      for (const sql of rowStatements(seed.rows ?? [], fork.world.tenantId)) await fork.execute(sql);
+    }
+  } catch (cause) {
+    throw new LaunchwrightError("qa.forge.seed", `The ${seed.via} seed of ${seed.state} failed: ${messageOf(cause)}`, { cause, context: { state: seed.state } });
+  }
+}
+function forkBase(seed, fork, ctx) {
+  const view = forkView(ctx.baseUrls, ctx.apiPort, fork.url, `forge ${seed.state}`);
+  const blocked = view.blocked[ctx.leg.surface];
+  if (blocked !== void 0) throw new LaunchwrightError("qa.forge.surface", blocked, { context: { surface: ctx.leg.surface } });
+  return view.baseUrls[ctx.leg.surface] ?? fork.url;
+}
+async function forgeState(seed, fork, ctx) {
+  const started = ctx.clock.now();
+  const dot = seed.state.indexOf(".");
+  const union = seed.state.slice(0, dot);
+  const member = seed.state.slice(dot + 1);
+  await writeState(seed, fork, ctx.root);
+  const baseUrl = forkBase(seed, fork, ctx);
+  const recorder2 = ledgerRecorder({ reportDir: ctx.reportDir, slug: ctx.slug, leg: ctx.leg, provenance: "forged", clock: ctx.clock, revision: ctx.revision });
+  const artifactRel = statePath(ctx.slug, seed.state, "forged", "json");
+  const artifact = {
+    state: seed.state,
+    via: seed.via,
+    provenance: "forged",
+    route: seed.route,
+    ...seed.module ? { module: seed.module } : {},
+    ...seed.rows ? { rows: seed.rows } : {},
+    note: FORGE_NOTE
+  };
+  const artifactFile = (0, import_node_path17.join)(ctx.reportDir, artifactRel);
+  (0, import_node_fs12.mkdirSync)((0, import_node_path17.dirname)(artifactFile), { recursive: true });
+  (0, import_node_fs12.writeFileSync)(artifactFile, `${JSON.stringify(artifact, null, 2)}
+`);
+  await recorder2.record({ file: artifactFile, kind: "log", row: seed.state });
+  const shotRel = statePath(ctx.slug, seed.state, "forged", "png");
+  let error = null;
+  let session = null;
+  try {
+    session = await ctx.target.open({ leg: ctx.leg, baseUrl, outDir: (0, import_node_path17.join)(reportPaths(ctx.reportDir, ctx.slug).assets, "states"), ...seed.persona ? { persona: seed.persona } : {} });
+    await session.navigate(seed.route);
+    await session.settle(seed.settle ?? { busy: true });
+    await session.screenshot((0, import_node_path17.join)(ctx.reportDir, shotRel));
+    await recorder2.record({ file: (0, import_node_path17.join)(ctx.reportDir, shotRel), kind: "screenshot", row: seed.state });
+  } catch (cause) {
+    error = messageOf(cause);
+  } finally {
+    await session?.close();
+  }
+  await recorder2.flush();
+  const ms = ctx.clock.now() - started;
+  const result = {
+    row: seed.state,
+    leg: ctx.leg.name,
+    status: error === null ? "passed" : "failed",
+    reason: `forged via ${seed.via}: the render only, never a live pass${error === null ? "" : `; ${error}`}`,
+    failures: error === null ? [] : ["crashed"],
+    attempts: 1,
+    ms
+  };
+  await appendResult(reportPaths(ctx.reportDir, ctx.slug).results, result);
+  return {
+    id: seed.state,
+    union,
+    member,
+    ok: error === null,
+    subject: error === null ? shotRel : null,
+    context: null,
+    provenance: "forged",
+    // No feature function runs over a forged seed. Null is "not checked", never "it agreed".
+    verified: null,
+    error,
+    expect: `forged via ${seed.via}: ${seed.route} renders ${seed.state}. The render only.`,
+    ms
+  };
+}
+var import_node_fs12, import_node_path17, import_node_url2, FORGE_NOTE;
+var init_forge = __esm({
+  "src/states/services/forge.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_fs12 = require("fs");
+    import_node_path17 = require("path");
+    import_node_url2 = require("url");
+    init_kernel();
+    init_ledger();
+    init_runner();
+    init_forge_seed();
+    init_inventory();
+    init_run();
+    FORGE_NOTE = "A forged state comes from a seed that the library inferred and a reviewer accepted, run on a fork of the QA database. It proves the render only, and it never counts as a live pass.";
+  }
+});
+
+// src/states/services/loop.mts
+function reasonOf(row) {
+  return FAIL_REASONS.includes(row?.reason) ? row?.reason : "crashed";
+}
+function parseInventory(text2, source) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text2);
+  } catch (cause) {
+    throw new LaunchwrightError("qa.states.inventory", `${source} is not JSON. Run "lw qa states scan" again.`, { cause, context: { source } });
+  }
+  const errors = validateInventory(parsed);
+  if (errors.length > 0) {
+    throw new LaunchwrightError("qa.states.inventory", `The inventory in ${source} is invalid, ${errors.length} problem(s):
+${errors.map((e) => `  ${e}`).join("\n")}`, {
+      context: { source, errors }
+    });
+  }
+  return parsed;
+}
+function unionFiles(union) {
+  const files = /* @__PURE__ */ new Set([union.file]);
+  for (const site of union.inputs) {
+    files.add(site.file);
+    if (site.componentFile) files.add(site.componentFile);
+  }
+  for (const site of union.outputs) files.add(site.file);
+  return [...files].filter(Boolean).sort();
+}
+function narrowInventory(inv, paths) {
+  const files = new Set(paths.files ?? []);
+  const dirs = (paths.dirs ?? []).filter(Boolean).map((d) => d.replace(/\/+$/, ""));
+  const touches = (path) => files.has(path) || dirs.some((dir) => path.startsWith(`${dir}/`));
+  const kept = [];
+  const dropped = [];
+  for (const union of inv.unions) {
+    if (unionFiles(union).some(touches)) kept.push(union);
+    else dropped.push(union.name);
+  }
+  return { inventory: { ...inv, unions: kept }, kept: kept.map((u) => u.name), dropped };
+}
+function neitherUnions(inv) {
+  return inv.unions.filter((union) => union.kind === "neither");
+}
+function subjectLabel(union) {
+  for (const site of union.inputs) if (site.component) return site.component;
+  for (const site of union.outputs) if (site.fn) return site.fn;
+  for (const site of union.inputs) if (site.interface) return site.interface;
+  return union.file.split("/").pop() ?? union.name;
+}
+function issueFor(union) {
+  const members = union.members.map((m) => `\`${m}\``).join(" ");
+  const title = `qa states: \`${union.name}\` is neither an input nor an output`;
+  const body = [
+    `File: \`${union.file}:${union.line}\``,
+    `Members (${union.members.length}): ${members}`,
+    "",
+    `\`${union.name}\` is an exported closed union, so the QA state run counts its ${union.members.length} members.`,
+    "It can reach none of them. No field of a props type holds the type, so a mount cannot set it.",
+    "No function returns it, so the solver has nothing to run. The state exists only inside a conditional.",
+    "",
+    "Declare it in one of two ways:",
+    "",
+    `- give the component that branches on it a prop of type \`${union.name}\`, which makes it an input; or`,
+    `- move the conditional into an exported function that returns \`${union.name}\`, which makes it an output.`,
+    "",
+    "Or mark it `@qa-states ignore <reason>` when nothing can ever render it.",
+    "",
+    "Found by `lw qa states scan`."
+  ].join("\n");
+  return { title, body };
+}
+function refusalLines(inventory, rows) {
+  const lines = [];
+  for (const union of neitherUnions(inventory)) {
+    lines.push(
+      `${union.name} (${union.file}) is neither an input nor an output: nothing takes it and nothing returns it, so no mechanism can reach its ${union.members.length} member(s). The state exists only inside a conditional, and the fix is to declare it.`
+    );
+  }
+  for (const row of rows) {
+    if (row.ok) continue;
+    const reason = reasonOf(row);
+    if (reason === "no-mechanism") continue;
+    lines.push(`${row.id}: ${refusalFor(row)}.`);
+  }
+  return lines;
+}
+function parseResults(text2) {
+  const attempts = [];
+  const malformed = [];
+  for (const line of text2.split("\n")) {
+    if (line.trim() === "") continue;
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      malformed.push(line.slice(0, 200));
+      continue;
+    }
+    if (parsed && typeof parsed === "object" && typeof parsed.id === "string") attempts.push(parsed);
+    else malformed.push(line.slice(0, 200));
+  }
+  return { attempts, malformed };
+}
+function mergeRows(captures, attempts, options = {}) {
+  const notRun = options.notRun ?? {};
+  const blocked = options.blocked ?? {};
+  const byId = /* @__PURE__ */ new Map();
+  for (const attempt of attempts) byId.set(attempt.id, attempt);
+  const rows = [];
+  const claimed = /* @__PURE__ */ new Set();
+  for (const capture of captures) {
+    const attempt = byId.get(capture.id);
+    if (attempt) {
+      claimed.add(capture.id);
+      rows.push({ ...capture, ...attempt, ok: attempt.ok === true, reported: true });
+      continue;
+    }
+    const blockedWhy = blocked[capture.union];
+    const notRunWhy = capture.mechanism === null ? void 0 : notRun[capture.mechanism];
+    if (capture.mechanism === null) rows.push({ ...capture, ok: false, reported: false, reason: "no-mechanism" });
+    else if (blockedWhy !== void 0) rows.push({ ...capture, ok: false, reported: false, reason: "blocked", why: blockedWhy });
+    else if (notRunWhy !== void 0) rows.push({ ...capture, ok: false, reported: false, reason: "not-run", why: notRunWhy });
+    else rows.push({ ...capture, ok: false, reported: false, reason: "crashed", error: UNREPORTED });
+  }
+  for (const attempt of attempts) {
+    if (claimed.has(attempt.id)) continue;
+    rows.push({ ...attempt, ok: attempt.ok === true, reported: true, extra: true });
+  }
+  return rows;
+}
+function cell2(text2) {
+  return String(text2 ?? "").replace(/\r?\n/g, " ").replace(/\|/g, "\\|").trim();
+}
+function provenanceLabel(provenance) {
+  if (provenance === "live") return null;
+  if (provenance && PROVENANCE.includes(provenance)) return `(${provenance})`;
+  return "(provenance not reported)";
+}
+function verifiedCell(row) {
+  if (row.verified === true) return row.answered ? `yes (${cell2(row.answered)})` : "yes";
+  if (row.verified === false) return "no";
+  return "not verified";
+}
+function stateCell(union, row) {
+  if (row.member === null) return "`null` (the function returned nothing)";
+  if (row.member !== void 0) return cell2(row.member);
+  const key = row.id.startsWith(`${union.name}.`) ? row.id.slice(union.name.length + 1) : row.id;
+  return cell2(key.replace(/#/g, ", ").replace(/-/g, " "));
+}
+function orderRows(union, rows) {
+  const planned = rows.filter((row) => !row.extra);
+  const extras = rows.filter((row) => row.extra);
+  const taken = /* @__PURE__ */ new Set();
+  const out2 = [];
+  for (const row of planned) {
+    out2.push(row);
+    if (row.member === null || row.member === void 0) continue;
+    for (const extra of extras) {
+      if (taken.has(extra) || !extra.id.startsWith(`${union.name}.${row.member}#`)) continue;
+      taken.add(extra);
+      out2.push(extra);
+    }
+  }
+  for (const extra of extras) if (!taken.has(extra)) out2.push(extra);
+  return out2;
+}
+function refusalFor(row) {
+  const reason = reasonOf(row);
+  if (reason === "unreachable") return `no candidate produced it (tried ${(row.fieldsTried ?? []).join(", ") || "nothing"})`;
+  if (reason === "identical") return `identical to ${row.sameAs ?? "another member"}: the DOM diff is empty`;
+  if (reason === "state-mismatch") return `intended ${row.intended ?? row.member ?? "?"}, the function answered ${row.actual ?? "?"}`;
+  if (reason === "unmountable") return `cannot mount ${row.component ?? "the component"}: ${row.missingProp ?? "missing prop not reported"}`;
+  if (reason === "blocked" || reason === "not-run") return row.why ?? row.error ?? SENTENCES[reason];
+  return row.error ?? SENTENCES[reason];
+}
+function unionOf(inventory, id) {
+  let best = null;
+  for (const union of inventory.unions) {
+    if (!id.startsWith(`${union.name}.`)) continue;
+    if (!best || union.name.length > best.name.length) best = union;
+  }
+  return best;
+}
+function renderReport(args) {
+  const { inventory, rows, slug, narrowedBy = null, notRun = {} } = args;
+  const out2 = [];
+  const totals = { covered: 0, planned: 0 };
+  out2.push(`## State coverage${slug ? `: ${slug}` : ""}`);
+  out2.push("");
+  if (narrowedBy) out2.push(`Narrowed to ${narrowedBy}: ${inventory.unions.length} union(s) its files declare or consume.`);
+  out2.push(
+    "A shot marked `(intercepted)` comes through a rewritten API response: the component is real and the data is synthetic. `(mounted)` is the harness drawing the component directly. A shot with no label comes from live data."
+  );
+  for (const [mechanism, why] of Object.entries(notRun)) {
+    out2.push("");
+    out2.push(`Mechanism \`${mechanism}\` did not run: ${why}. Every capture it owns is uncovered below.`);
+  }
+  out2.push("");
+  for (const union of inventory.unions) {
+    const mine = rows.filter((row) => row.id.startsWith(`${union.name}.`));
+    const { covered, planned } = coverageFor(union, mine);
+    totals.covered += covered;
+    totals.planned += planned;
+    out2.push(`### ${subjectLabel(union)}: ${union.name}, ${covered} of ${planned} renderings`);
+    out2.push("");
+    out2.push("| State | Shot | Expect | Verified |");
+    out2.push("|---|---|---|---|");
+    for (const row of orderRows(union, mine)) {
+      const label = provenanceLabel(row.provenance);
+      const shot = row.ok ? [row.subject ? `![${cell2(row.id)}](${row.subject})` : "shot, but no path reported", label].filter(Boolean).join(" ") : "not shot";
+      const expect = row.ok ? cell2(row.expect ?? "-") : cell2(refusalFor(row));
+      out2.push(`| ${stateCell(union, row)} | ${shot} | ${expect || "-"} | ${verifiedCell(row)} |`);
+    }
+    out2.push("");
+  }
+  const orphans = rows.filter((row) => row.extra && !unionOf(inventory, row.id));
+  if (orphans.length > 0) {
+    out2.push("### Reported by the runner, and in no union of the inventory");
+    out2.push("");
+    for (const row of orphans) out2.push(`- \`${cell2(row.id)}\` (${row.ok ? "ok" : "failed"})`);
+    out2.push("");
+  }
+  out2.push(`${inventory.unions.length} union(s), ${totals.covered} of ${totals.planned} renderings.`);
+  return out2.join("\n");
+}
+function groupFor(union, captures, defaultLeg) {
+  const delivery = union.delivery ?? null;
+  const missing = [];
+  const route = typeof delivery?.route === "string" && delivery.route !== "" ? delivery.route : null;
+  if (!route) missing.push("route");
+  const intercept = delivery?.intercept;
+  if (typeof intercept?.url !== "string" || intercept.url === "") missing.push("intercept.url");
+  if (typeof intercept?.container !== "string" || intercept.container === "") missing.push("intercept.container");
+  const settle = delivery?.settle ?? null;
+  if (!settle || !settle.selector && !settle.artwork && !settle.video && !settle.busy) missing.push("settle");
+  const site = solveSite(union);
+  const shape = site?.params[0]?.shape ?? null;
+  if (!site) missing.push("verify");
+  else if (!shape) missing.push("solve.shape");
+  if (captures.length === 1 && delivery?.contrast === void 0) missing.push("contrast");
+  if (missing.length > 0 || !delivery || !route || !intercept || !settle || !site || !shape) return { group: null, missing };
+  const group = {
+    id: union.name,
+    union: union.name,
+    leg: delivery.leg ?? defaultLeg,
+    route,
+    provenance: "intercepted",
+    intercept: { url: intercept.url, container: intercept.container },
+    settle,
+    ...delivery.act ? { act: delivery.act } : {},
+    verify: { module: site.file, export: site.fn, async: site.async, ...delivery.verifyArgs ? { args: delivery.verifyArgs } : {} },
+    solve: {
+      shape,
+      pivots: { literals: site.pivots.literals, names: site.pivots.names },
+      ...delivery.pivotModules ? { pivotModules: delivery.pivotModules } : {},
+      ...typeof delivery.limit === "number" ? { limit: delivery.limit } : {},
+      ...typeof delivery.batchSize === "number" ? { batchSize: delivery.batchSize } : {}
+    },
+    members: captures.map((capture) => ({ id: capture.id, member: capture.member, expect: capture.member })),
+    ...delivery.contrast === void 0 ? {} : { contrast: delivery.contrast },
+    ...delivery.diffRoot ? { diffRoot: delivery.diffRoot } : {},
+    ...delivery.ignoreAttributes ? { ignoreAttributes: delivery.ignoreAttributes } : {},
+    ...typeof delivery.maxSubjectAreaRatio === "number" ? { maxSubjectAreaRatio: delivery.maxSubjectAreaRatio } : {}
+  };
+  return { group, missing: null };
+}
+function groupsFor(inventory, captures, defaultLeg) {
+  const groups = [];
+  const blocked = {};
+  for (const union of inventory.unions) {
+    const mine = captures.filter((capture) => capture.union === union.name && capture.mechanism === "solve");
+    if (mine.length === 0) continue;
+    const built = groupFor(union, mine, defaultLeg);
+    if (built.group) groups.push(built.group);
+    else {
+      blocked[union.name] = `no capture group could be built. Missing: ${built.missing.join(", ")}. A delivery descriptor beside the union in the inventory gives the route, the intercept and the settle. The shape and the pivots come from the scan`;
+    }
+  }
+  return { groups, blocked };
+}
+function mergeDelivery(inventory, delivery) {
+  return { ...inventory, unions: inventory.unions.map((union) => delivery[union.name] ? { ...union, delivery: delivery[union.name] } : union) };
+}
+function buildPlan(args) {
+  const { inventory: scanned, narrow } = args;
+  const inventory = narrow ? narrowInventory(scanned, narrow).inventory : scanned;
+  return {
+    generated: args.generated,
+    slug: args.slug,
+    source: args.source,
+    scanned: scanned.unions.length,
+    narrowedBy: narrow?.label ?? null,
+    inventory,
+    captures: plannedCaptures(inventory)
+  };
+}
+function renderPlan(plan2) {
+  const out2 = [];
+  const byMechanism = /* @__PURE__ */ new Map();
+  for (const capture of plan2.captures) {
+    const key = capture.mechanism ?? "none";
+    byMechanism.set(key, (byMechanism.get(key) ?? 0) + 1);
+  }
+  out2.push(`inventory  ${plan2.source}, ${plan2.scanned} union(s)`);
+  if (plan2.narrowedBy) out2.push(`narrowed   ${plan2.inventory.unions.length} of ${plan2.scanned} union(s) kept by ${plan2.narrowedBy}`);
+  const parts = ["mount", "solve", "none"].filter((key) => byMechanism.has(key)).map((key) => `${key} ${byMechanism.get(key)}`).join(", ");
+  out2.push(`captures   ${plan2.captures.length}${parts ? ` (${parts})` : ""}`);
+  out2.push("");
+  for (const union of plan2.inventory.unions) {
+    const mine = plan2.captures.filter((capture) => capture.union === union.name);
+    out2.push(
+      `  ${union.name.padEnd(24)} ${union.kind.padEnd(8)} ${String(mechanismFor(union.kind) ?? "none").padEnd(6)} ${String(mine.length).padStart(3)} capture(s)  ${union.file}`
+    );
+  }
+  return out2;
+}
+function renderNeither(inventory) {
+  const neither = neitherUnions(inventory);
+  if (neither.length === 0) return [];
+  const out2 = ["", `REFUSED   ${neither.length} union(s) are neither an input nor an output (spec 2.14 rule C1). Each one earns an issue:`];
+  for (const union of neither) {
+    const issue = issueFor(union);
+    out2.push("", `-- issue ${"-".repeat(60)}`, issue.title, "", issue.body, "-".repeat(69));
+  }
+  return out2;
+}
+function finishRun(args) {
+  const { plan: plan2, attempts, malformed = [], notRun = {}, blocked = {} } = args;
+  const rows = mergeRows(plan2.captures, attempts, { notRun, blocked });
+  const lines = [renderReport({ inventory: plan2.inventory, rows, slug: plan2.slug, narrowedBy: plan2.narrowedBy, notRun })];
+  for (const line of malformed) lines.push(`malformed result line, not read: ${line}`);
+  const refusals = refusalLines(plan2.inventory, rows);
+  if (refusals.length > 0) {
+    lines.push("", `REFUSED   ${refusals.length}, and each one is a failure:`);
+    for (const line of refusals) lines.push(`  ${line}`);
+  }
+  const neither = renderNeither(plan2.inventory);
+  lines.push(...neither);
+  const notRunCount = Object.keys(notRun).length;
+  const failed = rows.filter((row) => !row.ok).length;
+  const refused = neitherUnions(plan2.inventory).length;
+  lines.push("");
+  if (failed === 0 && refused === 0 && notRunCount === 0) lines.push("every planned rendering was captured.");
+  else lines.push(`${failed} rendering(s) uncovered, ${refused} union(s) refused, ${notRunCount} mechanism(s) not run.`);
+  return { lines, code: failed > 0 || refused > 0 || notRunCount > 0 ? 1 : 0, rows };
+}
+var SENTENCES, UNREPORTED;
+var init_loop = __esm({
+  "src/states/services/loop.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_kernel();
+    init_inventory();
+    SENTENCES = {
+      unreachable: "no candidate input produced this member",
+      identical: "the DOM diff between two members is empty",
+      "state-mismatch": "the feature's own function disagreed after injection",
+      unmountable: "the harness could not mount the component",
+      "no-mechanism": "the union is neither an input nor an output, so nothing can reach it",
+      blocked: "the run could not build a capture group the runner would accept",
+      "not-run": "the mechanism was not run",
+      crashed: "the capture failed, and the runner reported only a sentence"
+    };
+    UNREPORTED = "the runner exited without reporting this capture";
+  }
+});
+
+// src/world/services/checkout.mts
+async function text(path) {
+  try {
+    return (await (0, import_promises7.readFile)(path, "utf8")).trim();
+  } catch (cause) {
+    throw new LaunchwrightError("qa.checkout.read", `Cannot read ${path}. The git worktree is broken; run git worktree repair.`, { cause });
+  }
+}
+async function readCheckout(root) {
+  const start = (0, import_node_path18.resolve)(root);
+  for (let dir = start; ; dir = (0, import_node_path18.dirname)(dir)) {
+    const kind = await pathKind((0, import_node_path18.join)(dir, ".git"));
+    if (kind === "dir") return { root: start, toplevel: dir, commonDir: (0, import_node_path18.join)(dir, ".git"), linked: false, mainRoot: start };
+    if (kind === "file") {
+      const line = await text((0, import_node_path18.join)(dir, ".git"));
+      const match = /^gitdir:\s*(.+)$/.exec(line);
+      if (!match) throw new LaunchwrightError("qa.checkout.read", `${(0, import_node_path18.join)(dir, ".git")} does not name a git dir.`);
+      const gitDir = (0, import_node_path18.resolve)(dir, match[1]);
+      const commonDir = (0, import_node_path18.resolve)(gitDir, await text((0, import_node_path18.join)(gitDir, "commondir")));
+      const mainTop = (0, import_node_path18.basename)(commonDir) === ".git" ? (0, import_node_path18.dirname)(commonDir) : commonDir;
+      return { root: start, toplevel: dir, commonDir, linked: true, mainRoot: (0, import_node_path18.join)(mainTop, (0, import_node_path18.relative)(dir, start)) };
+    }
+    if ((0, import_node_path18.dirname)(dir) === dir) return { root: start, toplevel: start, commonDir: start, linked: false, mainRoot: start };
+  }
+}
+function devProjectName(sections, checkout) {
+  const dev = sections.dev;
+  if (typeof dev?.project === "string" && dev.project !== "") return dev.project;
+  return (0, import_node_path18.basename)((0, import_node_path18.basename)(checkout.commonDir) === ".git" ? (0, import_node_path18.dirname)(checkout.commonDir) : checkout.root);
+}
+var import_promises7, import_node_path18;
+var init_checkout = __esm({
+  "src/world/services/checkout.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_promises7 = require("fs/promises");
+    import_node_path18 = require("path");
+    init_kernel();
+    init_fs();
+  }
+});
+
+// src/world/services/app.mts
+function qaDatabase(sections, checkout) {
+  const qa = sections.qa;
+  if (typeof qa?.database === "string" && qa.database !== "") return qa.database;
+  return databaseName(`${devProjectName(sections, checkout)}_qa`);
+}
+function botId(token2) {
+  const match = typeof token2 === "string" ? /^([1-9][0-9]{0,15}):/.exec(token2) : null;
+  return match ? Number(match[1]) : void 0;
+}
+function qaFakeToken(id, registryHash2) {
+  return `${id}:${(0, import_node_crypto3.createHash)("sha256").update(`lw-qa-fake-bot:${id}:${registryHash2}`).digest("base64url").slice(0, 32)}`;
+}
+function qaSections(sections, o) {
+  const out2 = { ...sections };
+  out2.db = qaDbSection(sections.db ?? {}, o.database, o.root);
+  const telegram = sections.telegram;
+  if (telegram !== void 0) {
+    const bots = {};
+    for (const [name, bot] of Object.entries(telegram.bots ?? {})) {
+      const { token: token2, ...rest } = bot;
+      const id = typeof rest.id === "number" ? rest.id : botId(token2);
+      bots[name] = id === void 0 ? rest : { ...rest, token: qaFakeToken(id, o.registryHash) };
+    }
+    out2.telegram = { ...telegram, apiUrl: o.telegramUrl, bots };
+  }
+  out2.qa = { ...sections.qa ?? {}, routes: true };
+  return out2;
+}
+function isEntry(value) {
+  const v = value;
+  return typeof v === "object" && v !== null && typeof v.create === "function" && typeof v.serve === "function";
+}
+async function loadAppEntry(root, qa) {
+  const file = (0, import_node_path19.isAbsolute)(qa.app) ? qa.app : (0, import_node_path19.resolve)(root, qa.app);
+  let mod;
+  try {
+    mod = await import((0, import_node_url3.pathToFileURL)(file).href);
+  } catch (cause) {
+    throw new LaunchwrightError("qa.world.app", `Cannot load ${file} (config qa.app): ${messageOf(cause)}`, { cause, context: { file } });
+  }
+  if (!isEntry(mod.qaApp)) {
+    throw new LaunchwrightError("qa.world.app", `${file} (config qa.app) must export qaApp = { create(sections, env), serve(app) }.`, { context: { file } });
+  }
+  return mod.qaApp;
+}
+async function openWorld(entry, sections, env, overlay) {
+  const qa = qaSections(sections, overlay);
+  const app = await entry.create(qa, env);
+  try {
+    await app.boot();
+  } catch (cause) {
+    try {
+      await app.shutdown();
+    } catch (shutdown) {
+      throw new LaunchwrightError("qa.world.boot", "The QA app did not boot, and its shutdown failed too.", { cause: new AggregateError([cause, shutdown]) });
+    }
+    throw cause;
+  }
+  const tenantId = entry.tenantId ?? (await loadDb()).DEFAULT_TENANT_ID;
+  return { app, tenantId, database: overlay.database, sections: qa, close: () => app.shutdown() };
+}
+var import_node_crypto3, import_node_path19, import_node_url3;
+var init_app2 = __esm({
+  "src/world/services/app.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_crypto3 = require("crypto");
+    import_node_path19 = require("path");
+    import_node_url3 = require("url");
+    init_kernel();
+    init_peers2();
+    init_checkout();
+    init_stack();
+  }
+});
+
+// src/world/services/ids.mts
+function qaTelegramId(persona) {
+  if (persona.length === 0) throw new LaunchwrightError("client.qa.persona", "qaTelegramId needs a persona id");
+  let hash = 2166136261;
+  for (let i = 0; i < persona.length; i += 1) {
+    hash ^= persona.charCodeAt(i);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return QA_TELEGRAM_ID_BASE + hash % QA_TELEGRAM_ID_SPAN;
+}
+function qaAccountId(persona) {
+  return `${QA_PROVIDER}:${persona}`;
+}
+function personaIds(persona) {
+  return { persona, accountId: qaAccountId(persona), telegramId: qaTelegramId(persona) };
+}
+var QA_TELEGRAM_ID_BASE, QA_TELEGRAM_ID_SPAN, QA_PROVIDER;
+var init_ids = __esm({
+  "src/world/services/ids.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_kernel();
+    QA_TELEGRAM_ID_BASE = 9e8;
+    QA_TELEGRAM_ID_SPAN = 1e6;
+    QA_PROVIDER = "qa";
+  }
+});
+
+// src/world/services/registry.mts
+function buildRegistry(worlds) {
+  const own = (w, items) => (items ?? []).map((item) => ({ ...item, feature: w.feature, file: w.file }));
+  return {
+    personas: worlds.flatMap((w) => own(w, w.world.personas)),
+    facts: worlds.flatMap((w) => own(w, w.world.facts))
+  };
+}
+function listWorld(registry) {
+  return [
+    ...registry.personas.map((p) => ({ kind: "persona", id: p.id, summary: p.summary, feature: p.feature })),
+    ...registry.facts.map((f) => ({ kind: "fact", id: f.id, summary: f.summary, feature: f.feature, handleKeys: [...f.handleKeys] }))
+  ];
+}
+function registryHash(entries) {
+  const lines = entries.map((e) => `${e.kind}	${e.id}	${e.feature}	${e.summary}`).sort();
+  return sha256(lines.join("\n")).slice(0, 12);
+}
+function personaById(registry, id) {
+  const found = registry.personas.find((p) => p.id === id);
+  if (!found) throw new LaunchwrightError("qa.world.persona", `No world file declares persona ${id}. Run lw qa world list.`, { context: { persona: id } });
+  return found;
+}
+function factById(registry, id) {
+  const found = registry.facts.find((f) => f.id === id);
+  if (!found) throw new LaunchwrightError("qa.world.fact", `No world file declares fact ${id}. Run lw qa world list.`, { context: { fact: id } });
+  return found;
+}
+var init_registry = __esm({
+  "src/world/services/registry.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_kernel();
+    init_fs();
+    init_ids();
+  }
+});
+
+// src/world/services/discover.mts
+async function walk2(root, dir, suffix, out2) {
+  let entries;
+  try {
+    entries = await (0, import_promises8.readdir)(dir, { withFileTypes: true });
+  } catch (cause) {
+    if (cause.code === "ENOENT") return;
+    throw new LaunchwrightError("qa.world.walk", `Cannot read folder ${dir}.`, { cause, context: { dir } });
+  }
+  for (const entry of entries) {
+    if (entry.name.startsWith(".") || SKIP.has(entry.name)) continue;
+    const path = (0, import_node_path20.join)(dir, entry.name);
+    if (entry.isDirectory()) await walk2(root, path, suffix, out2);
+    else if (entry.isFile() && entry.name.endsWith(suffix)) out2.push((0, import_node_path20.relative)(root, path).split(import_node_path20.sep).join("/"));
+  }
+}
+async function filesWithSuffix(root, suffix) {
+  const out2 = [];
+  await walk2(root, root, suffix, out2);
+  return out2.sort();
+}
+function worldFiles(root) {
+  return filesWithSuffix(root, WORLD_SUFFIX);
+}
+function isWorld(value) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const w = value;
+  return (w.personas === void 0 || Array.isArray(w.personas)) && (w.facts === void 0 || Array.isArray(w.facts));
+}
+async function loadWorlds(root) {
+  const out2 = [];
+  for (const file of await worldFiles(root)) {
+    let mod;
+    try {
+      mod = await import((0, import_node_url4.pathToFileURL)((0, import_node_path20.join)(root, file)).href);
+    } catch (cause) {
+      throw new LaunchwrightError("qa.world.file", `Cannot load world file ${file}: ${messageOf(cause)}`, { cause, context: { file } });
+    }
+    if (!isWorld(mod.default)) {
+      throw new LaunchwrightError("qa.world.file", `${file} needs a default export defineWorld({ personas, facts }).`, { context: { file } });
+    }
+    out2.push({ feature: (0, import_node_path20.basename)(file, WORLD_SUFFIX), file, world: mod.default });
+  }
+  return out2;
+}
+async function loadRegistry(root) {
+  return buildRegistry(await loadWorlds(root));
+}
+var import_promises8, import_node_path20, import_node_url4, WORLD_SUFFIX, SKIP;
+var init_discover = __esm({
+  "src/world/services/discover.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_promises8 = require("fs/promises");
+    import_node_path20 = require("path");
+    import_node_url4 = require("url");
+    init_kernel();
+    init_registry();
+    WORLD_SUFFIX = ".world.mts";
+    SKIP = /* @__PURE__ */ new Set(["node_modules", "dist", "build", "coverage"]);
+  }
+});
+
+// src/world/services/context.mts
+async function worldContext(opts, clock = systemClock) {
+  const sections = opts.config ?? {};
+  const parsed = qaConfig.safeParse(sections.qa ?? {});
+  if (!parsed.success) {
+    const keys = parsed.error.issues.map((i) => `qa.${i.path.map(String).join(".")} ${i.message}`);
+    throw new LaunchwrightError("qa.config.invalid", `Config section qa is invalid: ${keys.join("; ")}`, { context: { keys } });
+  }
+  const checkout = await readCheckout(opts.cwd);
+  const database = qaDatabase(sections, checkout);
+  const registry = await loadRegistry(opts.cwd);
+  return {
+    root: opts.cwd,
+    sections,
+    env: opts.env ?? "local",
+    qa: withAppPaths(parsed.data, sections),
+    checkout,
+    overlay: { root: opts.cwd, database, telegramUrl: parsed.data.telegramUrl, registryHash: registryHash(listWorld(registry)) },
+    registry,
+    clock
+  };
+}
+var init_context = __esm({
+  "src/world/services/context.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_kernel();
+    init_args();
+    init_config2();
+    init_app2();
+    init_checkout();
+    init_discover();
+    init_registry();
+  }
+});
+
+// src/world/services/fork.mts
+function forkName(database, label) {
+  checkIdentifier(database);
+  return `${database}${FORK_MARK}${databaseName(label)}`.slice(0, 63);
+}
+function seededName(database) {
+  checkIdentifier(database);
+  return `${database}${FORK_MARK}_seeded`.slice(0, 63);
+}
+function isForkOf(database, name) {
+  return name.startsWith(`${database}${FORK_MARK}`);
+}
+async function createFork(o) {
+  const db = qaDbSection(o.sections.db ?? {}, o.database, o.root);
+  assertQaTarget(db, o.database, o.root);
+  const name = forkName(o.database, o.label);
+  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n));
+  try {
+    const seeded = seededName(o.database);
+    const template = await admin.exists(seeded) ? seeded : o.database;
+    o.out(`forking ${template} to ${name}`);
+    await admin.create(name, template);
+  } finally {
+    await admin.close();
+  }
+  return name;
+}
+async function dropFork(o) {
+  if (!isForkOf(o.database, o.name)) {
+    throw new LaunchwrightError("qa.fork.name", `${o.name} is not a fork of ${o.database}, so lw qa will not drop it.`, { context: { database: o.name } });
+  }
+  const db = qaDbSection(o.sections.db ?? {}, o.database, o.root);
+  assertQaTarget(db, o.database, o.root);
+  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n));
+  try {
+    await admin.drop(o.name);
+    o.out(`dropped ${o.name}`);
+  } finally {
+    await admin.close();
+  }
+}
+var FORK_MARK;
+var init_fork = __esm({
+  "src/world/services/fork.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_kernel();
+    init_stack();
+    FORK_MARK = "_fork_";
+  }
+});
+
+// src/world/services/world.mts
+async function writeJson(path, value) {
+  await (0, import_promises9.mkdir)((0, import_node_path21.dirname)(path), { recursive: true });
+  const tmp = `${path}.${process.pid}.tmp`;
+  await (0, import_promises9.writeFile)(tmp, `${JSON.stringify(value, null, 2)}
+`, { mode: 384 });
+  await (0, import_promises9.rename)(tmp, path);
+}
+var import_promises9, import_node_path21;
+var init_world = __esm({
+  "src/world/services/world.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_promises9 = require("fs/promises");
+    import_node_path21 = require("path");
+    init_kernel();
+    init_fs();
+    init_peers2();
+    init_app2();
+    init_fork();
+    init_ids();
+    init_registry();
+    init_stack();
+  }
+});
+
+// src/world/services/api.mts
+var listenQaApp;
+var init_api = __esm({
+  "src/world/services/api.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_kernel();
+    init_peers2();
+    init_app2();
+    init_registry();
+    init_world();
+    listenQaApp = async (handler, app, port) => {
+      const { serveNode } = await loadHttp();
+      const { server } = serveNode(handler, port, { hostname: "127.0.0.1", app, signals: false });
+      if (!server.listening) await new Promise((resolve10, reject) => {
+        server.once("listening", resolve10);
+        server.once("error", (cause) => reject(new LaunchwrightError("qa.world.listen", `Cannot listen on 127.0.0.1:${port}: ${cause.message}`, { cause })));
+      });
+      return {
+        port: server.address().port,
+        close: () => new Promise((resolve10, reject) => {
+          server.close((err) => err ? reject(new LaunchwrightError("qa.world.close", `Cannot close the QA API server: ${err.message}`, { cause: err })) : resolve10());
+          server.closeAllConnections?.();
+        })
+      };
+    };
+  }
+});
+
+// src/world/services/fixture.mts
+function forkUndoFile(database) {
+  return `.lw/qa/fork/${database}.fixture.json`;
+}
+async function readUndo(root, database, file = UNDO_FILE) {
+  const text2 = await readTextOrNull((0, import_node_path22.join)(root, file));
+  if (text2 === null) return { database, armed: [] };
+  let record;
+  try {
+    record = JSON.parse(text2);
+  } catch (cause) {
+    throw new LaunchwrightError("qa.fixture.read", `${file} is not JSON. Restore it from the run log, or delete it after lw qa world reset.`, { cause });
+  }
+  if (record.armed.length > 0 && record.database !== database) {
+    throw new LaunchwrightError("qa.fixture.database", `${file} holds facts armed on ${record.database}, not on ${database}. Disarm them on that database first.`, {
+      context: { database: record.database }
+    });
+  }
+  return { database, armed: record.armed };
+}
+function writeUndo(root, record, file) {
+  return writeJson((0, import_node_path22.join)(root, file), record);
+}
+async function armFact(world, registry, root, factId, opts = {}) {
+  const file = opts.undoFile ?? UNDO_FILE;
+  const fact = factById(registry, factId);
+  if (fact.arm === void 0) {
+    throw new LaunchwrightError("qa.fixture.no-arm", `Fact ${fact.id} (${fact.file}) has no arm(). Seed it with lw qa world reset, or give it arm() and undo().`, {
+      context: { fact: fact.id }
+    });
+  }
+  const persona = opts.persona === void 0 ? void 0 : personaIds(personaById(registry, opts.persona).id);
+  const record = await readUndo(root, world.database, file);
+  if (record.armed.some((a) => a.fact === fact.id)) {
+    throw new LaunchwrightError("qa.fixture.armed", `Fact ${fact.id} is armed already. Run lw qa fixture disarm first.`, { context: { fact: fact.id } });
+  }
+  const entry = { fact: fact.id, ...persona ? { persona: persona.persona } : {}, steps: [] };
+  record.armed.push(entry);
+  await writeUndo(root, record, file);
+  await fact.arm({
+    app: world.app,
+    tenantId: world.tenantId,
+    ...persona ? { persona } : {},
+    async record(step) {
+      entry.steps.push(step);
+      await writeUndo(root, record, file);
+    }
+  });
+  return entry;
+}
+var import_node_path22, UNDO_FILE;
+var init_fixture = __esm({
+  "src/world/services/fixture.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_path22 = require("path");
+    init_kernel();
+    init_fs();
+    init_ids();
+    init_registry();
+    init_world();
+    UNDO_FILE = ".lw/qa/fixture.json";
+  }
+});
+
+// src/world/services/fork-server.mts
+async function serveFork(o, database) {
+  const world = await openWorld(o.entry, o.sections, o.env, { ...o.overlay, database });
+  let listening = null;
+  try {
+    listening = await (o.listen ?? listenQaApp)(o.entry.serve(world.app), world.app, 0);
+  } finally {
+    if (listening === null) await world.close();
+  }
+  const server = listening;
+  const undoFile = forkUndoFile(database);
+  let closing = null;
+  const close = async () => {
+    try {
+      await server.close();
+    } finally {
+      try {
+        await world.close();
+      } finally {
+        await (0, import_promises10.rm)((0, import_node_path23.join)(o.root, undoFile), { force: true });
+      }
+    }
+  };
+  return {
+    database,
+    world,
+    url: `http://127.0.0.1:${server.port}`,
+    arming: {
+      async arm(state, a) {
+        await armFact(world, o.registry, o.root, state, { ...a.persona === void 0 ? {} : { persona: a.persona }, undoFile });
+      },
+      disarm: async () => void 0
+    },
+    close: () => closing ??= close()
+  };
+}
+async function openFork(o, label) {
+  const runner = worldForkRunner(o);
+  const database = await runner.create(label);
+  let instance = null;
+  try {
+    instance = await serveFork(o, database);
+  } finally {
+    if (instance === null) await runner.drop(database);
+  }
+  const served = instance;
+  const db = async () => o.entry.db?.(served.world.app) ?? served.world.app.get((await loadDb()).DB);
+  return {
+    ...served,
+    execute: async (sql) => (await db()).execute(sql),
+    async release() {
+      try {
+        await served.close();
+      } finally {
+        await runner.drop(database);
+      }
+    }
+  };
+}
+function worldForkRunner(o) {
+  const fork = { root: o.root, sections: o.sections, database: o.overlay.database, out: o.out };
+  return {
+    create: (label) => createFork({ ...fork, label }),
+    drop: (name) => dropFork({ ...fork, name }),
+    serve: (database) => serveFork(o, database)
+  };
+}
+var import_promises10, import_node_path23;
+var init_fork_server = __esm({
+  "src/world/services/fork-server.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_promises10 = require("fs/promises");
+    import_node_path23 = require("path");
+    init_peers2();
+    init_api();
+    init_app2();
+    init_fixture();
+    init_fork();
+  }
+});
+
 // src/commands/qa-states.mts
 function flag(args, name) {
   return args.values[name] ?? null;
@@ -4441,13 +5374,13 @@ function flag(args, name) {
 function list(value) {
   return value === null ? void 0 : value.split(",").map((s) => s.trim()).filter(Boolean);
 }
-function writeJson(path, value) {
-  (0, import_node_fs12.mkdirSync)((0, import_node_path16.dirname)(path), { recursive: true });
-  (0, import_node_fs12.writeFileSync)(path, `${JSON.stringify(value, null, 2)}
+function writeJson2(path, value) {
+  (0, import_node_fs13.mkdirSync)((0, import_node_path24.dirname)(path), { recursive: true });
+  (0, import_node_fs13.writeFileSync)(path, `${JSON.stringify(value, null, 2)}
 `);
 }
 function runFiles(cwd, slug) {
-  return { plan: (0, import_node_path16.join)(cwd, ".lw/qa/states", `${slug}.plan.json`), results: (0, import_node_path16.join)(cwd, ".lw/qa/states", `${slug}.results.jsonl`) };
+  return { plan: (0, import_node_path24.join)(cwd, ".lw/qa/states", `${slug}.plan.json`), results: (0, import_node_path24.join)(cwd, ".lw/qa/states", `${slug}.results.jsonl`) };
 }
 function narrowOf(args) {
   const files = list(flag(args, "files"));
@@ -4457,11 +5390,11 @@ function narrowOf(args) {
 }
 function freshInventory(cwd, config, generated) {
   const { inventory } = scanStates(cwd, config, generated);
-  const deliveryPath = (0, import_node_path16.join)(cwd, DELIVERY_FILE);
-  if (!(0, import_node_fs12.existsSync)(deliveryPath)) return inventory;
+  const deliveryPath = (0, import_node_path24.join)(cwd, DELIVERY_FILE);
+  if (!(0, import_node_fs13.existsSync)(deliveryPath)) return inventory;
   let delivery;
   try {
-    delivery = JSON.parse((0, import_node_fs12.readFileSync)(deliveryPath, "utf8"));
+    delivery = JSON.parse((0, import_node_fs13.readFileSync)(deliveryPath, "utf8"));
   } catch (cause) {
     throw new LaunchwrightError("qa.states.delivery", `${DELIVERY_FILE} is not JSON`, { cause, context: { path: deliveryPath } });
   }
@@ -4470,7 +5403,7 @@ function freshInventory(cwd, config, generated) {
 function scan(args, opts, config, generated) {
   const result = scanStates(opts.cwd, config, generated);
   const findings = [...c1Findings(result.inventory, result.problems), ...c4Findings(result.inventory)];
-  writeJson((0, import_node_path16.join)(opts.cwd, STATES_FILE), { ...result.inventory, tables: result.map.tables, problems: result.problems });
+  writeJson2((0, import_node_path24.join)(opts.cwd, STATES_FILE), { ...result.inventory, tables: result.map.tables, problems: result.problems });
   if (args.switches.has("json")) {
     opts.out(JSON.stringify(result.inventory, null, 2));
   } else {
@@ -4519,26 +5452,97 @@ async function infer(args, opts, config, generated, app, overrides) {
   }
   return 0;
 }
+async function forger(args, opts, config, app, overrides) {
+  const slug = flag(args, "slug") ?? DEFAULT_FORGE_SLUG;
+  const leg = legByName(config, flag(args, "leg") ?? DEFAULT_LEG);
+  const deps = runDeps(config, app, overrides, opts.targets);
+  const world = await worldContext({ cwd: opts.cwd, out: opts.out, err: opts.err, ...opts.config ? { config: opts.config } : {}, ...opts.env ? { env: opts.env } : {} });
+  const entry = await loadAppEntry(world.root, world.qa);
+  const forkOptions = { root: world.root, sections: world.sections, env: world.env, overlay: world.overlay, entry, registry: world.registry, out: opts.out, ...overrides.listen ? { listen: overrides.listen } : {} };
+  const context = {
+    root: opts.cwd,
+    reportDir: (0, import_node_path24.resolve)(opts.cwd, config.reportDir),
+    slug,
+    leg,
+    target: deps.targets.get(leg.target),
+    baseUrls: config.baseUrls,
+    apiPort: config.apiPort,
+    clock: deps.clock,
+    revision: deps.revision(opts.cwd)
+  };
+  return async (seed) => {
+    const fork = await openFork(forkOptions, `forge-${seed.state}`);
+    try {
+      return await forgeState(seed, fork, context);
+    } finally {
+      await fork.release();
+    }
+  };
+}
+function forgedLine(r) {
+  return r.ok ? `forged    ${r.id}: ${r.subject ?? ""}` : `failed    ${r.id}: ${r.error ?? "no reason given"}`;
+}
 async function applyForged(args, opts, config, proposals, app, overrides) {
   if (proposals.length === 0) {
     opts.out("no declared state needs a forged seed: every state has a seed or a route.");
     return 0;
   }
-  const slug = flag(args, "slug") ?? DEFAULT_FORGE_SLUG;
-  const leg = legByName(config, flag(args, "leg") ?? DEFAULT_LEG);
-  const reportDir = (0, import_node_path16.resolve)(opts.cwd, config.reportDir);
-  const clock = runClock(app, overrides);
-  const revision = (overrides.revision ?? gitRevision)(opts.cwd);
-  const recorder2 = ledgerRecorder({ reportDir, slug, leg, provenance: "forged", clock, revision });
-  const now = () => clock.now();
-  for (const seed of proposals) {
-    for (const member of seed.members) await captureForged(seed, member, { reportDir, slug, record: recorder2.record, now });
+  const ready = [];
+  let waiting = 0;
+  for (const proposal of proposals) {
+    for (const member of proposal.members) {
+      const state = `${proposal.union}.${member}`;
+      if (writeDraft(opts.cwd, proposal, member)) {
+        opts.out(`draft     ${state}: wrote ${seedFile(state)}. Review it, then set accepted to true.`);
+        waiting += 1;
+        continue;
+      }
+      const seed = acceptedSeed(readSeed((0, import_node_path24.join)(opts.cwd, seedFile(state))));
+      if (typeof seed === "string") {
+        opts.out(`waiting   ${state}: ${seed} (${seedFile(state)})`);
+        waiting += 1;
+      } else ready.push(seed);
+    }
   }
-  const recorded = await recorder2.flush();
-  opts.out(`applied ${proposals.length} forged seed(s): ${recorded} forged capture(s) -> ${(0, import_node_path16.relative)(opts.cwd, reportPaths(reportDir, slug).ledger)}`);
-  opts.out(FORGE_CAVEAT);
-  for (const seed of proposals) opts.out(`  forged ${seed.union} via ${seed.via}: members ${seed.members.join(", ")}.`);
-  return 0;
+  if (ready.length === 0) {
+    opts.out(`forged nothing: ${waiting} state(s) wait for a reviewer to accept their seed.`);
+    return 0;
+  }
+  const forgeOne = await forger(args, opts, config, app, overrides);
+  let failed = 0;
+  for (const seed of ready) {
+    try {
+      const result = await forgeOne(seed);
+      if (!result.ok) failed += 1;
+      opts.out(forgedLine(result));
+    } catch (cause) {
+      if (!isCodedError(cause)) throw cause;
+      failed += 1;
+      opts.err(`failed    ${seed.state}: ${cause.code}: ${cause.message}`);
+    }
+  }
+  const slug = flag(args, "slug") ?? DEFAULT_FORGE_SLUG;
+  opts.out(`forged ${ready.length - failed} of ${ready.length} accepted seed(s), ${waiting} waiting -> ${(0, import_node_path24.relative)(opts.cwd, reportPaths((0, import_node_path24.resolve)(opts.cwd, config.reportDir), slug).ledger)}`);
+  opts.out(FORGE_NOTE);
+  return failed > 0 ? 1 : 0;
+}
+async function forge(args, opts, config, app, overrides) {
+  const [state, extra] = args.positionals;
+  if (state === void 0 || extra !== void 0) throw new UsageError("forge needs one state id <union>.<member>");
+  const rel = flag(args, "seed") ?? seedFile(state);
+  const path = (0, import_node_path24.resolve)(opts.cwd, rel);
+  if (!(0, import_node_fs13.existsSync)(path)) throw new LaunchwrightError("qa.forge.seed", `${rel} does not exist. Run lw qa states infer --apply to write its draft.`, { context: { state } });
+  const seed = readSeed(path);
+  if (seed.state !== state) throw new LaunchwrightError("qa.forge.seed", `${rel} is the seed of ${seed.state}, not ${state}.`, { context: { state } });
+  const accepted = acceptedSeed(seed);
+  if (typeof accepted === "string") {
+    opts.err(`${state} is not forged: ${accepted} (${rel})`);
+    return 1;
+  }
+  const result = await (await forger(args, opts, config, app, overrides))(accepted);
+  opts.out(forgedLine(result));
+  opts.out(FORGE_NOTE);
+  return result.ok ? 0 : 1;
 }
 async function run(args, opts, config, deps) {
   const slug = flag(args, "slug") ?? DEFAULT_SLUG;
@@ -4551,7 +5555,7 @@ async function run(args, opts, config, deps) {
   const narrow = narrowOf(args);
   const built = buildPlan({ inventory: freshInventory(opts.cwd, config, generated), source: "lw qa states scan", slug, generated, ...narrow ? { narrow } : {} });
   for (const line of renderPlan(built)) opts.out(line);
-  const reportDir = (0, import_node_path16.resolve)(opts.cwd, config.reportDir);
+  const reportDir = (0, import_node_path24.resolve)(opts.cwd, config.reportDir);
   const files = runFiles(opts.cwd, slug);
   const notRun = {};
   const target = deps.targets.get(leg.target);
@@ -4567,7 +5571,7 @@ async function run(args, opts, config, deps) {
   } else {
     let session = null;
     try {
-      session = await target.open({ leg, baseUrl: base, outDir: (0, import_node_path16.join)(reportPaths(reportDir, slug).assets, "states") });
+      session = await target.open({ leg, baseUrl: base, outDir: (0, import_node_path24.join)(reportPaths(reportDir, slug).assets, "states") });
       const mounted = ledgerRecorder({ reportDir, slug, leg, provenance: "mounted", clock: deps.clock, revision });
       for (const capture of built.captures.filter((c) => c.mechanism === "mount")) {
         attempts.push(await captureMounted(session, resolveMount(built.inventory, capture, leg.name), { reportDir, slug, record: mounted.record, now }));
@@ -4590,9 +5594,9 @@ async function run(args, opts, config, deps) {
       await session?.close();
     }
   }
-  writeJson(files.plan, { ...built, notRun, blocked });
-  (0, import_node_fs12.mkdirSync)((0, import_node_path16.dirname)(files.results), { recursive: true });
-  (0, import_node_fs12.writeFileSync)(files.results, attempts.map((a) => `${JSON.stringify(a)}
+  writeJson2(files.plan, { ...built, notRun, blocked });
+  (0, import_node_fs13.mkdirSync)((0, import_node_path24.dirname)(files.results), { recursive: true });
+  (0, import_node_fs13.writeFileSync)(files.results, attempts.map((a) => `${JSON.stringify(a)}
 `).join(""));
   opts.out("");
   opts.out(`plan       ${files.plan}`);
@@ -4604,10 +5608,10 @@ async function run(args, opts, config, deps) {
 function report(args, opts) {
   const slug = flag(args, "slug") ?? DEFAULT_SLUG;
   const files = runFiles(opts.cwd, slug);
-  if (!(0, import_node_fs12.existsSync)(files.plan)) throw new LaunchwrightError("qa.states.no-run", `No state run of slug ${slug}: ${files.plan} does not exist. Run "lw qa states run" first.`);
-  const saved = JSON.parse((0, import_node_fs12.readFileSync)(files.plan, "utf8"));
+  if (!(0, import_node_fs13.existsSync)(files.plan)) throw new LaunchwrightError("qa.states.no-run", `No state run of slug ${slug}: ${files.plan} does not exist. Run "lw qa states run" first.`);
+  const saved = JSON.parse((0, import_node_fs13.readFileSync)(files.plan, "utf8"));
   const inventory = parseInventory(JSON.stringify(saved.inventory), files.plan);
-  const { attempts, malformed } = parseResults((0, import_node_fs12.existsSync)(files.results) ? (0, import_node_fs12.readFileSync)(files.results, "utf8") : "");
+  const { attempts, malformed } = parseResults((0, import_node_fs13.existsSync)(files.results) ? (0, import_node_fs13.readFileSync)(files.results, "utf8") : "");
   const finished = finishRun({ plan: { ...saved, inventory }, attempts, malformed, notRun: saved.notRun ?? {}, blocked: saved.blocked ?? {} });
   for (const line of finished.lines) opts.out(line);
   return finished.code;
@@ -4615,15 +5619,15 @@ function report(args, opts) {
 function createStatesCommand(overrides = {}) {
   return {
     name: "states",
-    summary: "Scan the state unions, plan, capture mounted and intercepted states, report coverage",
+    summary: "Scan the state unions, plan, capture mounted, intercepted and forged states, report coverage",
     async run(args, opts) {
       const [action, ...rest] = args;
-      if (!action || !["scan", "plan", "infer", "run", "report"].includes(action)) {
+      if (!action || !["scan", "plan", "infer", "forge", "run", "report"].includes(action)) {
         for (const line of USAGE) opts.err(line);
         return 2;
       }
       const config = qaConfigOf(opts.config);
-      const cwd = (0, import_node_path16.isAbsolute)(opts.cwd) ? opts.cwd : (0, import_node_path16.resolve)(opts.cwd);
+      const cwd = (0, import_node_path24.isAbsolute)(opts.cwd) ? opts.cwd : (0, import_node_path24.resolve)(opts.cwd);
       const inner = { ...opts, cwd };
       try {
         const flags = parseCommandArgs(FLAGS[action], rest);
@@ -4633,6 +5637,7 @@ function createStatesCommand(overrides = {}) {
         const generated = runClock(app, overrides).date().toISOString();
         if (action === "scan") return scan(flags, inner, config, generated);
         if (action === "infer") return await infer(flags, inner, config, generated, app, overrides);
+        if (action === "forge") return await forge(flags, inner, config, app, overrides);
         return plan(flags, inner, config, generated);
       } catch (cause) {
         if (!isCodedError(cause)) throw cause;
@@ -4642,13 +5647,13 @@ function createStatesCommand(overrides = {}) {
     }
   };
 }
-var import_node_fs12, import_node_path16, USAGE, DEFAULT_SLUG, DEFAULT_FORGE_SLUG, DEFAULT_LEG, DELIVERY_FILE, FLAGS, qa_states_default;
+var import_node_fs13, import_node_path24, USAGE, DEFAULT_SLUG, DEFAULT_FORGE_SLUG, DEFAULT_LEG, DELIVERY_FILE, FLAGS, qa_states_default;
 var init_qa_states = __esm({
   "src/commands/qa-states.mts"() {
     "use strict";
     init_cjs_shims();
-    import_node_fs12 = require("fs");
-    import_node_path16 = require("path");
+    import_node_fs13 = require("fs");
+    import_node_path24 = require("path");
     init_kernel();
     init_args();
     init_config2();
@@ -4657,18 +5662,25 @@ var init_qa_states = __esm({
     init_check();
     init_delivery();
     init_forge();
+    init_forge_seed();
     init_inventory();
     init_loop();
     init_mount();
     init_project2();
     init_run();
+    init_app2();
+    init_context();
+    init_fork_server();
     USAGE = [
-      "usage: lw qa states <scan|plan|infer|run|report> [options]",
+      "usage: lw qa states <scan|plan|infer|forge|run|report> [options]",
       "  scan   [--json]                       read the client roots, derive each route, write .lw/qa/states.json.",
       "                                        Exit 1 on a union no trigger reaches (rules C1, C4) or a bad ignore tag",
       "  plan   [--json] [--files a,b] [--dirs d,e]   print every planned capture. Exit 1 on a neither union",
       "  infer  [--json] [--apply] [--slug <slug>] [--leg <name>]   propose a forged seed for each state no seed and no",
-      "                                        route reaches, or with --apply record each as a forged capture (spec 2.5)",
+      "                                        route reaches. --apply writes a draft seed under .lw/qa/forge/ for each one,",
+      "                                        and forges each accepted seed (spec 2.5)",
+      "  forge  <union>.<member> [--seed <file>] [--slug <slug>] [--leg <name>]   run one accepted seed on a fork of the QA",
+      "                                        database, photograph its route, and record it with provenance forged",
       "  run    [--base <url>] [--leg <name>] [--slug <slug>] [--files a,b] [--dirs d,e]   (--base defaults to qa.baseUrls of the leg surface)",
       "                                        mount each input member at /__states and intercept each output member.",
       "                                        Images go to <reportDir>/assets/<slug>/states/ and into the ledger",
@@ -4683,6 +5695,7 @@ var init_qa_states = __esm({
       scan: { values: [], switches: ["json"] },
       plan: { values: ["files", "dirs"], switches: ["json"] },
       infer: { values: ["slug", "leg"], switches: ["json", "apply"] },
+      forge: { values: ["seed", "slug", "leg"], switches: [] },
       run: { values: ["base", "leg", "slug", "files", "dirs"], switches: [] },
       report: { values: ["slug"], switches: [] }
     };
@@ -4764,13 +5777,13 @@ var init_mime = __esm({
 });
 
 // src/services/records.mts
-var import_promises6, import_node_path17;
+var import_promises11, import_node_path25;
 var init_records = __esm({
   "src/services/records.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises6 = require("fs/promises");
-    import_node_path17 = require("path");
+    import_promises11 = require("fs/promises");
+    import_node_path25 = require("path");
     init_kernel();
     init_fs();
     init_mime();
@@ -4779,13 +5792,13 @@ var init_records = __esm({
 });
 
 // src/services/contract.mts
-var import_promises7, import_node_path18;
+var import_promises12, import_node_path26;
 var init_contract2 = __esm({
   "src/services/contract.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises7 = require("fs/promises");
-    import_node_path18 = require("path");
+    import_promises12 = require("fs/promises");
+    import_node_path26 = require("path");
     init_kernel();
     init_fs();
   }
@@ -4801,40 +5814,40 @@ var init_botfather = __esm({
 });
 
 // src/services/bot-store.mts
-var import_promises8, import_node_path19;
+var import_promises13, import_node_path27;
 var init_bot_store = __esm({
   "src/services/bot-store.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises8 = require("fs/promises");
-    import_node_path19 = require("path");
+    import_promises13 = require("fs/promises");
+    import_node_path27 = require("path");
     init_kernel();
     init_fs();
   }
 });
 
 // src/services/comments.mts
-var import_node_crypto3, import_promises9, import_node_path20;
+var import_node_crypto4, import_promises14, import_node_path28;
 var init_comments = __esm({
   "src/services/comments.mts"() {
     "use strict";
     init_cjs_shims();
-    import_node_crypto3 = require("crypto");
-    import_promises9 = require("fs/promises");
-    import_node_path20 = require("path");
+    import_node_crypto4 = require("crypto");
+    import_promises14 = require("fs/promises");
+    import_node_path28 = require("path");
     init_kernel();
     init_fs();
   }
 });
 
 // src/services/comment-export.mts
-var import_promises10, import_node_path21;
+var import_promises15, import_node_path29;
 var init_comment_export = __esm({
   "src/services/comment-export.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises10 = require("fs/promises");
-    import_node_path21 = require("path");
+    import_promises15 = require("fs/promises");
+    import_node_path29 = require("path");
     init_kernel();
     init_manifest2();
     init_png();
@@ -4842,14 +5855,14 @@ var init_comment_export = __esm({
 });
 
 // src/services/comment-server.mts
-var import_node_http, import_promises11, import_node_path22, MAX_BODY;
+var import_node_http, import_promises16, import_node_path30, MAX_BODY;
 var init_comment_server = __esm({
   "src/services/comment-server.mts"() {
     "use strict";
     init_cjs_shims();
     import_node_http = require("http");
-    import_promises11 = require("fs/promises");
-    import_node_path22 = require("path");
+    import_promises16 = require("fs/promises");
+    import_node_path30 = require("path");
     init_kernel();
     init_comments();
     init_mime();
@@ -5070,18 +6083,18 @@ function collect(cmd, args, opts) {
   const chunks = [];
   let stderr = "";
   let timer;
-  const done = new Promise((resolve5) => {
+  const done = new Promise((resolve10) => {
     child.stdout?.on("data", (d) => chunks.push(d));
     child.stderr?.on("data", (d) => {
       stderr += d.toString("utf8");
     });
     child.on("error", (e) => {
       clearTimeout(timer);
-      resolve5({ code: -1, stdout: Buffer.concat(chunks), stderr: `${cmd}: ${e.message}` });
+      resolve10({ code: -1, stdout: Buffer.concat(chunks), stderr: `${cmd}: ${e.message}` });
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
-      resolve5({ code: code ?? (signal ? 128 : -1), stdout: Buffer.concat(chunks), stderr });
+      resolve10({ code: code ?? (signal ? 128 : -1), stdout: Buffer.concat(chunks), stderr });
     });
   });
   if (opts.input !== void 0) {
@@ -5101,13 +6114,13 @@ function collect(cmd, args, opts) {
   };
 }
 function freeLoopbackPort() {
-  return new Promise((resolve5, reject) => {
+  return new Promise((resolve10, reject) => {
     const srv = (0, import_node_net.createServer)();
     srv.once("error", reject);
     srv.listen(0, "127.0.0.1", () => {
       const addr = srv.address();
       const port = typeof addr === "object" && addr ? addr.port : 0;
-      srv.close(() => resolve5(port));
+      srv.close(() => resolve10(port));
     });
   });
 }
@@ -5122,13 +6135,13 @@ function systemDeviceDeps(root) {
   };
 }
 function deferred() {
-  let resolve5;
+  let resolve10;
   let reject;
   const promise = new Promise((ok, no) => {
-    resolve5 = ok;
+    resolve10 = ok;
     reject = no;
   });
-  return { promise, resolve: resolve5, reject };
+  return { promise, resolve: resolve10, reject };
 }
 async function poll(clock, probe, opts) {
   const deadline = clock.now() + opts.timeoutMs;
@@ -5190,8 +6203,8 @@ async function deviceState(rig, serial, deps, bin) {
   }
   return parseDevices(out(res)).find((d) => d.serial === serial)?.state ?? "absent";
 }
-function parseKeyguard(text) {
-  const block = text.slice(text.indexOf("KeyguardServiceDelegate"));
+function parseKeyguard(text2) {
+  const block = text2.slice(text2.indexOf("KeyguardServiceDelegate"));
   if (!/^\s*showing=true\b/m.test(block)) return "open";
   return /^\s*inputRestricted=true\b/m.test(block) ? "credential" : "swipe";
 }
@@ -5255,9 +6268,9 @@ async function keyevent(adb, key) {
   await adb.shell(["input", "keyevent", key]);
 }
 async function wmSize(adb) {
-  const text = await adb.shell(["wm", "size"]);
-  const size = parseWmSize(text);
-  if (!size) throw new LaunchwrightError("qa.device.adb", `wm size on ${adb.serial} printed no size: ${text.trim().slice(0, 120)}`);
+  const text2 = await adb.shell(["wm", "size"]);
+  const size = parseWmSize(text2);
+  if (!size) throw new LaunchwrightError("qa.device.adb", `wm size on ${adb.serial} printed no size: ${text2.trim().slice(0, 120)}`);
   return size;
 }
 function screenrecordCapS(seconds) {
@@ -5290,9 +6303,9 @@ async function startScreenrecord(adb, deps, seconds, label) {
     }
   };
 }
-function devtoolsSockets(text) {
+function devtoolsSockets(text2) {
   const byName = /* @__PURE__ */ new Map();
-  for (const line of text.split("\n")) {
+  for (const line of text2.split("\n")) {
     const parts = line.trim().split(/\s+/);
     if (parts.length < 8 || parts[0] === "Num" || !parts[0].endsWith(":")) continue;
     const raw = parts[7];
@@ -5310,8 +6323,8 @@ function devtoolsSockets(text) {
   }
   return [...byName.values()];
 }
-function processNameFromCmdline(text) {
-  return (text.split("\0")[0] ?? "").trim();
+function processNameFromCmdline(text2) {
+  return (text2.split("\0")[0] ?? "").trim();
 }
 function processBelongsTo(name, pkg) {
   return name === pkg || name.startsWith(`${pkg}:`);
@@ -5349,11 +6362,11 @@ async function forwardSocket(adb, socketName) {
   const held = parseExistingForward(out(list2), socketName);
   if (held !== null) return { port: held, reused: true };
   const res = await adb.run(["forward", "tcp:0", `localabstract:${socketName}`]);
-  const text = orFail(res, "qa.device.forward", `adb forward of ${socketName}`).trim();
-  if (!/^\d+$/.test(text)) {
-    throw new LaunchwrightError("qa.device.forward", `adb forward of ${socketName} printed ${JSON.stringify(text)}, which names no port.`);
+  const text2 = orFail(res, "qa.device.forward", `adb forward of ${socketName}`).trim();
+  if (!/^\d+$/.test(text2)) {
+    throw new LaunchwrightError("qa.device.forward", `adb forward of ${socketName} printed ${JSON.stringify(text2)}, which names no port.`);
   }
-  return { port: Number(text), reused: false };
+  return { port: Number(text2), reused: false };
 }
 async function removeForward(adb, port) {
   const res = await adb.run(["forward", "--remove", `tcp:${port}`]);
@@ -5420,15 +6433,15 @@ function actExpression(step) {
     }
     case "type": {
       const sel = parseSelector(need(step.target, "type", "target"));
-      const text = need(step.text, "type", "text");
+      const text2 = need(step.text, "type", "text");
       return iife(`
   const el = ${resolveSnippet(sel)};
   if (!el) return { ok: false, error: 'no element for ' + ${JSON.stringify(step.target)} };
   el.focus();
   const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, 'value');
-  if (setter && setter.set) setter.set.call(el, ${JSON.stringify(text)}); else el.value = ${JSON.stringify(text)};
-  el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, data: ${JSON.stringify(text)} }));
+  if (setter && setter.set) setter.set.call(el, ${JSON.stringify(text2)}); else el.value = ${JSON.stringify(text2)};
+  el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, data: ${JSON.stringify(text2)} }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
   return { ok: true };`);
     }
@@ -5574,7 +6587,7 @@ function attachablePages(targets) {
 }
 function connectCdp(deps, wsUrl, onEvent) {
   const ready = deferred();
-  const resolve5 = ready.resolve;
+  const resolve10 = ready.resolve;
   const reject = ready.reject;
   const ws = deps.socket(wsUrl);
   const pending = /* @__PURE__ */ new Map();
@@ -5653,7 +6666,7 @@ function connectCdp(deps, wsUrl, onEvent) {
   ws.onopen = () => {
     opened = true;
     clearTimeout(opening);
-    resolve5(client);
+    resolve10(client);
   };
   return ready.promise;
 }
@@ -5751,7 +6764,7 @@ function resolveDevice(config, name) {
 }
 function controlPath(root, rig, home = (0, import_node_os.homedir)()) {
   const id = sha256(`${root}\0${rig}`).slice(0, 16);
-  const path = (0, import_node_path23.join)(home, SSH_SOCKET_DIR, `${id}.sock`);
+  const path = (0, import_node_path31.join)(home, SSH_SOCKET_DIR, `${id}.sock`);
   if (Buffer.byteLength(path) > MAX_SOCKET_PATH) {
     throw new LaunchwrightError(
       "qa.device.ssh.path",
@@ -5793,7 +6806,7 @@ function sshRig(name, config, deps, ssh) {
   async function open() {
     const check = await deps.run.run(ssh, ["-S", ctl, "-O", "check", host]);
     if (check.code === 0) return;
-    await (0, import_promises12.mkdir)((0, import_node_path23.dirname)(ctl), { recursive: true, mode: 448 });
+    await (0, import_promises17.mkdir)((0, import_node_path31.dirname)(ctl), { recursive: true, mode: 448 });
     const res = await deps.run.run(ssh, masterArgs(ctl, host), { timeoutMs: 3e4 });
     if (res.code !== 0) {
       throw new LaunchwrightError(
@@ -5873,7 +6886,7 @@ function localRig(name, config, deps) {
     name,
     config,
     remote: false,
-    stateDir: (0, import_node_path23.join)(deps.root, DEVICE_STATE_DIR),
+    stateDir: (0, import_node_path31.join)(deps.root, DEVICE_STATE_DIR),
     ensure: async () => {
     },
     exec: (command, opts) => deps.run.run("sh", ["-c", command], { timeoutMs: 12e4, ...opts }),
@@ -5883,8 +6896,8 @@ function localRig(name, config, deps) {
     adbServer: async () => [],
     adbPort: async () => ADB_SERVER_PORT,
     async writeFile(path, content) {
-      await (0, import_promises12.mkdir)((0, import_node_path23.dirname)(path), { recursive: true });
-      await (0, import_promises12.writeFile)(path, content);
+      await (0, import_promises17.mkdir)((0, import_node_path31.dirname)(path), { recursive: true });
+      await (0, import_promises17.writeFile)(path, content);
     },
     down: async () => {
     }
@@ -5935,14 +6948,14 @@ function createRigPool(config, deps) {
     }
   };
 }
-var import_promises12, import_node_os, import_node_path23, DEVICE_STATE_DIR, RIG_STATE_DIR, MAX_SOCKET_PATH, SSH_SOCKET_DIR, REMOTE_PATH, ADB_SERVER_PORT;
+var import_promises17, import_node_os, import_node_path31, DEVICE_STATE_DIR, RIG_STATE_DIR, MAX_SOCKET_PATH, SSH_SOCKET_DIR, REMOTE_PATH, ADB_SERVER_PORT;
 var init_rigs = __esm({
   "src/device/services/rigs.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises12 = require("fs/promises");
+    import_promises17 = require("fs/promises");
     import_node_os = require("os");
-    import_node_path23 = require("path");
+    import_node_path31 = require("path");
     init_kernel();
     init_fs();
     init_text();
@@ -6123,9 +7136,9 @@ server.listen(PORT, '127.0.0.1', () => console.log('host-proxy 127.0.0.1:' + POR
 function proxyAddress(port) {
   return `127.0.0.1:${port}`;
 }
-function parseIdentity(text) {
+function parseIdentity(text2) {
   try {
-    const id = JSON.parse(text.trim());
+    const id = JSON.parse(text2.trim());
     return typeof id.host === "string" && typeof id.upstream === "string" && typeof id.pid === "number" ? { host: id.host, upstream: id.upstream, pid: id.pid } : null;
   } catch (err) {
     if (err instanceof SyntaxError) return null;
@@ -6236,20 +7249,20 @@ async function pageAct(step, evaluate, target) {
 async function writePng(path, bytes, target) {
   const size = pngSize(bytes);
   if (size === null) throw new LaunchwrightError("qa.target.screenshot", `The ${target} target returned ${bytes.length} bytes that are not a PNG.`);
-  await (0, import_promises13.mkdir)((0, import_node_path24.dirname)(path), { recursive: true });
-  await (0, import_promises13.writeFile)(path, bytes);
+  await (0, import_promises18.mkdir)((0, import_node_path32.dirname)(path), { recursive: true });
+  await (0, import_promises18.writeFile)(path, bytes);
   return { path, ...size };
 }
 async function writeBytes(path, bytes) {
-  await (0, import_promises13.mkdir)((0, import_node_path24.dirname)(path), { recursive: true });
-  await (0, import_promises13.writeFile)(path, bytes);
+  await (0, import_promises18.mkdir)((0, import_node_path32.dirname)(path), { recursive: true });
+  await (0, import_promises18.writeFile)(path, bytes);
 }
 async function holdLastFrame(deps, ffmpeg, path, durationMs) {
   const seconds = (durationMs / 1e3).toFixed(3);
   const held = `${path}.held.mp4`;
   const args = ["-y", "-v", "error", "-i", path, "-vf", `tpad=stop_mode=clone:stop_duration=${seconds}`, "-t", seconds, "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", held];
   orFail(await deps.run.run(ffmpeg, args, { timeoutMs: 12e4 }), "qa.device.record", `holding the last frame of ${path} with ${ffmpeg}`);
-  await (0, import_promises13.rename)(held, path);
+  await (0, import_promises18.rename)(held, path);
 }
 function consoleLogKind(line) {
   if (line.level !== "error" && line.level !== "SEVERE") return null;
@@ -6262,13 +7275,13 @@ async function waitAct(clock, step) {
   if (!step.why) throw new LaunchwrightError("qa.target.act", "A wait act needs a why: it names what the row waits for.");
   await clock.sleep(step.ms ?? 0);
 }
-var import_promises13, import_node_path24, SETTLE_TIMEOUT_MS, SETTLE_EVERY_MS;
+var import_promises18, import_node_path32, SETTLE_TIMEOUT_MS, SETTLE_EVERY_MS;
 var init_session_base = __esm({
   "src/device/services/session-base.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises13 = require("fs/promises");
-    import_node_path24 = require("path");
+    import_promises18 = require("fs/promises");
+    import_node_path32 = require("path");
     init_kernel();
     init_src();
     init_page_script();
@@ -6280,7 +7293,7 @@ var init_session_base = __esm({
 
 // src/device/services/telegram.mts
 function apkPath(root) {
-  return (0, import_node_path25.join)(root, DEVICE_STATE_DIR, "telegram.apk");
+  return (0, import_node_path33.join)(root, DEVICE_STATE_DIR, "telegram.apk");
 }
 function pinOf(cfg) {
   if (!cfg.apkSha256) {
@@ -6306,7 +7319,7 @@ async function fetchApk(cfg, deps) {
   const path = apkPath(deps.root);
   let bytes = null;
   try {
-    bytes = await (0, import_promises14.readFile)(path);
+    bytes = await (0, import_promises19.readFile)(path);
   } catch (err) {
     if (err.code !== "ENOENT") throw new LaunchwrightError("qa.device.telegram.apk", `Cannot read ${path}.`, { cause: err });
   }
@@ -6323,8 +7336,8 @@ async function fetchApk(cfg, deps) {
     throw new LaunchwrightError("qa.device.telegram.apk", `The APK download is truncated: ${body.length} of ${declared} bytes.`);
   }
   checkPin(body, cfg);
-  await (0, import_promises14.mkdir)((0, import_node_path25.dirname)(path), { recursive: true });
-  await (0, import_promises14.writeFile)(path, body);
+  await (0, import_promises19.mkdir)((0, import_node_path33.dirname)(path), { recursive: true });
+  await (0, import_promises19.writeFile)(path, body);
   return path;
 }
 async function installed(adb, pkg) {
@@ -6341,8 +7354,8 @@ async function installTelegram(adb, cfg, deps, force) {
     );
   }
   const res = await adb.run(["install", "-r", "-g", path], { timeoutMs: 3e5 });
-  const text = `${out(res)}${res.stderr}`.trim();
-  if (res.code !== 0 || !/\bSuccess\b/.test(text)) throw new LaunchwrightError("qa.device.telegram.install", `adb install on ${adb.serial} failed: ${text.slice(0, 400)}`);
+  const text2 = `${out(res)}${res.stderr}`.trim();
+  if (res.code !== 0 || !/\bSuccess\b/.test(text2)) throw new LaunchwrightError("qa.device.telegram.install", `adb install on ${adb.serial} failed: ${text2.slice(0, 400)}`);
   return path;
 }
 function miniAppLink(bot, startParam = DEFAULT_START_PARAM) {
@@ -6357,13 +7370,13 @@ async function viewIntent(adb, uri, pkg) {
 async function forceStop(adb, pkg) {
   await adb.shell(["am", "force-stop", pkg]);
 }
-var import_promises14, import_node_path25, DEFAULT_START_PARAM;
+var import_promises19, import_node_path33, DEFAULT_START_PARAM;
 var init_telegram = __esm({
   "src/device/services/telegram.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises14 = require("fs/promises");
-    import_node_path25 = require("path");
+    import_promises19 = require("fs/promises");
+    import_node_path33 = require("path");
     init_kernel();
     init_fs();
     init_process();
@@ -6433,12 +7446,12 @@ async function attachSocket(ctx, h, pkg, surface) {
     );
   }
 }
-var import_node_path26, MIN_CLIP_MS2, SCRCPY_GRACE_S, AndroidSession;
+var import_node_path34, MIN_CLIP_MS2, SCRCPY_GRACE_S, AndroidSession;
 var init_android_session = __esm({
   "src/device/services/android-session.mts"() {
     "use strict";
     init_cjs_shims();
-    import_node_path26 = require("path");
+    import_node_path34 = require("path");
     init_kernel();
     init_src();
     init_adb();
@@ -6576,7 +7589,7 @@ var init_android_session = __esm({
         const capS = Math.min(this.ctx.config.evidence.videoCapS, SCREENRECORD_MAX_S);
         const startedAt = this.ctx.deps.clock.now();
         if (this.h.recorder === "screenrecord") {
-          const rec = await startScreenrecord(this.h.adb, this.ctx.deps, capS, (0, import_node_path26.basename)(path));
+          const rec = await startScreenrecord(this.h.adb, this.ctx.deps, capS, (0, import_node_path34.basename)(path));
           this.video = { path, startedAt, stop: () => rec.stop() };
           return;
         }
@@ -6686,12 +7699,12 @@ function createBrowserstackClient(cfg, deps) {
         signal: AbortSignal.timeout(timeoutMs)
       });
       if (isRedirect(res)) throw await redirected(`${method} ${path}`, res);
-      const text = await res.text();
+      const text2 = await res.text();
       let json;
       try {
-        json = JSON.parse(text);
+        json = JSON.parse(text2);
       } catch (err) {
-        throw new WebDriverError(`${method} ${path} answered ${res.status} with no JSON: ${text.slice(0, 200)}`, res.status, "no json", err);
+        throw new WebDriverError(`${method} ${path} answered ${res.status} with no JSON: ${text2.slice(0, 200)}`, res.status, "no json", err);
       }
       const error = json.value?.error;
       if (!res.ok || error) {
@@ -6702,12 +7715,12 @@ function createBrowserstackClient(cfg, deps) {
     async api(path) {
       const res = await deps.fetch(`${cfg.api}${path}`, { headers: { authorization }, redirect: "manual", signal: AbortSignal.timeout(3e4) });
       if (isRedirect(res)) throw await redirected(`GET ${path}`, res);
-      const text = await res.text();
-      if (!res.ok) throw new LaunchwrightError("qa.device.browserstack.api", `GET ${path} answered ${res.status}: ${text.slice(0, 200)}`);
+      const text2 = await res.text();
+      if (!res.ok) throw new LaunchwrightError("qa.device.browserstack.api", `GET ${path} answered ${res.status}: ${text2.slice(0, 200)}`);
       try {
-        return JSON.parse(text);
+        return JSON.parse(text2);
       } catch (err) {
-        throw new LaunchwrightError("qa.device.browserstack.api", `GET ${path} answered ${text.length} bytes that are not JSON.`, { cause: err });
+        throw new LaunchwrightError("qa.device.browserstack.api", `GET ${path} answered ${text2.length} bytes that are not JSON.`, { cause: err });
       }
     }
   };
@@ -6778,7 +7791,7 @@ async function budget(client) {
   return minuteSummary(sessions, plan2);
 }
 function heldSessionPath(root) {
-  return (0, import_node_path27.join)(root, DEVICE_STATE_DIR, "browserstack-session.json");
+  return (0, import_node_path35.join)(root, DEVICE_STATE_DIR, "browserstack-session.json");
 }
 async function readHeld(root) {
   return await readJsonOrNull(heldSessionPath(root));
@@ -6786,11 +7799,11 @@ async function readHeld(root) {
 async function writeHeld(root, held) {
   const path = heldSessionPath(root);
   if (held === null) {
-    await (0, import_promises15.rm)(path, { force: true });
+    await (0, import_promises20.rm)(path, { force: true });
     return;
   }
-  await (0, import_promises15.mkdir)((0, import_node_path27.dirname)(path), { recursive: true });
-  await (0, import_promises15.writeFile)(path, `${JSON.stringify(held, null, 1)}
+  await (0, import_promises20.mkdir)((0, import_node_path35.dirname)(path), { recursive: true });
+  await (0, import_promises20.writeFile)(path, `${JSON.stringify(held, null, 1)}
 `);
 }
 function checkBudget(startedAt, now, cfg) {
@@ -6803,13 +7816,13 @@ function checkBudget(startedAt, now, cfg) {
     );
   }
 }
-var import_promises15, import_node_path27, WebDriverError;
+var import_promises20, import_node_path35, WebDriverError;
 var init_browserstack = __esm({
   "src/device/services/browserstack.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises15 = require("fs/promises");
-    import_node_path27 = require("path");
+    import_promises20 = require("fs/promises");
+    import_node_path35 = require("path");
     init_kernel();
     init_fetch();
     init_fs();
@@ -6874,8 +7887,8 @@ async function openUrl(rig, udid, url) {
   orFail(await rig.exec(simctl(["openurl", udid, url])), "qa.device.simctl", "simctl openurl");
 }
 async function simScreenshot(rig, udid, remotePath) {
-  const text = orFail(await rig.exec(simctl(["io", udid, "screenshot", remotePath])), "qa.device.simctl", "simctl io screenshot");
-  if (!/Wrote screenshot to/i.test(text)) throw new LaunchwrightError("qa.device.simctl", `simctl io screenshot said nothing about ${remotePath}.`);
+  const text2 = orFail(await rig.exec(simctl(["io", udid, "screenshot", remotePath])), "qa.device.simctl", "simctl io screenshot");
+  if (!/Wrote screenshot to/i.test(text2)) throw new LaunchwrightError("qa.device.simctl", `simctl io screenshot said nothing about ${remotePath}.`);
   const read = await rig.exec(`cat ${shq(remotePath)} && rm -f ${shq(remotePath)}`, { timeoutMs: 6e4 });
   orFail(read, "qa.device.simctl", `reading ${remotePath}`);
   return read.stdout;
@@ -6959,7 +7972,7 @@ function proxyCommand(listPort, pagePort) {
 function withTarget(deps, page, port, timeoutMs, fn) {
   const url = localise(page.webSocketDebuggerUrl, port);
   const done = deferred();
-  const resolve5 = done.resolve;
+  const resolve10 = done.resolve;
   const reject = done.reject;
   const ws = deps.socket(url, { origin: `http://127.0.0.1:${port}` });
   const pending = /* @__PURE__ */ new Map();
@@ -6985,7 +7998,7 @@ function withTarget(deps, page, port, timeoutMs, fn) {
     ws.onclose = null;
     ws.close();
     if (error) reject(error);
-    else resolve5(value);
+    else resolve10(value);
   }
   const session = {
     send(method, params = {}) {
@@ -7092,9 +8105,9 @@ async function proxyJson(deps, port, what) {
     throw new LaunchwrightError("qa.device.webkit.proxy", `The ${what} on :${port} did not answer: ${err.message}. Is ios_webkit_debug_proxy running on the rig?`, { cause: err });
   }
   if (!res.ok) throw new LaunchwrightError("qa.device.webkit.proxy", `The ${what} on :${port} answered HTTP ${res.status}.`);
-  const text = await res.text();
+  const text2 = await res.text();
   try {
-    return JSON.parse(text);
+    return JSON.parse(text2);
   } catch (err) {
     throw new LaunchwrightError("qa.device.webkit.proxy", `The ${what} on :${port} did not answer JSON.`, { cause: err });
   }
@@ -7384,8 +8397,8 @@ var init_ios_session = __esm({
 });
 
 // src/device/services/doctor.mts
-function parseScrcpyVersion(text) {
-  const m = /scrcpy\s+v?(\d+(?:\.\d+)*)/i.exec(text);
+function parseScrcpyVersion(text2) {
+  const m = /scrcpy\s+v?(\d+(?:\.\d+)*)/i.exec(text2);
   return m ? m[1].split(".").map(Number) : null;
 }
 function versionAtLeast(have, want) {
@@ -7396,7 +8409,7 @@ function versionAtLeast(have, want) {
   }
   return true;
 }
-async function guard(scope, name, fn) {
+async function guard2(scope, name, fn) {
   try {
     return await fn();
   } catch (err) {
@@ -7437,7 +8450,7 @@ async function rigChecks(ctx, devices) {
     const rig = ctx.rigs.get(name);
     if (rig.config.transport !== "ssh") continue;
     checks.push(
-      await guard(`rig ${name}`, "ssh", async () => {
+      await guard2(`rig ${name}`, "ssh", async () => {
         await rig.ensure();
         return pass(`rig ${name}`, "ssh", `master open to ${rig.config.host}, BatchMode=yes`);
       })
@@ -7452,16 +8465,16 @@ async function androidChecks(ctx, d) {
   if (h.emulator) {
     const avd = h.emulator.avd;
     checks.push(
-      await guard(scope, "sdk", async () => {
+      await guard2(scope, "sdk", async () => {
         const root = await sdkRoot(h.rig);
         return root ? pass(scope, "sdk", root) : fail(scope, "sdk", `no Android SDK on rig ${h.rig.name}`, `Install the Android SDK command-line tools on rig ${h.rig.name}, then run sdkmanager "emulator" "platform-tools" and the system image of AVD ${avd}.`);
       }),
-      await guard(
+      await guard2(
         scope,
         "avd",
         async () => await avdExists(h.rig, avd) ? pass(scope, "avd", avd) : fail(scope, "avd", `no AVD ${avd} on rig ${h.rig.name}`, `Create AVD ${avd} with avdmanager on rig ${h.rig.name}.`)
       ),
-      await guard(
+      await guard2(
         scope,
         "boot",
         async () => pass(scope, "boot", await booted(h.adb) ? `${h.adb.serial} booted` : `${h.adb.serial} not booted; lw qa device open boots it`)
@@ -7470,14 +8483,14 @@ async function androidChecks(ctx, d) {
     return checks;
   }
   checks.push(
-    await guard(scope, "pairing", async () => {
+    await guard2(scope, "pairing", async () => {
       const state = await deviceState(h.rig, h.adb.serial, ctx.deps, ctx.config.device.tools.adb);
       return state === "device" ? pass(scope, "pairing", `${h.adb.serial} attached`) : fail(scope, "pairing", `adb state ${state}`, stateFix(state, h.adb.serial, h.rig.name));
     })
   );
   if (checks.at(-1)?.ok) {
     checks.push(
-      await guard(scope, "screen lock", async () => {
+      await guard2(scope, "screen lock", async () => {
         const lock = await keyguard(h.adb);
         if (lock === "open") return pass(scope, "screen lock", "unlocked");
         if (lock === "swipe") return fail(scope, "screen lock", "the lock screen shows", `Dismiss it: adb -s ${h.adb.serial} shell wm dismiss-keyguard on rig ${h.rig.name}.`);
@@ -7491,7 +8504,7 @@ async function iosChecks(ctx, d) {
   const scope = `device ${d.name}`;
   const rig = ctx.rigs.get(d.rigName);
   const [listPort, pagePort] = [rig.config.webkitPorts?.[0] ?? DEFAULT_WEBKIT_PORTS[0], rig.config.webkitPorts?.[1] ?? DEFAULT_WEBKIT_PORTS[1]];
-  const proxy = await guard(scope, "ios_webkit_debug_proxy", async () => {
+  const proxy = await guard2(scope, "ios_webkit_debug_proxy", async () => {
     const res = await rig.exec("command -v ios_webkit_debug_proxy || true; echo ---; pgrep -x ios_webkit_debug_proxy | wc -l");
     const [head = "", tail = ""] = out(res).split("---");
     const path = head.trim().split("\n")[0] ?? "";
@@ -7504,7 +8517,7 @@ async function iosChecks(ctx, d) {
   const checks = [proxy];
   if (proxy.ok) {
     checks.push(
-      await guard(scope, "pairing", async () => {
+      await guard2(scope, "pairing", async () => {
         const access = await deviceAccess(ctx, d.name);
         await access.close();
         return pass(scope, "pairing", "the iPhone is in the proxy device list");
@@ -7517,7 +8530,7 @@ async function simulatorChecks(ctx, d) {
   const scope = `device ${d.name}`;
   const rig = ctx.rigs.get(d.rigName);
   const keys = deviceKeys(d.name, d.device, simulatorDeviceKeys);
-  const sims = await guard(scope, "simctl", async () => {
+  const sims = await guard2(scope, "simctl", async () => {
     const all = await listSimulators(rig);
     const up = all.filter((s) => s.booted && (!keys.udid || s.udid === keys.udid));
     return up.length > 0 ? pass(scope, "simctl", `${up.length} booted simulator(s)`) : fail(scope, "simctl", "no booted simulator", `Boot the simulator at the console of rig ${rig.name}. lw never boots one: it can hold a signed-in Telegram.`);
@@ -7529,7 +8542,7 @@ async function cloudChecks(ctx, d) {
   const scope = `device ${d.name}`;
   const cfg = ctx.config.device.browserstack;
   return [
-    await guard(scope, "browserstack", async () => pass(scope, "browserstack", budgetLine(await budget(createBrowserstackClient(cfg, ctx.deps)), cfg)))
+    await guard2(scope, "browserstack", async () => pass(scope, "browserstack", budgetLine(await budget(createBrowserstackClient(cfg, ctx.deps)), cfg)))
   ];
 }
 function checksOf(kind) {
@@ -7653,18 +8666,18 @@ var init_probes = __esm({
 async function expressionOf(rest, cwd) {
   const arg = rest.join(" ").trim();
   if (!arg) throw new LaunchwrightError("qa.device.usage", "Give an expression, or @path/to/file.js.");
-  return arg.startsWith("@") ? (0, import_promises16.readFile)((0, import_node_path28.resolve)(cwd, arg.slice(1)), "utf8") : arg;
+  return arg.startsWith("@") ? (0, import_promises21.readFile)((0, import_node_path36.resolve)(cwd, arg.slice(1)), "utf8") : arg;
 }
 function str(value) {
   return typeof value === "string" ? value : JSON.stringify(value, null, 1);
 }
-var import_promises16, import_node_path28, VERBS, DeviceVerbs;
+var import_promises21, import_node_path36, VERBS, DeviceVerbs;
 var init_device_verbs = __esm({
   "src/device/services/device-verbs.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises16 = require("fs/promises");
-    import_node_path28 = require("path");
+    import_promises21 = require("fs/promises");
+    import_node_path36 = require("path");
     init_kernel();
     init_config3();
     init_adb();
@@ -7720,7 +8733,7 @@ var init_device_verbs = __esm({
         this.opts.out(line);
       }
       file(given, name, ext) {
-        return given ? (0, import_node_path28.resolve)(this.opts.cwd, given) : (0, import_node_path28.join)(this.ctx.deps.root, DEVICE_STATE_DIR, `${name}.${ext}`);
+        return given ? (0, import_node_path36.resolve)(this.opts.cwd, given) : (0, import_node_path36.join)(this.ctx.deps.root, DEVICE_STATE_DIR, `${name}.${ext}`);
       }
       /** Attaches to the visible WebView page of an Android device and runs `fn` with its client. */
       async onAndroidPage(h, pkg, fn, onEvent) {

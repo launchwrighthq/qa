@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { type App, LaunchwrightError, messageOf, resolveImport } from '../../kernel/index.mts';
-import { loadDb } from '../../services/peers.mts';
+import { type Db, loadDb } from '../../services/peers.mts';
 import type { QaConfig } from '../../config.mts';
 import { type CheckoutFacts, devProjectName } from './checkout.mts';
 import { databaseName, type DbSection, qaDbSection } from './stack.mts';
@@ -26,6 +26,10 @@ export interface QaAppEntry {
   create(sections: Record<string, unknown>, env: string): App | Promise<App>;
   /** The HTTP handler of the booted app: the project routes and the module routes, `qaRoutes(app)` among them. */
   serve(app: App): QaHandler;
+  /** The tenant of the world. Default: `DEFAULT_TENANT_ID` of the db module, for an app without it. */
+  tenantId?: string;
+  /** The connection a forged direct row write uses (spec 2.5). Default: token `DB` of the db module. */
+  db?(app: App): Db;
 }
 
 /** The QA database name: config `qa.database`, else `<dev.project>_qa`. */
@@ -156,6 +160,6 @@ export async function openWorld(entry: QaAppEntry, sections: Record<string, unkn
     }
     throw cause;
   }
-  const { DEFAULT_TENANT_ID } = await loadDb();
-  return { app, tenantId: DEFAULT_TENANT_ID, database: overlay.database, sections: qa, close: () => app.shutdown() };
+  const tenantId = entry.tenantId ?? (await loadDb()).DEFAULT_TENANT_ID;
+  return { app, tenantId, database: overlay.database, sections: qa, close: () => app.shutdown() };
 }
