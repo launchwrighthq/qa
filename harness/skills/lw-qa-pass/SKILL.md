@@ -396,9 +396,14 @@ disk and prints the links. Run it only when the caller asks to share the report.
 
 ## Product facts
 
-The skill holds the procedure only. Facts about this project sit in
-`{{lw:adapterDir}}/qa-pass/`: the route vocabulary and the route tables, the i18n dictionary
-path, the bot usernames, the session routes, the personas that most rows need, and the known
+The skill holds the procedure only. This command prints the adapter folder, `<adapterDir>`:
+
+```sh
+python3 .claude/agent-harness/bin/ah config get harness.adapterDir
+```
+
+Facts about this project sit in `<adapterDir>/qa-pass/`: the route vocabulary and the route
+tables, the i18n dictionary path, the bot usernames, the session routes, the personas that most rows need, and the known
 gaps of the QA world. No adapter means no product facts are known. Say that, and do not invent
 them.
 

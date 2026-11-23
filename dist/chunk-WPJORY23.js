@@ -37,15 +37,15 @@ async function createIntakeDriver(name, intake, deps = {}) {
   const maxBytes = maxBytesOf(intake);
   switch (name) {
     case "github": {
-      const { GithubIntakeDriver } = await import("./github-THGGWEPP.js");
+      const { GithubIntakeDriver } = await import("./github-MXIOXSWB.js");
       return new GithubIntakeDriver({ maxBytes, ...deps.gh ? { gh: deps.gh } : {}, ...deps.fetch ? { fetch: deps.fetch } : {} });
     }
     case "telegram-mtproto": {
-      const { TelegramMtprotoIntakeDriver } = await import("./telegram-mtproto-RNISPF4S.js");
+      const { TelegramMtprotoIntakeDriver } = await import("./telegram-mtproto-FRSWNEPN.js");
       return new TelegramMtprotoIntakeDriver(cfg, { maxBytes, ...deps.loadGramJs ? { loader: deps.loadGramJs } : {} });
     }
     case "telegram-bot": {
-      const { TelegramBotIntakeDriver } = await import("./telegram-bot-HDD4FZ4P.js");
+      const { TelegramBotIntakeDriver } = await import("./telegram-bot-TSTIU47E.js");
       return new TelegramBotIntakeDriver(cfg, { maxBytes, ...deps.fetch ? { fetch: deps.fetch } : {} });
     }
     case "fake": {
@@ -217,4 +217,4 @@ export {
   readGroups,
   applyGroups
 };
-//# sourceMappingURL=chunk-J6M6MYBF.js.map
+//# sourceMappingURL=chunk-WPJORY23.js.map

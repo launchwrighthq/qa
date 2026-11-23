@@ -52,7 +52,7 @@ import {
   writeHeld,
   writePng
 } from "./chunk-TRG6QP57.js";
-import "./chunk-TO3EZXJJ.js";
+import "./chunk-XG43L2MR.js";
 import "./chunk-UTLQTV2X.js";
 import {
   QA_TARGETS
@@ -461,7 +461,7 @@ var qaDeviceProvider = provider({
 // src/device/services/extension.mts
 var qaExtension = {
   name: "qa-device",
-  subcommands: { device: async () => (await import("./qa-device-4UBLLSDO.js")).default },
+  subcommands: { device: async () => (await import("./qa-device-FQIFVEF2.js")).default },
   targets: (config, root) => deviceTargets(withDevice(config), systemDeviceDeps(root))
 };
 export {

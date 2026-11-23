@@ -79,7 +79,7 @@ var CORE = {
   changes: () => import("./qa-changes-JZDTHDX4.js"),
   session: () => import("./qa-session-PYB5VSKK.js"),
   sweep: () => import("./qa-sweep-ZH6YZMVA.js"),
-  report: () => import("./qa-report-XTMMZZCG.js"),
+  report: () => import("./qa-report-ZODLCPSL.js"),
   publish: () => import("./qa-publish-LRR3FUYN.js"),
   gc: () => import("./qa-gc-NUOR4XF5.js"),
   check: () => import("./qa-check-DJEY7IYI.js"),
@@ -91,7 +91,7 @@ var CORE = {
   paths: () => import("./qa-paths-JC552C3P.js"),
   telegram: () => import("./qa-telegram-DBNCCMZQ.js"),
   sink: () => import("./qa-sink-CSJDZGOI.js"),
-  comments: () => import("./qa-comments-DJQP2BNQ.js"),
+  comments: () => import("./qa-comments-HRKITM2P.js"),
   consent: () => import("./qa-consent-NCUOVSBD.js")
 };
 function isCore(sub) {
@@ -167,4 +167,4 @@ export {
   qaCommand,
   qaProvider
 };
-//# sourceMappingURL=chunk-TO3EZXJJ.js.map
+//# sourceMappingURL=chunk-XG43L2MR.js.map

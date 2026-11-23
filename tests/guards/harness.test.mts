@@ -17,8 +17,10 @@ interface Manifest {
 const manifest = parse(readFileSync(join(MODULE_ROOT, 'harness.toml'), 'utf8')) as unknown as Manifest;
 const skillText = (id: string): string => readFileSync(join(MODULE_ROOT, 'harness', 'skills', id, 'SKILL.md'), 'utf8');
 
-/** The `{{lw:<key>}}` values that `lw harness sync` fills in. */
-const TEMPLATE_KEYS = new Set(['adapterDir', 'baseBranch', 'gateCommand', 'landCommand', 'envCommand', 'memoryIndex']);
+// agent-harness renders no placeholder in a skill, so a skill names the `ah config get` command of
+// each project fact. That works in a framework project and in a plain consumer.
+const ADAPTER_DIR_COMMAND = 'python3 .claude/agent-harness/bin/ah config get harness.adapterDir';
+const ENV_COMMAND_COMMAND = 'python3 .claude/agent-harness/bin/ah config get harness.envCommand';
 
 /** The text of one `## <n>. <title>` section, up to the next `## ` heading outside a code fence. */
 function section(text: string, heading: RegExp): string {
@@ -52,15 +54,21 @@ describe('qa harness manifest', () => {
     for (const r of manifest.rule ?? []) expect(existsSync(join(MODULE_ROOT, r.file))).toBe(true);
   });
 
-  it('uses only the template keys that sync fills in', () => {
+  it('holds no template placeholder, so a plain ah install gives the same text as lw harness sync', () => {
     const files = [...(manifest.skill ?? []).map((s) => join(MODULE_ROOT, s.dir, 'SKILL.md')), ...(manifest.rule ?? []).map((r) => join(MODULE_ROOT, r.file))];
-    const keys = files.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/\{\{lw:([A-Za-z]+)\}\}/g)].map((m) => m[1] as string));
-    expect(keys.filter((k) => !TEMPLATE_KEYS.has(k))).toEqual([]);
+    const hits = files.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/\{\{[^}]*\}\}/g)].map((m) => `${f}: ${m[0]}`));
+    expect(hits).toEqual([]);
   });
 
   it('reads the product facts of lw-qa-pass and lw-qa-device from their adapters', () => {
-    expect(skillText('lw-qa-pass')).toContain('{{lw:adapterDir}}/qa-pass/');
-    expect(skillText('lw-qa-device')).toContain('{{lw:adapterDir}}/qa-device/');
+    for (const [id, folder] of [['lw-qa-pass', 'qa-pass'], ['lw-qa-device', 'qa-device']] as const) {
+      expect(skillText(id)).toContain(ADAPTER_DIR_COMMAND);
+      expect(skillText(id)).toContain(`<adapterDir>/${folder}/`);
+    }
+  });
+
+  it('names the command that prints the env command where a skill asks about a key', () => {
+    for (const id of ['lw-qa-device', 'lw-qa-intake']) expect(skillText(id)).toContain(ENV_COMMAND_COMMAND);
   });
 });
 

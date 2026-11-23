@@ -114,10 +114,27 @@ function blank(label: string): string {
   return `<div class="qa-blank" role="note"><span class="qa-blank-mark">no evidence</span> ${esc(label)}</div>`;
 }
 
+/** The entries of the last attempt of one row on one leg. An earlier attempt is history. */
+function lastAttempt(pairEntries: readonly LedgerEntry[]): LedgerEntry[] {
+  const maxAttempt = pairEntries.reduce((n, e) => Math.max(n, e.attempt), 0);
+  return pairEntries.filter((e) => e.attempt === maxAttempt);
+}
+
+/** The ledger entries grouped by `pairKey(row, leg)`. */
+function entriesByPair(entries: readonly LedgerEntry[]): Map<string, LedgerEntry[]> {
+  const byPair = new Map<string, LedgerEntry[]>();
+  for (const e of entries) {
+    const key = pairKey(e.row, e.leg);
+    const list = byPair.get(key);
+    if (list) list.push(e);
+    else byPair.set(key, [e]);
+  }
+  return byPair;
+}
+
 /** The still, step, video and device-frame views of one row on one leg, read from the ledger. */
 function legViews(shot: Shot, leg: string, pairEntries: readonly LedgerEntry[]): { views: View[]; links: LedgerEntry[] } {
-  const maxAttempt = pairEntries.reduce((n, e) => Math.max(n, e.attempt), 0);
-  const current = pairEntries.filter((e) => e.attempt === maxAttempt);
+  const current = lastAttempt(pairEntries);
   const screenshot = current.find((e) => e.kind === 'screenshot');
   const videos = current.filter((e) => e.kind === 'video');
   const stepEntries = current.filter((e) => e.kind === 'step');
@@ -199,9 +216,7 @@ function rowViewer(shot: Shot, byPair: Map<string, LedgerEntry[]>): string {
 /** The gallery of one state: the still of each leg side by side, a labelled blank where none exists. */
 function stateGallery(shot: Shot, byPair: Map<string, LedgerEntry[]>): string {
   const cells = shot.legs.map((leg) => {
-    const entries = byPair.get(pairKey(shot.id, leg)) ?? [];
-    const maxAttempt = entries.reduce((n, e) => Math.max(n, e.attempt), 0);
-    const still = entries.find((e) => e.attempt === maxAttempt && (e.kind === 'screenshot' || e.kind === 'step'));
+    const still = lastAttempt(byPair.get(pairKey(shot.id, leg)) ?? []).find((e) => e.kind === 'screenshot' || e.kind === 'step');
     const media = still ? `<img src="${mediaSrc(still.path)}" alt="${esc(`${leg} ${shot.screen} ${shot.state}`)}" loading="lazy">` : blank(`no still for ${leg} in the ledger`);
     return `<figure class="qa-cell"><figcaption>${esc(leg)}</figcaption>${media}</figure>`;
   });
@@ -404,6 +419,69 @@ function findingsBlock(input: ViewerInput, latest: Map<string, RowResult>, featu
   return parts.join('');
 }
 
+/** How many videos one feature plays on the index. The rest stay on the feature page. */
+export const INDEX_VIDEOS_PER_FEATURE = 3;
+
+/** The first entry of `kind` on the last attempt of a row, leg by leg in plan order. */
+function firstOnLegs(shot: Shot, byPair: Map<string, LedgerEntry[]>, kind: LedgerEntry['kind']): LedgerEntry | undefined {
+  for (const leg of shot.legs) {
+    const hit = lastAttempt(byPair.get(pairKey(shot.id, leg)) ?? []).find((e) => e.kind === kind);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+/** True when the plan asks a row for a video: it has act steps, or `video: true`. */
+const wantsVideo = (shot: Shot): boolean => shot.video === true || (shot.act?.length ?? 0) > 0;
+
+/**
+ * The media of one feature on the index (spec 3.4, L4): the key screenshot as a thumbnail that
+ * links to the feature page, then a player per row with a video. The key screenshot is the settled
+ * shot of the first row, on the first leg, that has one. A missing piece shows a labelled blank.
+ */
+function featureMedia(feature: Feature, byPair: Map<string, LedgerEntry[]>): string {
+  let key: { shot: Shot; entry: LedgerEntry } | undefined;
+  for (const shot of feature.shots) {
+    const entry = firstOnLegs(shot, byPair, 'screenshot');
+    if (entry) {
+      key = { shot, entry };
+      break;
+    }
+  }
+  const thumb = key
+    ? `<a class="qa-thumb" href="${esc(feature.file)}#${stateAnchor(key.shot.id)}"><img src="${mediaSrc(key.entry.path)}" alt="${esc(`${key.entry.leg} ${key.shot.screen} ${key.shot.state}`)}" loading="lazy"></a>`
+    : blank(`${feature.name} has no settled screenshot in the ledger`);
+
+  const clips: string[] = [];
+  for (const shot of feature.shots) {
+    const video = firstOnLegs(shot, byPair, 'video');
+    const caption = `<figcaption><a href="${esc(feature.file)}#${stateAnchor(shot.id)}"><code>${esc(shot.id)}</code></a>${video ? ` on <code>${esc(video.leg)}</code>` : ''}</figcaption>`;
+    if (video) {
+      clips.push(`<figure class="qa-clip">${caption}<video src="${mediaSrc(video.path)}" controls playsinline preload="metadata">${esc(`${video.leg} ${shot.state} video`)}</video></figure>`);
+    } else if (wantsVideo(shot)) {
+      clips.push(`<figure class="qa-clip">${caption}${blank(`${shot.id} asks for a video and the ledger has none`)}</figure>`);
+    }
+  }
+  const shown = clips.slice(0, INDEX_VIDEOS_PER_FEATURE);
+  const more = clips.length - shown.length;
+  const moreLink = more > 0 ? `<p class="qa-more"><a href="${esc(feature.file)}">${more} more on the feature page</a></p>` : '';
+  const clipBlock = shown.length > 0 ? `<div class="qa-clips">${shown.join('')}</div>${moreLink}` : '';
+
+  return [
+    `<article class="qa-media-feature" data-feature="${esc(feature.token)}">`,
+    `<h3><a href="${esc(feature.file)}">${esc(feature.name)}</a></h3>`,
+    thumb,
+    clipBlock,
+    '</article>',
+  ].join('');
+}
+
+/** The media section of the index, so the first page carries the pictures as well as the score. */
+function mediaBlock(features: readonly Feature[], entries: readonly LedgerEntry[]): string {
+  const byPair = entriesByPair(entries);
+  return `<section class="qa-media"><h2>Media</h2><div class="qa-media-grid">${features.map((f) => featureMedia(f, byPair)).join('')}</div></section>`;
+}
+
 /** The feature cards of the index: one link per page, with the state count. */
 function featureCards(features: readonly Feature[], latest: Map<string, RowResult>): string {
   const cards = features.map((f) => {
@@ -431,7 +509,7 @@ function featureCards(features: readonly Feature[], latest: Map<string, RowResul
 /** The default flow-anchor name of a new note on the index page. */
 const INDEX_PAGE = 'overview';
 
-/** The index page: the run header, the score gauge, the open findings and the feature links. */
+/** The index page: the run header, the score gauge, the open findings, the media and the feature links. */
 function renderIndex(input: ViewerInput, features: readonly Feature[], latest: Map<string, RowResult>, opts: ViewerOptions, comments: readonly Comment[], numberOf: NumberOf): string {
   const featureOf = new Map(features.map((f): [string, Feature] => [f.token, f]));
   const totals = { rows: input.manifest.shots.length, legs: plannedPairs(input.manifest).length };
@@ -441,6 +519,7 @@ function renderIndex(input: ViewerInput, features: readonly Feature[], latest: M
     marksStrip(loose, numberOf, true),
     scoreBlock(input, opts),
     findingsBlock(input, latest, featureOf),
+    mediaBlock(features, input.entries),
     featureCards(features, latest),
   ].join('\n');
   return page({ title: `QA: ${input.title}`, heading: input.title, crumb: '<span class="qa-crumb">Overview</span>', body, sidebar: commentSidebar(comments, numberOf, INDEX_PAGE), data: commentsData(comments) });
@@ -448,13 +527,7 @@ function renderIndex(input: ViewerInput, features: readonly Feature[], latest: M
 
 /** One feature page: every state of the screen, each with its gallery and interactive viewer. */
 function renderFeature(input: ViewerInput, feature: Feature, latest: Map<string, RowResult>, comments: readonly Comment[], numberOf: NumberOf): string {
-  const byPair = new Map<string, LedgerEntry[]>();
-  for (const e of input.entries) {
-    const key = pairKey(e.row, e.leg);
-    const list = byPair.get(key);
-    if (list) list.push(e);
-    else byPair.set(key, [e]);
-  }
+  const byPair = entriesByPair(input.entries);
   const markFor = (shotId: string): string => marksStrip(comments.filter((c) => marksShot(c.anchor, shotId)), numberOf);
   const states = feature.shots.map((shot) => renderState(shot, latest, byPair, input.entries, markFor(shot.id))).join('\n');
   const screenId = feature.token;
@@ -598,6 +671,16 @@ h3{font-size:1.1rem;margin:0 0 .5rem}
 .qa-findings th,.qa-findings td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--rule);vertical-align:top}
 .qa-findings th{color:var(--ink-soft);font-weight:600}
 .qa-gaps,.qa-prov,.qa-files,.qa-expect{color:var(--ink-soft);font-size:.92rem}
+.qa-media-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(16rem,1fr));gap:.8rem}
+.qa-media-feature{background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:.8rem;display:flex;flex-direction:column;gap:.6rem;min-width:0}
+.qa-media-feature h3{margin:0;font-size:1rem}
+.qa-thumb{display:block;background:var(--sunk);border:1px solid var(--rule);border-radius:8px;padding:.4rem}
+.qa-thumb img{display:block;margin:0 auto;max-height:18rem;width:auto;border-radius:6px}
+.qa-clips{display:flex;flex-direction:column;gap:.6rem}
+.qa-clip{margin:0;display:flex;flex-direction:column;gap:.3rem}
+.qa-clip figcaption{font-size:.82rem;color:var(--ink-soft)}
+.qa-clip video{display:block;max-width:100%;max-height:18rem;border-radius:6px;background:var(--sunk)}
+.qa-more{margin:0;font-size:.86rem}
 .qa-cardgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.8rem}
 .qa-card{display:flex;flex-direction:column;gap:.25rem;position:relative;background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:1rem;text-decoration:none;color:var(--ink)}
 .qa-card:hover{border-color:var(--accent)}

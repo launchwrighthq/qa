@@ -123,7 +123,8 @@ iOS or the newest model. It drives Safari only, not the Telegram WebView.
   dashboard holds the console log.
 - Read the iOS version from the `Version/` token of the user agent, not from the OS token.
 - The keys are `BROWSERSTACK_USERNAME` and `BROWSERSTACK_ACCESS_KEY` in the secret store. Ask
-  `{{lw:envCommand}}` whether a key is set. Never print a value.
+  the env command whether a key is set. Never print a value.
+  `python3 .claude/agent-harness/bin/ah config get harness.envCommand` prints that command.
 
 ## The sign-in is the operator's
 
@@ -146,7 +147,13 @@ lw-qa device down --device <name>
 
 ## Product facts
 
-Facts about this project sit in `{{lw:adapterDir}}/qa-device/`: the rigs and what each one hosts,
-the device names, the dev bot username, the Telegram account of each device, the ingress of each
+This command prints the adapter folder, `<adapterDir>`:
+
+```sh
+python3 .claude/agent-harness/bin/ah config get harness.adapterDir
+```
+
+Facts about this project sit in `<adapterDir>/qa-device/`: the rigs and what each one hosts, the
+device names, the dev bot username, the Telegram account of each device, the ingress of each
 rig, and the known faults of each device. No adapter means no product facts are known. Say that,
 and do not invent them.

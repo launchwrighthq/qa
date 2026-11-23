@@ -29,8 +29,8 @@ Chat text, reporter names and media are personal data.
   file at its intake path in section 4. The file stays in `.lw/qa/intake/`.
 - An MTProto user session can do anything that its account can do. The read-only method
   allowlist is an accident guard, not a sandbox. Use only a session that the user supplies for QA.
-- Never print a session string, a token or an API hash. Ask `{{lw:envCommand}}` whether a key is
-  set.
+- Never print a session string, a token or an API hash. Ask the env command whether a key is
+  set. `python3 .claude/agent-harness/bin/ah config get harness.envCommand` prints that command.
 
 ## GitHub
 

@@ -4855,8 +4855,8 @@ var init_runner = __esm({
         const gated = await this.gate(shot, leg, target, needs, view);
         if (gated || !target) return { row: shot.id, leg: leg.name, failures: [], attempts: 0, ms: 0, status: gated?.status ?? "n/a", reason: gated?.reason ?? "no target" };
         const device = !BROWSER_TARGETS.has(target.name);
-        const wantsVideo = device || shot.video === true || (shot.act?.length ?? 0) > 0;
-        const video = wantsVideo && target.capabilities.has("video");
+        const wantsVideo2 = device || shot.video === true || (shot.act?.length ?? 0) > 0;
+        const video = wantsVideo2 && target.capabilities.has("video");
         const limit = device ? this.deps.config.evidence.attempts : 1;
         let last = { failures: [], notes: [], entries: [] };
         let attempts = 0;
@@ -4870,7 +4870,7 @@ var init_runner = __esm({
           if (last.failures.length === 0) break;
         }
         const notes = [...last.notes];
-        if (wantsVideo && !video) notes.unshift(`video n/a: the ${target.name} target has no video capability`);
+        if (wantsVideo2 && !video) notes.unshift(`video n/a: the ${target.name} target has no video capability`);
         return {
           row: shot.id,
           leg: leg.name,
@@ -8525,9 +8525,22 @@ function isDeviceLeg(entries) {
 function blank(label) {
   return `<div class="qa-blank" role="note"><span class="qa-blank-mark">no evidence</span> ${esc2(label)}</div>`;
 }
-function legViews(shot, leg, pairEntries) {
+function lastAttempt(pairEntries) {
   const maxAttempt = pairEntries.reduce((n, e) => Math.max(n, e.attempt), 0);
-  const current = pairEntries.filter((e) => e.attempt === maxAttempt);
+  return pairEntries.filter((e) => e.attempt === maxAttempt);
+}
+function entriesByPair(entries) {
+  const byPair = /* @__PURE__ */ new Map();
+  for (const e of entries) {
+    const key = pairKey(e.row, e.leg);
+    const list3 = byPair.get(key);
+    if (list3) list3.push(e);
+    else byPair.set(key, [e]);
+  }
+  return byPair;
+}
+function legViews(shot, leg, pairEntries) {
+  const current = lastAttempt(pairEntries);
   const screenshot = current.find((e) => e.kind === "screenshot");
   const videos = current.filter((e) => e.kind === "video");
   const stepEntries = current.filter((e) => e.kind === "step");
@@ -8591,9 +8604,7 @@ function rowViewer(shot, byPair) {
 }
 function stateGallery(shot, byPair) {
   const cells = shot.legs.map((leg) => {
-    const entries = byPair.get(pairKey(shot.id, leg)) ?? [];
-    const maxAttempt = entries.reduce((n, e) => Math.max(n, e.attempt), 0);
-    const still = entries.find((e) => e.attempt === maxAttempt && (e.kind === "screenshot" || e.kind === "step"));
+    const still = lastAttempt(byPair.get(pairKey(shot.id, leg)) ?? []).find((e) => e.kind === "screenshot" || e.kind === "step");
     const media = still ? `<img src="${mediaSrc(still.path)}" alt="${esc2(`${leg} ${shot.screen} ${shot.state}`)}" loading="lazy">` : blank(`no still for ${leg} in the ledger`);
     return `<figure class="qa-cell"><figcaption>${esc2(leg)}</figcaption>${media}</figure>`;
   });
@@ -8750,6 +8761,49 @@ function findingsBlock(input, latest, featureOf) {
   parts.push("</section>");
   return parts.join("");
 }
+function firstOnLegs(shot, byPair, kind) {
+  for (const leg of shot.legs) {
+    const hit = lastAttempt(byPair.get(pairKey(shot.id, leg)) ?? []).find((e) => e.kind === kind);
+    if (hit) return hit;
+  }
+  return void 0;
+}
+function featureMedia(feature, byPair) {
+  let key;
+  for (const shot of feature.shots) {
+    const entry = firstOnLegs(shot, byPair, "screenshot");
+    if (entry) {
+      key = { shot, entry };
+      break;
+    }
+  }
+  const thumb = key ? `<a class="qa-thumb" href="${esc2(feature.file)}#${stateAnchor(key.shot.id)}"><img src="${mediaSrc(key.entry.path)}" alt="${esc2(`${key.entry.leg} ${key.shot.screen} ${key.shot.state}`)}" loading="lazy"></a>` : blank(`${feature.name} has no settled screenshot in the ledger`);
+  const clips = [];
+  for (const shot of feature.shots) {
+    const video = firstOnLegs(shot, byPair, "video");
+    const caption2 = `<figcaption><a href="${esc2(feature.file)}#${stateAnchor(shot.id)}"><code>${esc2(shot.id)}</code></a>${video ? ` on <code>${esc2(video.leg)}</code>` : ""}</figcaption>`;
+    if (video) {
+      clips.push(`<figure class="qa-clip">${caption2}<video src="${mediaSrc(video.path)}" controls playsinline preload="metadata">${esc2(`${video.leg} ${shot.state} video`)}</video></figure>`);
+    } else if (wantsVideo(shot)) {
+      clips.push(`<figure class="qa-clip">${caption2}${blank(`${shot.id} asks for a video and the ledger has none`)}</figure>`);
+    }
+  }
+  const shown = clips.slice(0, INDEX_VIDEOS_PER_FEATURE);
+  const more = clips.length - shown.length;
+  const moreLink = more > 0 ? `<p class="qa-more"><a href="${esc2(feature.file)}">${more} more on the feature page</a></p>` : "";
+  const clipBlock = shown.length > 0 ? `<div class="qa-clips">${shown.join("")}</div>${moreLink}` : "";
+  return [
+    `<article class="qa-media-feature" data-feature="${esc2(feature.token)}">`,
+    `<h3><a href="${esc2(feature.file)}">${esc2(feature.name)}</a></h3>`,
+    thumb,
+    clipBlock,
+    "</article>"
+  ].join("");
+}
+function mediaBlock(features, entries) {
+  const byPair = entriesByPair(entries);
+  return `<section class="qa-media"><h2>Media</h2><div class="qa-media-grid">${features.map((f) => featureMedia(f, byPair)).join("")}</div></section>`;
+}
 function featureCards(features, latest) {
   const cards = features.map((f) => {
     let passed = 0;
@@ -8781,18 +8835,13 @@ function renderIndex(input, features, latest, opts, comments2, numberOf) {
     marksStrip(loose, numberOf, true),
     scoreBlock2(input, opts),
     findingsBlock(input, latest, featureOf),
+    mediaBlock(features, input.entries),
     featureCards(features, latest)
   ].join("\n");
   return page({ title: `QA: ${input.title}`, heading: input.title, crumb: '<span class="qa-crumb">Overview</span>', body, sidebar: commentSidebar(comments2, numberOf, INDEX_PAGE), data: commentsData(comments2) });
 }
 function renderFeature(input, feature, latest, comments2, numberOf) {
-  const byPair = /* @__PURE__ */ new Map();
-  for (const e of input.entries) {
-    const key = pairKey(e.row, e.leg);
-    const list3 = byPair.get(key);
-    if (list3) list3.push(e);
-    else byPair.set(key, [e]);
-  }
+  const byPair = entriesByPair(input.entries);
   const markFor = (shotId) => marksStrip(comments2.filter((c) => marksShot(c.anchor, shotId)), numberOf);
   const states = feature.shots.map((shot) => renderState(shot, latest, byPair, input.entries, markFor(shot.id))).join("\n");
   const screenId = feature.token;
@@ -8870,7 +8919,7 @@ async function buildViewer(mdPath, opts = {}) {
   }
   return { dir, index, pages: written };
 }
-var import_promises15, import_node_path27, MEDIA_PREFIX, viewerDirName, esc2, mediaSrc, stateAnchor, chipClass, INDEX_PAGE, STYLE, SCRIPT;
+var import_promises15, import_node_path27, MEDIA_PREFIX, viewerDirName, esc2, mediaSrc, stateAnchor, chipClass, INDEX_VIDEOS_PER_FEATURE, wantsVideo, INDEX_PAGE, STYLE, SCRIPT;
 var init_viewer = __esm({
   "src/services/viewer.mts"() {
     "use strict";
@@ -8891,6 +8940,8 @@ var init_viewer = __esm({
     mediaSrc = (path) => esc2(MEDIA_PREFIX + path);
     stateAnchor = (rowId) => `state-${rowId.replace(/\./g, "-")}`;
     chipClass = (status) => `qa-chip qa-chip-${status}`;
+    INDEX_VIDEOS_PER_FEATURE = 3;
+    wantsVideo = (shot) => shot.video === true || (shot.act?.length ?? 0) > 0;
     INDEX_PAGE = "overview";
     STYLE = `
 :root{color-scheme:light;--ground:#f4f7f6;--surface:#fff;--sunk:#edf2f1;--ink:#0f1a19;--ink-soft:#546360;--rule:#d9e2e0;--accent:#15605a;--accent-soft:#e2efec;--pass:#15605a;--fail:#8c2b2b;--fail-soft:#f8e9e7;--partial:#9a5b08;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
@@ -8928,6 +8979,16 @@ h3{font-size:1.1rem;margin:0 0 .5rem}
 .qa-findings th,.qa-findings td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--rule);vertical-align:top}
 .qa-findings th{color:var(--ink-soft);font-weight:600}
 .qa-gaps,.qa-prov,.qa-files,.qa-expect{color:var(--ink-soft);font-size:.92rem}
+.qa-media-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(16rem,1fr));gap:.8rem}
+.qa-media-feature{background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:.8rem;display:flex;flex-direction:column;gap:.6rem;min-width:0}
+.qa-media-feature h3{margin:0;font-size:1rem}
+.qa-thumb{display:block;background:var(--sunk);border:1px solid var(--rule);border-radius:8px;padding:.4rem}
+.qa-thumb img{display:block;margin:0 auto;max-height:18rem;width:auto;border-radius:6px}
+.qa-clips{display:flex;flex-direction:column;gap:.6rem}
+.qa-clip{margin:0;display:flex;flex-direction:column;gap:.3rem}
+.qa-clip figcaption{font-size:.82rem;color:var(--ink-soft)}
+.qa-clip video{display:block;max-width:100%;max-height:18rem;border-radius:6px;background:var(--sunk)}
+.qa-more{margin:0;font-size:.86rem}
 .qa-cardgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.8rem}
 .qa-card{display:flex;flex-direction:column;gap:.25rem;position:relative;background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:1rem;text-decoration:none;color:var(--ink)}
 .qa-card:hover{border-color:var(--accent)}

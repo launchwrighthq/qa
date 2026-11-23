@@ -6,7 +6,7 @@ import type { Manifest, Shot } from '../../../src/services/manifest.mts';
 import type { LedgerEntry, RowResult } from '../../../src/services/types.mts';
 import { makeComment } from '../../../src/services/comments.mts';
 import { DEFAULT_GAUGE_COLOR } from '../../../src/services/score.mts';
-import { buildViewer, renderViewerBundle, type ViewerInput } from '../../../src/services/viewer.mts';
+import { buildViewer, INDEX_VIDEOS_PER_FEATURE, renderViewerBundle, type ViewerInput } from '../../../src/services/viewer.mts';
 import { writeReportFixture } from '../../../src/testing/report-fixture.mts';
 
 const SLUG = '2026-01-01-sample';
@@ -122,6 +122,63 @@ describe('renderViewerBundle (spec 2.8, R8)', () => {
     const feature = renderViewerBundle(input).pages.get('feature-home.html') as string;
     expect(feature).toContain('qa-blank');
     expect(feature).toContain('has no screenshot for step');
+  });
+});
+
+describe('renderViewerBundle index media (spec 3.4, L4)', () => {
+  const indexOf = (input: ViewerInput): string => renderViewerBundle(input).pages.get('index.html') as string;
+  const mediaOf = (index: string): string => index.slice(index.indexOf('<section class="qa-media">'), index.indexOf('<section class="qa-features">'));
+
+  it('puts the key screenshot of each feature on the index as a thumbnail that links to its state', () => {
+    const media = mediaOf(indexOf(sampleInput()));
+    expect(media).toContain(`<a class="qa-thumb" href="feature-home.html#state-home-guest"><img src="../../assets/${SLUG}/desktop-home.guest.png"`);
+    expect(media.indexOf('<section class="qa-media">')).toBe(0);
+  });
+
+  it('takes the key screenshot from the first leg that has one, on the last attempt', () => {
+    const input = sampleInput();
+    input.entries = [
+      makeEntry({ path: `assets/${SLUG}/phone-home.guest.a1.png`, kind: 'screenshot', leg: 'phone', row: 'home.guest' }),
+      makeEntry({ path: `assets/${SLUG}/phone-home.guest.a2.png`, kind: 'screenshot', leg: 'phone', row: 'home.guest', attempt: 2 }),
+    ];
+    const media = mediaOf(indexOf(input));
+    expect(media).toContain(`assets/${SLUG}/phone-home.guest.a2.png`);
+    expect(media).not.toContain('a1.png');
+  });
+
+  it('plays each row video inline on the index with controls', () => {
+    const media = mediaOf(indexOf(sampleInput()));
+    expect(media).toContain(`<video src="../../assets/${SLUG}/desktop-home.guest.webm" controls playsinline preload="metadata">`);
+    expect(media).toContain('<a href="feature-home.html#state-home-guest"><code>home.guest</code></a> on <code>desktop</code>');
+  });
+
+  it('caps the videos of a feature and links the rest to the feature page', () => {
+    const input = sampleInput();
+    const states = ['a', 'b', 'c', 'd', 'e'];
+    input.manifest.shots = states.map((s) => makeShot({ id: `home.${s}`, screen: 'home', state: s, legs: ['desktop'] }));
+    input.entries = states.map((s) => makeEntry({ path: `assets/${SLUG}/desktop-home.${s}.webm`, kind: 'video', leg: 'desktop', row: `home.${s}` }));
+    const media = mediaOf(indexOf(input));
+    expect(media.match(/<video /g)).toHaveLength(INDEX_VIDEOS_PER_FEATURE);
+    expect(media).toContain(`<a href="feature-home.html">${states.length - INDEX_VIDEOS_PER_FEATURE} more on the feature page</a>`);
+  });
+
+  it('shows a labelled blank for a feature with no screenshot and for a row that asks for a video', () => {
+    const input = sampleInput();
+    input.manifest.shots.push(makeShot({ id: 'cart.empty', screen: 'cart', state: 'empty', legs: ['desktop'], video: true }));
+    const media = mediaOf(indexOf(input));
+    expect(media).toContain('data-feature="cart"');
+    expect(media).toContain('cart has no settled screenshot in the ledger');
+    expect(media).toContain('cart.empty asks for a video and the ledger has none');
+  });
+
+  it('keeps the score, the findings, the feature links and the comment sidebar on the index', () => {
+    const index = indexOf(sampleInput());
+    expect(index).toContain('QA score');
+    expect(index).toContain('Open findings');
+    expect(index).toContain('<a class="qa-card" href="feature-home.html">');
+    expect(index).toContain('data-qa-comments');
+    expect(index.indexOf('qa-findings')).toBeLessThan(index.indexOf('qa-media'));
+    expect(index.indexOf('qa-media')).toBeLessThan(index.indexOf('qa-features'));
   });
 });
 

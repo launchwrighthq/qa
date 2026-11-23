@@ -9,7 +9,7 @@ import {
 import {
   QA_INTAKE_SPEC_VERSION
 } from "./chunk-K3F4HTKJ.js";
-import "./chunk-TO3EZXJJ.js";
+import "./chunk-XG43L2MR.js";
 import "./chunk-UTLQTV2X.js";
 import "./chunk-CB2YK37X.js";
 import "./chunk-W4O3YTED.js";
@@ -247,4 +247,4 @@ export {
   readOnlyGramJs,
   telegramMtprotoConfig
 };
-//# sourceMappingURL=telegram-mtproto-RNISPF4S.js.map
+//# sourceMappingURL=telegram-mtproto-FRSWNEPN.js.map

@@ -19,6 +19,17 @@ function loadSections(cwd: string): Record<string, unknown> {
   return {};
 }
 
+/**
+ * Resolves when the OS has every chunk that `stream` queued before this call. On a pipe, Node
+ * writes stdout and stderr asynchronously, so an exit before this point drops the queued tail. A
+ * write error still resolves: the stream emits it as its own `error` event.
+ */
+function flushed(stream: NodeJS.WriteStream): Promise<void> {
+  return new Promise((done) => {
+    stream.write('', () => done());
+  });
+}
+
 const cwd = process.cwd();
 const code = await qaCommand.run(process.argv.slice(2), {
   cwd,
@@ -30,4 +41,8 @@ const code = await qaCommand.run(process.argv.slice(2), {
   commandName: 'lw-qa',
   extensions: [deviceExtension, intakeExtension],
 });
+process.exitCode = code;
+await Promise.all([flushed(process.stdout), flushed(process.stderr)]);
+// The exit after the flush ends a command that left a handle open, such as a client socket. A
+// long-running command (serve, sink, telegram) returns from `run` only after its own signal stop.
 process.exit(code);
