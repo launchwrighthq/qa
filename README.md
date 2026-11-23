@@ -176,6 +176,41 @@ The build script is `compile`. The package has no `build`, `prepare`, `prepack` 
 npm runs `prepare` for a git dependency, and with a `build` script it installs the dev dependencies
 to build first. So an npm consumer of the git tag installs the committed `dist/` as it is.
 
+Turn on the versioned git hooks once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The `pre-push` hook runs the publish scan on the commits you push, and on the whole tree and the
+tag object of a pushed tag. It refuses the push on a hit. `pnpm scan <file ...>` scans files, and
+`pnpm scan --help` lists the git modes.
+
+## Release
+
+The repository is public, so a tag is public at once. Release only with the release script, from a
+clean `main`:
+
+```bash
+pnpm release patch --dry-run   # every check, then the plan; changes nothing
+pnpm release patch             # commit chore(release): vX.Y.Z and tag it
+pnpm release 0.2.0 --push      # the same, then push main and the tag in one atomic push
+```
+
+The script runs these checks before it writes the release commit, and stops at the first failure:
+
+- HEAD is on `main`, the tree is clean, and the tag is new.
+- The git author and committer use the GitHub noreply mail form.
+- The publish scan passes on the tree of `HEAD` and on each commit since the last tag: the files,
+  the messages, the identities and the tag messages.
+- `pnpm typecheck`, `pnpm test` and `pnpm compile` pass, and `compile` leaves `dist/` unchanged.
+
+The publish scan (`scripts/scan.mjs`) refuses credential shapes, phone numbers, product words, IPv4
+addresses other than `127.0.0.1` and `0.0.0.0`, `<name>.local` hosts, home folders other than
+`/home/user` and `/home/dev`, and private mail addresses. It prints each hit as `path:line kind` and
+never the value. Build a synthetic test sample from parts, or end its line with
+`publish-audit: allow`. The guard test `tests/guards/public-boundary.test.mts` uses the same rules.
+
 ## License
 
 MIT.

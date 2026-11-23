@@ -1,0 +1,37 @@
+# The publish scan and the public-boundary guard (spec 2.12, risk 3.5) on a pushed tag and on a pull
+# request. `pnpm release` is the gate before a tag; this job is the check that GitHub runs.
+name: release-scan
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Publish scan of a tag
+        if: github.event_name == 'push'
+        run: node scripts/scan.mjs --tree "$GITHUB_REF_NAME" --since-tag "$GITHUB_REF_NAME"
+      - name: Publish scan of a pull request
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/scan.mjs --tree "$HEAD" --commits "$BASE..$HEAD"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - run: pnpm install --frozen-lockfile
+      - name: Public-boundary guard
+        run: pnpm test tests/guards/public-boundary.test.mts
