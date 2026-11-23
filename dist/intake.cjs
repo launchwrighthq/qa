@@ -30,10 +30,18 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
+// node_modules/.pnpm/tsup@8.5.1_postcss@8.5.33_tsx@4.23.15_typescript@6.0.3/node_modules/tsup/assets/cjs_shims.js
+var init_cjs_shims = __esm({
+  "node_modules/.pnpm/tsup@8.5.1_postcss@8.5.33_tsx@4.23.15_typescript@6.0.3/node_modules/tsup/assets/cjs_shims.js"() {
+    "use strict";
+  }
+});
+
 // src/kernel/services/actor.mts
 var init_actor = __esm({
   "src/kernel/services/actor.mts"() {
     "use strict";
+    init_cjs_shims();
   }
 });
 
@@ -42,6 +50,7 @@ var LaunchwrightError, BootError;
 var init_errors = __esm({
   "src/kernel/services/errors.mts"() {
     "use strict";
+    init_cjs_shims();
     LaunchwrightError = class extends Error {
       code;
       context;
@@ -62,6 +71,7 @@ var import_zod, APP_RUNTIMES, APP_NAME, processSchema, appSchema, appsSchema, co
 var init_apps = __esm({
   "src/kernel/services/apps.mts"() {
     "use strict";
+    init_cjs_shims();
     import_zod = require("zod");
     init_errors();
     APP_RUNTIMES = ["node", "python", "web"];
@@ -94,6 +104,7 @@ var init_apps = __esm({
 var init_apps_contract = __esm({
   "src/kernel/services/apps-contract.mts"() {
     "use strict";
+    init_cjs_shims();
     init_apps();
   }
 });
@@ -106,6 +117,7 @@ var systemClock;
 var init_clock = __esm({
   "src/kernel/services/clock.mts"() {
     "use strict";
+    init_cjs_shims();
     systemClock = {
       now: () => Date.now(),
       date: () => new Date(Date.now()),
@@ -135,6 +147,7 @@ var import_zod2, PROCESS_ROLES, kernelConfig;
 var init_config = __esm({
   "src/kernel/config.mts"() {
     "use strict";
+    init_cjs_shims();
     import_zod2 = require("zod");
     init_errors();
     PROCESS_ROLES = ["all", "web", "worker"];
@@ -157,6 +170,7 @@ var init_config = __esm({
 var init_container = __esm({
   "src/kernel/services/container.mts"() {
     "use strict";
+    init_cjs_shims();
     init_errors();
   }
 });
@@ -165,6 +179,7 @@ var init_container = __esm({
 var init_events = __esm({
   "src/kernel/events.mts"() {
     "use strict";
+    init_cjs_shims();
     init_errors();
   }
 });
@@ -173,6 +188,7 @@ var init_events = __esm({
 var init_health = __esm({
   "src/kernel/services/health.mts"() {
     "use strict";
+    init_cjs_shims();
     init_errors();
   }
 });
@@ -181,6 +197,7 @@ var init_health = __esm({
 var init_lifecycle = __esm({
   "src/kernel/services/lifecycle.mts"() {
     "use strict";
+    init_cjs_shims();
     init_errors();
   }
 });
@@ -190,6 +207,7 @@ var SECRET_WORDS, SECRET_KEY_PATTERN;
 var init_key_words = __esm({
   "src/kernel/services/key-words.mts"() {
     "use strict";
+    init_cjs_shims();
     init_errors();
     SECRET_WORDS = ["password", "secret", "token", "key", "authorization"];
     SECRET_KEY_PATTERN = new RegExp(`^(?:${SECRET_WORDS.join("|")})s?$`, "i");
@@ -200,6 +218,7 @@ var init_key_words = __esm({
 var init_logger = __esm({
   "src/kernel/services/logger.mts"() {
     "use strict";
+    init_cjs_shims();
     init_clock();
     init_key_words();
   }
@@ -209,6 +228,7 @@ var init_logger = __esm({
 var init_order = __esm({
   "src/kernel/services/order.mts"() {
     "use strict";
+    init_cjs_shims();
   }
 });
 
@@ -220,6 +240,7 @@ var kernelProvider;
 var init_provider = __esm({
   "src/kernel/provider.mts"() {
     "use strict";
+    init_cjs_shims();
     init_config();
     kernelProvider = provider({
       name: "kernel",
@@ -234,6 +255,7 @@ var import_zod3, DEV_RELEASE, RELEASE_ID, SEMVER, stampConfig;
 var init_stamp = __esm({
   "src/kernel/services/stamp.mts"() {
     "use strict";
+    init_cjs_shims();
     import_zod3 = require("zod");
     init_clock();
     init_errors();
@@ -257,6 +279,7 @@ var APP, CONFIG, LOGGER, EVENTS, CLOCK, ACCOUNTS;
 var init_tokens = __esm({
   "src/kernel/tokens.mts"() {
     "use strict";
+    init_cjs_shims();
     APP = token("kernel.app");
     CONFIG = token("kernel.config");
     LOGGER = token("kernel.logger");
@@ -270,6 +293,7 @@ var init_tokens = __esm({
 var init_app = __esm({
   "src/kernel/services/app.mts"() {
     "use strict";
+    init_cjs_shims();
     init_apps();
     init_clock();
     init_config();
@@ -291,6 +315,7 @@ var import_node_crypto, encoder;
 var init_hmac = __esm({
   "src/kernel/services/hmac.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_crypto = require("crypto");
     encoder = new TextEncoder();
   }
@@ -300,6 +325,7 @@ var init_hmac = __esm({
 var init_env_grammar = __esm({
   "src/kernel/services/env-grammar.mts"() {
     "use strict";
+    init_cjs_shims();
     init_errors();
   }
 });
@@ -309,6 +335,7 @@ var BaseDriver;
 var init_driver = __esm({
   "src/kernel/services/driver.mts"() {
     "use strict";
+    init_cjs_shims();
     BaseDriver = class {
       constructor(name, specVersion, capabilities) {
         this.name = name;
@@ -329,6 +356,7 @@ var init_driver = __esm({
 var init_html = __esm({
   "src/kernel/services/html.mts"() {
     "use strict";
+    init_cjs_shims();
   }
 });
 
@@ -336,6 +364,7 @@ var init_html = __esm({
 var init_manager = __esm({
   "src/kernel/services/manager.mts"() {
     "use strict";
+    init_cjs_shims();
     init_errors();
     init_tokens();
   }
@@ -346,6 +375,7 @@ var import_promises, import_node_path, import_smol_toml, import_zod4, manifestSc
 var init_manifest = __esm({
   "src/kernel/services/manifest.mts"() {
     "use strict";
+    init_cjs_shims();
     import_promises = require("fs/promises");
     import_node_path = require("path");
     import_smol_toml = require("smol-toml");
@@ -390,6 +420,7 @@ async function optionalPeer(name, load) {
 var init_peers = __esm({
   "src/kernel/services/peers.mts"() {
     "use strict";
+    init_cjs_shims();
     init_errors();
   }
 });
@@ -399,6 +430,7 @@ var import_node_fs;
 var init_module_fixture = __esm({
   "src/kernel/services/module-fixture.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_fs = require("fs");
     init_errors();
   }
@@ -409,6 +441,7 @@ var import_node_fs2, import_node_path2;
 var init_resolve_import = __esm({
   "src/kernel/services/resolve-import.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_fs2 = require("fs");
     import_node_path2 = require("path");
     init_errors();
@@ -420,6 +453,7 @@ var import_node_fs3, import_node_path3;
 var init_stamp_source = __esm({
   "src/kernel/services/stamp-source.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_fs3 = require("fs");
     import_node_path3 = require("path");
     init_clock();
@@ -433,6 +467,7 @@ var import_zod5, NAME, ENV_NAME, moduleOptions, STAMP_REFUSED, projectConfigSche
 var init_project = __esm({
   "src/kernel/services/project.mts"() {
     "use strict";
+    init_cjs_shims();
     import_zod5 = require("zod");
     init_apps();
     init_errors();
@@ -477,6 +512,7 @@ var import_zod6;
 var init_kernel = __esm({
   "src/kernel/index.mts"() {
     "use strict";
+    init_cjs_shims();
     init_actor();
     init_apps();
     init_apps_contract();
@@ -513,6 +549,7 @@ var qaIntakeConfig;
 var init_config2 = __esm({
   "src/intake/config.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
     qaIntakeConfig = import_zod6.z.object({
       default: import_zod6.z.string().default("github"),
@@ -527,6 +564,7 @@ var QA_INTAKE_SPEC_VERSION, QA_INTAKE_CAPABILITIES;
 var init_contract = __esm({
   "src/intake/drivers/intake/contract.mts"() {
     "use strict";
+    init_cjs_shims();
     QA_INTAKE_SPEC_VERSION = "1";
     QA_INTAKE_CAPABILITIES = ["window", "cursor", "follow"];
   }
@@ -548,6 +586,7 @@ var bytes, FAKE_INTAKE_ITEMS, FakeIntakeDriver;
 var init_fake = __esm({
   "src/intake/drivers/intake/fake.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
     init_contract();
     bytes = (head, size) => {
@@ -675,6 +714,7 @@ var UPLOAD_HOSTS, UPLOAD_PATH, MEDIA_EXTENSION, ASSET_STORE;
 var init_links = __esm({
   "src/intake/services/links.mts"() {
     "use strict";
+    init_cjs_shims();
     UPLOAD_HOSTS = ["user-images.githubusercontent.com", "private-user-images.githubusercontent.com"];
     UPLOAD_PATH = /^\/user-attachments\/(assets|files)\//;
     MEDIA_EXTENSION = /\.(png|jpe?g|gif|webp|heic|mp4|mov|webm)$/i;
@@ -687,6 +727,7 @@ var import_node_url;
 var init_extensions = __esm({
   "src/commands/extensions.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_url = require("url");
     init_kernel();
   }
@@ -697,6 +738,7 @@ var legConfig, qaConfig;
 var init_config3 = __esm({
   "src/config.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
     legConfig = import_zod6.z.object({
       surface: import_zod6.z.enum(["web", "miniapp", "bot"]),
@@ -772,6 +814,7 @@ var QA_TARGET_SPEC_VERSION;
 var init_contract2 = __esm({
   "src/drivers/target/contract.mts"() {
     "use strict";
+    init_cjs_shims();
     QA_TARGET_SPEC_VERSION = "1";
   }
 });
@@ -818,6 +861,7 @@ var import_node_zlib, MAGIC, CRC_TABLE;
 var init_png = __esm({
   "src/services/png.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_zlib = require("zlib");
     init_kernel();
     MAGIC = [137, 80, 78, 71, 13, 10, 26, 10];
@@ -861,6 +905,7 @@ var import_node_fs4, import_node_path4, FAKE_SHOT_SIZE, FAKE_CLIP_MS, DEFAULT_CA
 var init_fake2 = __esm({
   "src/drivers/target/fake.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_fs4 = require("fs");
     import_node_path4 = require("path");
     init_kernel();
@@ -1030,6 +1075,7 @@ var import_node_child_process, MIN_VIDEO_S;
 var init_video = __esm({
   "src/services/video.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_child_process = require("child_process");
     init_kernel();
     MIN_VIDEO_S = 1;
@@ -1104,6 +1150,7 @@ var import_node_fs5, import_node_path5, PERSONA_SESSION_ROUTE, CAPABILITIES, MIN
 var init_playwright = __esm({
   "src/drivers/target/playwright.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_fs5 = require("fs");
     import_node_path5 = require("path");
     init_kernel();
@@ -1380,6 +1427,7 @@ function createTargetRegistry(_config, extra = {}, clock = systemClock) {
 var init_targets = __esm({
   "src/services/targets.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
     init_fake2();
     init_playwright();
@@ -1391,6 +1439,7 @@ var QA_TARGETS;
 var init_tokens2 = __esm({
   "src/tokens.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
     QA_TARGETS = token("qa.targets");
   }
@@ -1401,6 +1450,7 @@ var ShiftClock;
 var init_clock2 = __esm({
   "src/world/services/clock.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
     ShiftClock = class {
       constructor(base) {
@@ -1434,6 +1484,7 @@ var qaProvider;
 var init_provider2 = __esm({
   "src/provider.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
     init_config3();
     init_targets();
@@ -1473,6 +1524,7 @@ var EXTENSIONS;
 var init_mime = __esm({
   "src/services/mime.mts"() {
     "use strict";
+    init_cjs_shims();
     EXTENSIONS = {
       "image/png": "png",
       "image/jpeg": "jpg",
@@ -1524,6 +1576,7 @@ var import_node_crypto2, import_node_fs6, import_promises2, import_smol_toml2, M
 var init_fs = __esm({
   "src/kernel/services/fs.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_crypto2 = require("crypto");
     import_node_fs6 = require("fs");
     import_promises2 = require("fs/promises");
@@ -1538,6 +1591,7 @@ var INTAKE_DIR;
 var init_types = __esm({
   "src/services/types.mts"() {
     "use strict";
+    init_cjs_shims();
     INTAKE_DIR = ".lw/qa/intake";
   }
 });
@@ -1653,6 +1707,7 @@ var import_promises3, import_node_path6, ID;
 var init_records = __esm({
   "src/services/records.mts"() {
     "use strict";
+    init_cjs_shims();
     import_promises3 = require("fs/promises");
     import_node_path6 = require("path");
     init_kernel();
@@ -1668,6 +1723,7 @@ var import_promises4, import_node_path7;
 var init_contract3 = __esm({
   "src/services/contract.mts"() {
     "use strict";
+    init_cjs_shims();
     import_promises4 = require("fs/promises");
     import_node_path7 = require("path");
     init_kernel();
@@ -1679,6 +1735,7 @@ var init_contract3 = __esm({
 var init_botfather = __esm({
   "src/services/botfather.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
   }
 });
@@ -1688,6 +1745,7 @@ var import_promises5, import_node_path8;
 var init_bot_store = __esm({
   "src/services/bot-store.mts"() {
     "use strict";
+    init_cjs_shims();
     import_promises5 = require("fs/promises");
     import_node_path8 = require("path");
     init_kernel();
@@ -1700,6 +1758,7 @@ var import_node_crypto3, import_promises6, import_node_path9;
 var init_comments = __esm({
   "src/services/comments.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_crypto3 = require("crypto");
     import_promises6 = require("fs/promises");
     import_node_path9 = require("path");
@@ -1713,6 +1772,7 @@ var CHROME_MAJOR, DESKTOP_USER_AGENT, DEFAULT_LEGS;
 var init_legs = __esm({
   "src/services/legs.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
     CHROME_MAJOR = 145;
     DESKTOP_USER_AGENT = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`;
@@ -1739,6 +1799,7 @@ var import_promises7;
 var init_manifest2 = __esm({
   "src/services/manifest.mts"() {
     "use strict";
+    init_cjs_shims();
     import_promises7 = require("fs/promises");
     init_kernel();
     init_legs();
@@ -1750,6 +1811,7 @@ var init_manifest2 = __esm({
 var init_comment_export = __esm({
   "src/services/comment-export.mts"() {
     "use strict";
+    init_cjs_shims();
     init_manifest2();
   }
 });
@@ -1759,6 +1821,7 @@ var import_node_http, import_promises8, import_node_path10, MAX_BODY;
 var init_comment_server = __esm({
   "src/services/comment-server.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_http = require("http");
     import_promises8 = require("fs/promises");
     import_node_path10 = require("path");
@@ -1773,6 +1836,7 @@ var init_comment_server = __esm({
 var init_score = __esm({
   "src/services/score.mts"() {
     "use strict";
+    init_cjs_shims();
   }
 });
 
@@ -1780,6 +1844,7 @@ var init_score = __esm({
 var init_src = __esm({
   "src/index.mts"() {
     "use strict";
+    init_cjs_shims();
     init_extensions();
     init_config3();
     init_contract2();
@@ -1898,6 +1963,7 @@ async function download(url, opts) {
 var init_media = __esm({
   "src/intake/services/media.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
     init_src();
   }
@@ -1958,6 +2024,7 @@ var import_node_util, UsageError, NEGATIVE, NEGATIVE_MARK;
 var init_args = __esm({
   "src/kernel/services/args.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_util = require("util");
     init_errors();
     UsageError = class extends LaunchwrightError {
@@ -1997,6 +2064,7 @@ var import_node_child_process2, GH_TIMEOUT_MS, spawnGh;
 var init_gh = __esm({
   "src/intake/services/gh.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_child_process2 = require("child_process");
     init_kernel();
     GH_TIMEOUT_MS = 6e4;
@@ -2039,6 +2107,7 @@ var ISSUE_FIELDS, GithubIntakeDriver;
 var init_github = __esm({
   "src/intake/drivers/intake/github.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
     init_src();
     init_gh();
@@ -2123,6 +2192,7 @@ var loadBotApi, loadMtproto;
 var init_telegram_peers = __esm({
   "src/intake/services/telegram-peers.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
     loadBotApi = () => loadTelegramPeer(
       "@launchwrighthq/telegram/bot-api",
@@ -2192,6 +2262,7 @@ var telegramMtprotoConfig, GRAMJS_READ_METHODS, READ_METHODS, PAGE, ReadOnlyTele
 var init_telegram_mtproto = __esm({
   "src/intake/drivers/intake/telegram-mtproto.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
     init_media();
     init_telegram_peers();
@@ -2383,6 +2454,7 @@ var BOT_API_MAX_BYTES, BOT_READ_METHODS, telegramBotConfig, TelegramBotIntakeDri
 var init_telegram_bot = __esm({
   "src/intake/drivers/intake/telegram-bot.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
     init_src();
     init_media();
@@ -2526,6 +2598,7 @@ var INTAKE_DRIVERS;
 var init_registry = __esm({
   "src/intake/services/registry.mts"() {
     "use strict";
+    init_cjs_shims();
     init_kernel();
     INTAKE_DRIVERS = ["github", "telegram-mtproto", "telegram-bot", "fake"];
   }
@@ -2670,6 +2743,7 @@ var import_promises9, import_node_path11, JOIN_GAP_MS, groupsFile, byId;
 var init_telegram = __esm({
   "src/intake/services/telegram.mts"() {
     "use strict";
+    init_cjs_shims();
     import_promises9 = require("fs/promises");
     import_node_path11 = require("path");
     init_kernel();
@@ -2831,6 +2905,7 @@ var import_node_path12, USAGE, TELEGRAM_DRIVERS, TELEGRAM_VALUES, qa_intake_defa
 var init_qa_intake = __esm({
   "src/intake/commands/qa-intake.mts"() {
     "use strict";
+    init_cjs_shims();
     import_node_path12 = require("path");
     init_kernel();
     init_args();
@@ -2890,6 +2965,7 @@ __export(intake_exports, {
   writeProposal: () => writeProposal
 });
 module.exports = __toCommonJS(intake_exports);
+init_cjs_shims();
 init_config2();
 init_contract();
 init_fake();
@@ -2898,6 +2974,7 @@ init_media();
 init_src();
 
 // src/intake/provider.mts
+init_cjs_shims();
 init_kernel();
 init_config2();
 var qaIntakeProvider = provider({
@@ -2915,6 +2992,7 @@ var qaIntakeProvider = provider({
 });
 
 // src/intake/services/extension.mts
+init_cjs_shims();
 var qaExtension = {
   name: "qa-intake",
   subcommands: { intake: async () => (await Promise.resolve().then(() => (init_qa_intake(), qa_intake_exports))).default }

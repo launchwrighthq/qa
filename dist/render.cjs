@@ -35,15 +35,18 @@ __export(render_exports, {
 });
 module.exports = __toCommonJS(render_exports);
 
+// node_modules/.pnpm/tsup@8.5.1_postcss@8.5.33_tsx@4.23.15_typescript@6.0.3/node_modules/tsup/assets/cjs_shims.js
+var getImportMetaUrl = () => typeof document === "undefined" ? new URL(`file:${__filename}`).href : document.currentScript && document.currentScript.tagName.toUpperCase() === "SCRIPT" ? document.currentScript.src : new URL("main.js", document.baseURI).href;
+var importMetaUrl = /* @__PURE__ */ getImportMetaUrl();
+
 // src/render/services/spec-render.mts
 var import_node_fs = require("fs");
 var import_node_path = require("path");
 var import_node_url = require("url");
-var import_meta = {};
 var TEMPLATE_DIR = templateDir();
 function templateDir() {
-  const published = (0, import_node_url.fileURLToPath)(new URL("../../../assets/renderer/", import_meta.url));
-  return (0, import_node_fs.existsSync)(published) ? published : (0, import_node_url.fileURLToPath)(new URL("../../../../assets/renderer/", import_meta.url));
+  const published = (0, import_node_url.fileURLToPath)(new URL("../../../assets/renderer/", importMetaUrl));
+  return (0, import_node_fs.existsSync)(published) ? published : (0, import_node_url.fileURLToPath)(new URL("../../../../assets/renderer/", importMetaUrl));
 }
 var TEMPLATE = (0, import_node_path.join)(TEMPLATE_DIR, "spec-template.html");
 var STATUS_VALUES = [

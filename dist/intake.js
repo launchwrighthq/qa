@@ -1,24 +1,4 @@
 import {
-  FAKE_INTAKE_ITEMS,
-  FakeIntakeDriver
-} from "./chunk-F7VPLHGY.js";
-import {
-  isGithubMediaHost,
-  isGithubUpload,
-  mediaLinks,
-  takesGithubToken
-} from "./chunk-FUEZY4TH.js";
-import {
-  download,
-  kindOf,
-  mimeOf,
-  sniffMime
-} from "./chunk-A7HQ6GV4.js";
-import {
-  QA_INTAKE_CAPABILITIES,
-  QA_INTAKE_SPEC_VERSION
-} from "./chunk-HJKDKTIX.js";
-import {
   INTAKE_DRIVERS,
   JOIN_GAP_MS,
   applyGroups,
@@ -34,9 +14,29 @@ import {
   stageBatch,
   writeCursor,
   writeProposal
-} from "./chunk-EX5MRIGV.js";
-import "./chunk-A5UNL3EG.js";
-import "./chunk-IOYCNVPS.js";
+} from "./chunk-LRNSZYEL.js";
+import {
+  FAKE_INTAKE_ITEMS,
+  FakeIntakeDriver
+} from "./chunk-MT6KMLQO.js";
+import {
+  isGithubMediaHost,
+  isGithubUpload,
+  mediaLinks,
+  takesGithubToken
+} from "./chunk-CIX36DE4.js";
+import {
+  download,
+  kindOf,
+  mimeOf,
+  sniffMime
+} from "./chunk-S5PDLVTW.js";
+import {
+  QA_INTAKE_CAPABILITIES,
+  QA_INTAKE_SPEC_VERSION
+} from "./chunk-K3F4HTKJ.js";
+import "./chunk-3MN5K3QL.js";
+import "./chunk-APXO3KTC.js";
 import {
   issueMarkdown,
   listIssues,
@@ -44,13 +44,15 @@ import {
   recordDir,
   recordId,
   writeIssue
-} from "./chunk-YAQ4D7JV.js";
-import "./chunk-7LPVXBKF.js";
+} from "./chunk-JHXOJGHS.js";
+import "./chunk-6LHTNS5B.js";
 import {
-  BootError,
   CONFIG,
   provider
-} from "./chunk-2ITTLG7O.js";
+} from "./chunk-WUOHAWEI.js";
+import {
+  BootError
+} from "./chunk-L57WEOVE.js";
 
 // src/intake/provider.mts
 var qaIntakeProvider = provider({
@@ -70,7 +72,7 @@ var qaIntakeProvider = provider({
 // src/intake/services/extension.mts
 var qaExtension = {
   name: "qa-intake",
-  subcommands: { intake: async () => (await import("./qa-intake-AEMISX7L.js")).default }
+  subcommands: { intake: async () => (await import("./qa-intake-WVCB23HG.js")).default }
 };
 export {
   FAKE_INTAKE_ITEMS,

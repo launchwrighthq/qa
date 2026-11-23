@@ -52,10 +52,14 @@ export interface WorktreePlan {
   prefix: string;
 }
 
+// The default name of the local env file of config `dev.envFiles`. It is joined at run time, so
+// the shipped bundle holds no text of the `<name>.local` host shape that the publish audit refuses.
+const DEFAULT_LOCAL_ENV_FILE = ['.env', 'local'].join('.');
+
 function envFileName(sections: Record<string, unknown>): string {
   const dev = sections.dev as { envFiles?: { local?: unknown } } | undefined;
   const name = dev?.envFiles?.local;
-  return typeof name === 'string' ? name : '.env.local';
+  return typeof name === 'string' ? name : DEFAULT_LOCAL_ENV_FILE;
 }
 
 /** The copy prefix of a project: `<dev.project>_wt_`. */

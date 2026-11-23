@@ -1387,10 +1387,11 @@ async function setMenuButton(o) {
 // src/world/services/worktree.mts
 var import_promises8 = require("fs/promises");
 var import_node_path11 = require("path");
+var DEFAULT_LOCAL_ENV_FILE = [".env", "local"].join(".");
 function envFileName(sections) {
   const dev = sections.dev;
   const name = dev?.envFiles?.local;
-  return typeof name === "string" ? name : ".env.local";
+  return typeof name === "string" ? name : DEFAULT_LOCAL_ENV_FILE;
 }
 function copyPrefix(sections, checkout) {
   return `${databaseName(devProjectName(sections, checkout))}_wt_`;

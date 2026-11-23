@@ -11,7 +11,7 @@ import {
   render,
   renderBody,
   renderWithTemplate
-} from "./chunk-GSP2W74L.js";
+} from "./chunk-PYKQB25D.js";
 export {
   DOMAIN_RE,
   PLACEHOLDERS,

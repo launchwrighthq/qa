@@ -51,20 +51,22 @@ import {
   writeBytes,
   writeHeld,
   writePng
-} from "./chunk-Z6X7JJ6C.js";
+} from "./chunk-ZRA52RM5.js";
 import {
   QA_TARGETS
-} from "./chunk-A5UNL3EG.js";
-import "./chunk-IOYCNVPS.js";
+} from "./chunk-3MN5K3QL.js";
+import "./chunk-APXO3KTC.js";
 import {
   QA_TARGET_SPEC_VERSION
-} from "./chunk-YAQ4D7JV.js";
-import "./chunk-7LPVXBKF.js";
+} from "./chunk-JHXOJGHS.js";
+import "./chunk-6LHTNS5B.js";
 import {
   CONFIG,
-  LaunchwrightError,
   provider
-} from "./chunk-2ITTLG7O.js";
+} from "./chunk-WUOHAWEI.js";
+import {
+  LaunchwrightError
+} from "./chunk-L57WEOVE.js";
 
 // src/device/drivers/target/android-adb.mts
 var ANDROID_CAPABILITIES = ["input", "screenshot", "video", "webview", "native", "telegram"];
@@ -420,7 +422,7 @@ var qaDeviceProvider = provider({
 // src/device/services/extension.mts
 var qaExtension = {
   name: "qa-device",
-  subcommands: { device: async () => (await import("./qa-device-JMIL54BP.js")).default },
+  subcommands: { device: async () => (await import("./qa-device-OFFLPWVZ.js")).default },
   targets: (config, root) => deviceTargets(withDevice(config), systemDeviceDeps(root))
 };
 export {

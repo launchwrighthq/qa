@@ -31,12 +31,12 @@ import {
   setStatus,
   startCommentServer,
   validateAnchor
-} from "./chunk-A5UNL3EG.js";
+} from "./chunk-3MN5K3QL.js";
 import {
   qaConfig,
   qaConfigOf,
   withAppPaths
-} from "./chunk-IOYCNVPS.js";
+} from "./chunk-APXO3KTC.js";
 import {
   ACT_KINDS,
   DEFAULT_SCORE_WEIGHTS,
@@ -58,9 +58,10 @@ import {
   recordId,
   renderScoreGauge,
   writeIssue
-} from "./chunk-YAQ4D7JV.js";
-import "./chunk-7LPVXBKF.js";
-import "./chunk-2ITTLG7O.js";
+} from "./chunk-JHXOJGHS.js";
+import "./chunk-6LHTNS5B.js";
+import "./chunk-WUOHAWEI.js";
+import "./chunk-L57WEOVE.js";
 export {
   ACT_KINDS,
   ANCHOR_KINDS,

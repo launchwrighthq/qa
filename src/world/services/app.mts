@@ -61,7 +61,7 @@ export function qaFakeToken(id: number, registryHash: string): string {
   return `${id}:${createHash('sha256').update(`lw-qa-fake-bot:${id}:${registryHash}`).digest('base64url').slice(0, 32)}`;
 }
 
-/** A bot of the fake Bot API: what `serveFakeTelegram` of `telegram` takes. */
+/** A bot of the fake Bot API: what `serveFakeTelegram` of `telegram-fake` takes. */
 export interface QaFakeBot {
   username: string;
   token: string;

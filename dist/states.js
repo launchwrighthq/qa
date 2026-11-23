@@ -1,7 +1,12 @@
 import {
+  QA_STATES_ATTRIBUTE,
+  QA_STATES_PATH
+} from "./chunk-277Y4WQJ.js";
+import "./chunk-WUOHAWEI.js";
+import {
   LaunchwrightError,
   messageOf
-} from "./chunk-2ITTLG7O.js";
+} from "./chunk-L57WEOVE.js";
 
 // src/states/services/inventory.mts
 var STATE_SUFFIXES = ["State", "Mark", "Status", "Kind", "Phase", "Variant"];
@@ -2395,8 +2400,8 @@ async function captureGroup(session, page, group, ctx) {
 }
 
 // src/states/services/mount.mts
-var STATES_HARNESS_PATH = "/__states";
-var HARNESS_ATTRIBUTE = "data-qa-states";
+var STATES_HARNESS_PATH = QA_STATES_PATH;
+var HARNESS_ATTRIBUTE = QA_STATES_ATTRIBUTE;
 var SUBJECT_CHILD = "[data-qa-subject] > *";
 var HARNESS_ERROR = "[data-qa-states-error]";
 var DEFAULT_MOUNT_SETTLE = { selector: SUBJECT_CHILD, timeout: 1e4 };

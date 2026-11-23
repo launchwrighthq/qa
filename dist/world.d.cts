@@ -1,6 +1,7 @@
 import { A as App } from './app-KXgbRXYO.cjs';
 import { Q as QaConfig } from './config-B-lxHEnb.cjs';
 import { C as Clock } from './clock-BUdCJ9bN.cjs';
+import { F as FetchFn, R as RunRecord } from './peers-D6wBRa1W.cjs';
 import 'zod';
 
 interface CheckoutFacts {
@@ -134,7 +135,7 @@ interface QaOverlay {
  * registry hash. Only the fake Bot API knows it, so a QA process never holds a live token.
  */
 declare function qaFakeToken(id: number, registryHash: string): string;
-/** A bot of the fake Bot API: what `serveFakeTelegram` of `telegram` takes. */
+/** A bot of the fake Bot API: what `serveFakeTelegram` of `telegram-fake` takes. */
 interface QaFakeBot {
     username: string;
     token: string;
@@ -349,17 +350,6 @@ interface RunJobOptions {
 }
 /** Runs one registered job once on the QA app. Throws `qa.job.unknown` for a kind that no job registers. */
 declare function runJob(world: QaWorld, registry: JobRegistry, o: RunJobOptions): Promise<void>;
-
-/** The run record of the dev module that the worktree command reads. */
-interface RunRecord {
-    checkout: string;
-    surfaces: Array<{
-        name: string;
-        url?: string;
-    }>;
-}
-/** The `fetch` of the Bot API client. A local copy of the telegram module's FetchFn. */
-type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
 interface MenuOptions {
     /** Config section `telegram`. */

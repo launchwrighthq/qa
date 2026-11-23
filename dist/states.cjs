@@ -1962,6 +1962,10 @@ function finishRun(args) {
 // src/states/services/mount.mts
 var import_node_path8 = require("path");
 
+// src/states-host/names.mts
+var QA_STATES_PATH = "/__states";
+var QA_STATES_ATTRIBUTE = "data-qa-states";
+
 // src/states/services/capture.mts
 var import_node_path7 = require("path");
 
@@ -2641,8 +2645,8 @@ async function captureGroup(session, page, group, ctx) {
 }
 
 // src/states/services/mount.mts
-var STATES_HARNESS_PATH = "/__states";
-var HARNESS_ATTRIBUTE = "data-qa-states";
+var STATES_HARNESS_PATH = QA_STATES_PATH;
+var HARNESS_ATTRIBUTE = QA_STATES_ATTRIBUTE;
 var SUBJECT_CHILD = "[data-qa-subject] > *";
 var HARNESS_ERROR = "[data-qa-states-error]";
 var DEFAULT_MOUNT_SETTLE = { selector: SUBJECT_CHILD, timeout: 1e4 };

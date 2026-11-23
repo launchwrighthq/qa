@@ -3,20 +3,20 @@
 // session photographs it. A mounted shot may claim the rendering of that state only.
 //
 // The harness page marks itself, its subject and its own failures with the attributes below. The
-// client module draws them (`modules/client/README.md`, "State page"), and this file only reads
-// them. The client module is an optional peer of qa, so the names are not imported.
+// states host (`states-host/page.mts`) draws them, and this file only reads them.
 import { posix } from 'node:path';
 import type { QaSession } from '../../drivers/target/contract.mts';
 import type { Settle } from '../../services/types.mts';
+import { QA_STATES_ATTRIBUTE, QA_STATES_PATH } from '../../states-host/names.mts';
 import { CaptureFailure, errorText, failureFields } from './capture.mts';
 import type { EvidenceRecorder } from './capture.mts';
 import { type Inventory, type InputSite, type MountHints, type PlannedCapture, type StateResult, statePath, type UnionEntry } from './inventory.mts';
 
 /** The harness route, relative to the surface base (spec 2.7). */
-export const STATES_HARNESS_PATH = '/__states';
+export const STATES_HARNESS_PATH = QA_STATES_PATH;
 
 /** The attribute on the harness root `<main id="lw-qa-states">`. A page without it is not the harness. */
-export const HARNESS_ATTRIBUTE = 'data-qa-states';
+export const HARNESS_ATTRIBUTE = QA_STATES_ATTRIBUTE;
 
 /** The wrapper around the mounted component. Its child is the component's own root. */
 export const SUBJECT_WRAPPER = '[data-qa-subject]';

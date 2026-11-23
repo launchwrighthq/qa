@@ -5,10 +5,8 @@ import { readdir, readFile } from 'node:fs/promises';
 import { basename, join, posix, relative, sep } from 'node:path';
 import { LaunchwrightError } from '../kernel/index.mts';
 import { pathKind, readTextOrNull } from '../kernel/services/fs.mts';
-
-/** The string that marks dev-only QA code. Inlined from client (services/qa-persona.mts). */
-const QA_DEV_MARKER = 'lw-qa-dev-only';
 import type { QaConfig } from '../config.mts';
+import { QA_DEV_MARKER } from '../states-host/names.mts';
 import { stateFindings } from '../states/services/check.mts';
 import { readTree } from '../states/services/scan.mts';
 import { FEATURE_SUFFIX, featuresWithoutWorld, WORLD_SUFFIX, worldLintFindings } from '../world/services/discover.mts';

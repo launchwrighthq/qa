@@ -1,8 +1,9 @@
 // `lw qa telegram [--port <p>]` (spec 2.10): the fake Bot API server and the `/__tg` chat page on
 // loopback, for the QA API and the `telegram-fake` leg. It serves the bots of config
 // `telegram.bots` with the fake tokens of the QA API, and one chat per persona of the world files.
-import { LaunchwrightError, optionalPeer } from '../kernel/index.mts';
-import { QA_TELEGRAM_PORT, type QaFakeBot, qaFakeBots } from '../world/services/app.mts';
+import { LaunchwrightError } from '../kernel/index.mts';
+import { serveFakeTelegram } from '../telegram-fake/fake-server.mts';
+import { QA_TELEGRAM_PORT, qaFakeBots } from '../world/services/app.mts';
 import { guarded, parseArgs, processSignal, worldContext } from '../world/services/context.mts';
 import { qaTelegramId } from '../world/services/ids.mts';
 import type { WorldRegistry } from '../world/services/types.mts';
@@ -70,22 +71,6 @@ export function telegramPort(option: string | true | undefined, telegramUrl: str
   return n;
 }
 
-type ServeFakeTelegram = (opts: {
-  port: number;
-  host: string;
-  bots: QaFakeBot[];
-  personas: FakePersona[];
-  webhook: { url: string; secret: string } | undefined;
-  env: string;
-}) => Promise<{ url: string; close(): Promise<void> }>;
-
-async function loadServer(): Promise<ServeFakeTelegram> {
-  const spec = '@launchwrighthq/telegram/testing';
-  const mod = await optionalPeer(spec, () => import(spec) as Promise<{ serveFakeTelegram: ServeFakeTelegram }>);
-  if (!mod) throw new LaunchwrightError('qa.telegram.module', 'lw qa telegram needs the telegram module. Run lw add telegram.');
-  return mod.serveFakeTelegram;
-}
-
 async function run(args: string[], opts: QaCommandOptions): Promise<number> {
   if (args[0] === 'bot') {
     const { runTelegramBot } = await import('./qa-telegram-bot.mts');
@@ -107,7 +92,6 @@ async function run(args: string[], opts: QaCommandOptions): Promise<number> {
   }
   const port = telegramPort(options.port, ctx.qa.telegramUrl);
   const webhook = qaWebhook(ctx.sections, ctx.qa.apiPort);
-  const serveFakeTelegram = await loadServer();
   const fake = await serveFakeTelegram({ port, host: '127.0.0.1', bots, personas: fakePersonas(ctx.registry), webhook, env });
   const stop = processSignal(opts.signal);
   try {

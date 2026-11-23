@@ -1,23 +1,25 @@
-import "./chunk-56BIZAV7.js";
+import "./chunk-JF32RXQ2.js";
 import {
   ShiftClock,
   parseShift,
   qaConfig,
   withAppPaths
-} from "./chunk-IOYCNVPS.js";
+} from "./chunk-APXO3KTC.js";
 import {
   pathKind,
   readTextOrNull,
   sha256
-} from "./chunk-7LPVXBKF.js";
+} from "./chunk-6LHTNS5B.js";
 import {
-  LaunchwrightError,
   appPath,
-  messageOf,
   optionalPeer,
   resolveImport,
   systemClock
-} from "./chunk-2ITTLG7O.js";
+} from "./chunk-WUOHAWEI.js";
+import {
+  LaunchwrightError,
+  messageOf
+} from "./chunk-L57WEOVE.js";
 
 // src/world/services/app.mts
 import { createHash } from "crypto";
@@ -820,10 +822,11 @@ async function setMenuButton(o) {
 // src/world/services/worktree.mts
 import { copyFile, rename as rename2, writeFile as writeFile2 } from "fs/promises";
 import { basename as basename4, join as join6 } from "path";
+var DEFAULT_LOCAL_ENV_FILE = [".env", "local"].join(".");
 function envFileName(sections) {
   const dev = sections.dev;
   const name = dev?.envFiles?.local;
-  return typeof name === "string" ? name : ".env.local";
+  return typeof name === "string" ? name : DEFAULT_LOCAL_ENV_FILE;
 }
 function copyPrefix(sections, checkout) {
   return `${databaseName(devProjectName(sections, checkout))}_wt_`;

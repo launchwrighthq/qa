@@ -36,6 +36,10 @@ __export(testing_exports, {
 });
 module.exports = __toCommonJS(testing_exports);
 
+// node_modules/.pnpm/tsup@8.5.1_postcss@8.5.33_tsx@4.23.15_typescript@6.0.3/node_modules/tsup/assets/cjs_shims.js
+var getImportMetaUrl = () => typeof document === "undefined" ? new URL(`file:${__filename}`).href : document.currentScript && document.currentScript.tagName.toUpperCase() === "SCRIPT" ? document.currentScript.src : new URL("main.js", document.baseURI).href;
+var importMetaUrl = /* @__PURE__ */ getImportMetaUrl();
+
 // src/testing/target-contract.mts
 var import_node_fs6 = require("fs");
 var import_node_http2 = require("http");
@@ -560,7 +564,6 @@ function createFakeTarget(opts = {}) {
 }
 
 // src/testing/target-contract.mts
-var import_meta = {};
 function targetHarness(target, opts) {
   return {
     name: target.name,
@@ -662,7 +665,7 @@ async function codeOf(p) {
 function has(h, cap) {
   return h.target.capabilities.has(cap);
 }
-var CASES_FILE = moduleFixture(import_meta.url, "contract/target.cases.json");
+var CASES_FILE = moduleFixture(importMetaUrl, "contract/target.cases.json");
 var targetContract = defineContract(
   "qa.target",
   QA_TARGET_SPEC_VERSION,
@@ -1417,11 +1420,10 @@ function coverageLine(input) {
 var import_node_fs9 = require("fs");
 var import_node_path9 = require("path");
 var import_node_url2 = require("url");
-var import_meta2 = {};
 var TEMPLATE_DIR = templateDir();
 function templateDir() {
-  const published = (0, import_node_url2.fileURLToPath)(new URL("../../../assets/renderer/", import_meta2.url));
-  return (0, import_node_fs9.existsSync)(published) ? published : (0, import_node_url2.fileURLToPath)(new URL("../../../../assets/renderer/", import_meta2.url));
+  const published = (0, import_node_url2.fileURLToPath)(new URL("../../../assets/renderer/", importMetaUrl));
+  return (0, import_node_fs9.existsSync)(published) ? published : (0, import_node_url2.fileURLToPath)(new URL("../../../../assets/renderer/", importMetaUrl));
 }
 var TEMPLATE = (0, import_node_path9.join)(TEMPLATE_DIR, "spec-template.html");
 
