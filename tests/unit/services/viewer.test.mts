@@ -1,10 +1,11 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpDir } from '../../../src/kernel/testing/index.mts';
 import { describe, expect, it } from 'vitest';
 import type { Manifest, Shot } from '../../../src/services/manifest.mts';
 import type { LedgerEntry, RowResult } from '../../../src/services/types.mts';
 import { makeComment } from '../../../src/services/comments.mts';
+import { DEFAULT_GAUGE_COLOR } from '../../../src/services/score.mts';
 import { buildViewer, renderViewerBundle, type ViewerInput } from '../../../src/services/viewer.mts';
 import { writeReportFixture } from '../../../src/testing/report-fixture.mts';
 
@@ -75,6 +76,22 @@ describe('renderViewerBundle (spec 2.8, R8)', () => {
     expect(index).toContain('QA score');
   });
 
+  it('draws the config colour and weights on the gauge and lists the breakdown beside it', () => {
+    const input = { ...sampleInput(), findings: { confirmed: { critical: 1, high: 0, medium: 0, low: 0 }, suspected: 0 } };
+    const index = renderViewerBundle(input, { gaugeColor: 'teal', weights: { findings: 1, console: 0, coverage: 0, evidence: 0 } }).pages.get('index.html') as string;
+    expect(index).toContain('stroke="teal"');
+    expect(index).toContain('aria-label="QA score 75 of 100"');
+    expect(index).toContain('<tr data-dimension="findings" data-counted="true"><td>Findings</td><td>75</td><td>1</td><td>counted</td><td>1 CONFIRMED (1 critical)</td></tr>');
+    expect(index).toContain('<tr data-dimension="accessibility" data-counted="false"><td>Accessibility</td><td>-</td><td>0.15</td><td>untested</td><td>untested: the ledger holds no accessibility finding</td></tr>');
+    expect(index.indexOf('qa-gauge')).toBeLessThan(index.indexOf('qa-score-table'));
+  });
+
+  it('marks findings untested when the input carries no section 4 tally', () => {
+    const index = renderViewerBundle(sampleInput()).pages.get('index.html') as string;
+    expect(index).toContain('<tr data-dimension="findings" data-counted="false"><td>Findings</td><td>-</td><td>0.35</td><td>untested</td>');
+    expect(index).toContain(`stroke="${DEFAULT_GAUGE_COLOR}"`);
+  });
+
   it('renders a view switch control on a feature page', () => {
     const feature = renderViewerBundle(sampleInput()).pages.get('feature-home.html') as string;
     expect(feature).toContain('data-qa-view-switch');
@@ -119,6 +136,16 @@ describe('buildViewer (spec 2.8, R8)', () => {
     expect(index).toContain('<svg');
     const feature = await readFile(join(result.dir, 'feature-home.html'), 'utf8');
     expect(feature).toContain('qa-blank');
+  });
+
+  it('scores the CONFIRMED findings of section 4 of the report', async () => {
+    const root = await tmpDir();
+    const { mdPath } = await writeReportFixture(join(root, 'docs/qa'));
+    const text = await readFile(mdPath, 'utf8');
+    await writeFile(mdPath, text.replace('## 4 Findings\n', '## 4 Findings\n\n- CONFIRMED [medium] The home page title is cut on a phone.\n'));
+    const index = await readFile((await buildViewer(mdPath)).index, 'utf8');
+    expect(index).toContain('<td>Findings</td><td>92</td>');
+    expect(index).toContain('1 CONFIRMED (1 medium)');
   });
 });
 

@@ -112,9 +112,9 @@ export function computeScore(input: ScoreInput, weights: Partial<ScoreWeights> =
   return { score, dimensions, confidence };
 }
 
-/** Options for `renderScoreGauge`. The ring colour is a configuration value, not a fixed purple (spec 2.11). */
+/** Options for `renderScoreGauge`. The ring colour is config `qa.score.gaugeColor` (spec 2.11). */
 export interface GaugeOptions {
-  /** The ring colour. Default: a neutral accent the consumer overrides. */
+  /** The ring colour. Default: `DEFAULT_GAUGE_COLOR`. */
   color?: string;
   /** The track colour behind the ring. */
   track?: string;
@@ -124,21 +124,23 @@ export interface GaugeOptions {
   label?: string;
 }
 
-/** A neutral accent, not purple: gstack's design rules flag a purple gradient as a slop pattern. */
-const NEUTRAL_RING = '#64748b';
+/** The default ring: a solid purple, as the owner asked ("like gstack"). Config `qa.score.gaugeColor` overrides it. */
+export const DEFAULT_GAUGE_COLOR = '#7c3aed';
 const NEUTRAL_TRACK = '#e2e8f0';
+/** The label under the number. Mid grey reads on a light and a dark ground; the track colour does not. */
+const LABEL_INK = '#64748b';
 
 const attr = (value: string): string => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const content = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /**
  * A circular gauge for the score, as a self-contained inline SVG string. The arc length is the score
- * over 100, the number sits in the centre, and the ring uses `opts.color` with a neutral default.
+ * over 100, the number sits in the centre, and the ring uses `opts.color`, purple by default.
  */
 export function renderScoreGauge(score: number, opts: GaugeOptions = {}): string {
   const size = opts.size ?? 160;
   const value = clamp(Math.round(score), 0, 100);
-  const ring = attr(opts.color ?? NEUTRAL_RING);
+  const ring = attr(opts.color ?? DEFAULT_GAUGE_COLOR);
   const track = attr(opts.track ?? NEUTRAL_TRACK);
   const stroke = Math.max(2, Math.round(size * 0.09));
   const radius = (size - stroke) / 2;
@@ -149,7 +151,7 @@ export function renderScoreGauge(score: number, opts: GaugeOptions = {}): string
   const font = 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
   const numberY = opts.label ? center - numberSize * 0.12 : center;
   const label = opts.label
-    ? `<text x="${center}" y="${center + numberSize * 0.72}" text-anchor="middle" dominant-baseline="central" font-family="${font}" font-size="${Math.round(size * 0.1)}" fill="${track}">${content(opts.label)}</text>`
+    ? `<text x="${center}" y="${center + numberSize * 0.72}" text-anchor="middle" dominant-baseline="central" font-family="${font}" font-size="${Math.round(size * 0.1)}" fill="${LABEL_INK}">${content(opts.label)}</text>`
     : '';
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="QA score ${value} of 100">`,
@@ -159,4 +161,45 @@ export function renderScoreGauge(score: number, opts: GaugeOptions = {}): string
     label,
     '</svg>',
   ].join('');
+}
+
+/** The reader's name of each dimension, in rubric order. */
+export const SCORE_DIMENSIONS: ReadonlyArray<{ dimension: ScoreDimension; label: string }> = [
+  { dimension: 'findings', label: 'Findings' },
+  { dimension: 'console', label: 'Console and page errors' },
+  { dimension: 'coverage', label: 'Coverage' },
+  { dimension: 'evidence', label: 'Evidence' },
+  { dimension: 'accessibility', label: 'Accessibility' },
+  { dimension: 'performance', label: 'Performance' },
+];
+
+/** One row of the score breakdown. `score` is null for a dimension the run did not test. */
+export interface ScoreRow {
+  dimension: ScoreDimension;
+  label: string;
+  score: number | null;
+  weight: number;
+  counted: boolean;
+  /** What the row reads from, or why it is untested. */
+  note: string;
+}
+
+/** The breakdown of a result: every dimension with its score, its weight and whether it counted. */
+export function scoreRows(result: ScoreResult, weights: Partial<ScoreWeights> = {}, notes: Partial<Record<ScoreDimension, string>> = {}): ScoreRow[] {
+  const w: ScoreWeights = { ...DEFAULT_SCORE_WEIGHTS, ...weights };
+  return SCORE_DIMENSIONS.map(({ dimension, label }) => {
+    const score = result.dimensions[dimension] ?? null;
+    return { dimension, label, score, weight: w[dimension], counted: score !== null, note: notes[dimension] ?? (score === null ? 'untested' : '') };
+  });
+}
+
+/** The breakdown as an HTML table, so the reader sees which dimensions the number averages. */
+export function renderScoreBreakdown(rows: readonly ScoreRow[]): string {
+  const body = rows
+    .map((r) => {
+      const state = r.counted ? 'counted' : 'untested';
+      return `<tr data-dimension="${r.dimension}" data-counted="${r.counted}"><td>${content(r.label)}</td><td>${r.score ?? '-'}</td><td>${r.weight}</td><td>${state}</td><td>${content(r.note)}</td></tr>`;
+    })
+    .join('');
+  return `<table class="qa-score-table"><thead><tr><th>Dimension</th><th>Score</th><th>Weight</th><th>Counted</th><th>From</th></tr></thead><tbody>${body}</tbody></table>`;
 }

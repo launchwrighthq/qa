@@ -3,7 +3,7 @@ import { isAbsolute, resolve } from 'node:path';
 import { isCodedError } from '../kernel/index.mts';
 import { qaConfigOf } from '../config.mts';
 import { legDefinitions } from '../services/legs.mts';
-import { checkReport, RENDERER_DIR, renderReport, updateReport } from '../services/report.mts';
+import { checkReport, RENDERER_DIR, renderReport, scoreReport, updateReport } from '../services/report.mts';
 import { buildViewer } from '../services/viewer.mts';
 import type { QaCommandOptions, QaSubcommand } from './qa.command.mts';
 
@@ -11,8 +11,8 @@ const ACTIONS = ['check', 'update', 'render', 'viewer'] as const;
 
 const USAGE = [
   'usage: lw qa report <check|update|render|viewer> <report.md>',
-  '  check   exit 1 and list every problem: missing, blank, unembedded or edited evidence, a wrong Status, an issue with no statement',
-  '  update  write section 3, the section 5 lines and the Status, Legs and Coverage lines from the ledger',
+  '  check   exit 1 and list every problem: missing, blank, unembedded or edited evidence, a wrong Status, an issue with no statement, a CONFIRMED finding with no severity',
+  '  update  write section 3, the section 5 lines and the Status, Legs and Coverage lines from the ledger, and print the score',
   '  render  write <reportDir>/dist/<slug>.html with the spec renderer',
   '  viewer  write the interactive multi-page viewer under <reportDir>/dist/<slug>-viewer/',
 ];
@@ -40,17 +40,20 @@ const report: QaSubcommand = {
         for (const p of problems) opts.err(`  ${p.code}: ${p.message}`);
         return 1;
       }
+      const score = config.score;
       if (action === 'update') {
         const status = await updateReport(md, { legs });
-        opts.out(`lw qa report update: ${file} Status: ${status}`);
+        const scored = await scoreReport(md, { legs, score });
+        const scoreText = scored ? `, score ${scored.result.score} of 100, confidence ${Math.round(scored.result.confidence * 100)}%` : '';
+        opts.out(`lw qa report update: ${file} Status: ${status}${scoreText}`);
         return 0;
       }
       if (action === 'viewer') {
-        const result = await buildViewer(md, { legs });
+        const result = await buildViewer(md, { legs, weights: score.weights, gaugeColor: score.gaugeColor });
         opts.out(`lw qa report viewer: wrote ${result.pages.length} pages, open ${result.index}`);
         return 0;
       }
-      const page = await renderReport(md, RENDERER_DIR, opts.cwd, { legs });
+      const page = await renderReport(md, RENDERER_DIR, opts.cwd, { legs, score });
       opts.out(`lw qa report render: wrote ${page}`);
       return 0;
     } catch (cause) {

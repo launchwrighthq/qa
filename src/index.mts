@@ -89,16 +89,23 @@ export { type ExportContext, exportTaskList, type ResolvedComment, resolveCommen
 export { type CommentServer, type CommentServerOptions, startCommentServer } from './services/comment-server.mts';
 export {
   computeScore,
+  DEFAULT_GAUGE_COLOR,
   DEFAULT_SCORE_WEIGHTS,
   type GaugeOptions,
+  renderScoreBreakdown,
   renderScoreGauge,
+  SCORE_DIMENSIONS,
   type ScoreDimension,
   type ScoreInput,
   type ScoreResult,
+  type ScoreRow,
+  scoreRows,
   type ScoreWeights,
   SEVERITY_DEDUCTION,
   type SeverityCounts,
 } from './services/score.mts';
+export { isCssColor, scoreConfig, type ScoreConfig } from './services/score-config.mts';
+export { type Finding, findingProblems, type FindingTally, parseFindings, type Severity, SEVERITIES, tallyFindings } from './services/findings.mts';
 export { createTargetRegistry } from './services/targets.mts';
 export * from './services/types.mts';
 export { MIN_VIDEO_S } from './services/video.mts';

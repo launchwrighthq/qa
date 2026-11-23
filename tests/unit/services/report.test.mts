@@ -13,11 +13,12 @@ import {
   renderReport,
   reportScoreInput,
   reportSkeleton,
+  scoreReport,
   slugOf,
   updateReport,
   withoutIntakeLinks,
 } from '../../../src/services/report.mts';
-import { computeScore } from '../../../src/services/score.mts';
+import { computeScore, DEFAULT_GAUGE_COLOR, SEVERITY_DEDUCTION } from '../../../src/services/score.mts';
 import { patternPng, uniformPng, writeIssueReportFixture, writeReportFixture } from '../../../src/testing/report-fixture.mts';
 
 const TWO_ROWS = [
@@ -333,6 +334,56 @@ describe('reportScoreInput and the gauge (spec 2.11, R11)', () => {
     expect(html).toContain(`>${score}</text>`);
     expect(html).toContain(`aria-label="QA score ${score} of 100"`);
     expect(html.indexOf('class="qa-score"')).toBeLessThan(html.indexOf('<h2'));
+  });
+
+  it('a CONFIRMED critical finding lowers the score by the rubric amount', async () => {
+    const { mdPath } = await fixture();
+    const clean = await scoreReport(mdPath);
+    expect(clean?.result.dimensions.findings).toBe(100);
+    expect(clean?.result.score).toBe(100);
+    await edit(mdPath, '## 4 Findings\n', '## 4 Findings\n\n- CONFIRMED [critical] The store page shows no products to a guest.\n');
+    const hit = await scoreReport(mdPath);
+    expect(hit?.result.dimensions.findings).toBe(100 - SEVERITY_DEDUCTION.critical);
+    // Default weights: findings 0.35 of the tested 0.35 + 0.1 + 0.15 + 0.1, so 100 - 25 * 0.35 / 0.7 = 87.5, rounded to 88.
+    expect(hit?.result.score).toBe(88);
+    // With findings as the only weighted dimension, the score drops by exactly the deduction.
+    const only = { weights: { findings: 1, console: 0, coverage: 0, evidence: 0 } };
+    expect((await scoreReport(mdPath, { score: only }))?.result.score).toBe(100 - SEVERITY_DEDUCTION.critical);
+    expect(await checkReport(mdPath)).toEqual([]);
+  });
+
+  it('leaves a SUSPECTED finding out of the score and names it in the breakdown', async () => {
+    const { mdPath } = await fixture();
+    await edit(mdPath, '## 4 Findings\n', '## 4 Findings\n\n- SUSPECTED [high] The refund page reads a stale price.\n- CONFIRMED [low] The footer link has the wrong label.\n');
+    const s = await scoreReport(mdPath);
+    expect(s?.result.dimensions.findings).toBe(100 - SEVERITY_DEDUCTION.low);
+    expect(s?.rows.find((r) => r.dimension === 'findings')?.note).toBe('1 CONFIRMED (1 low); 1 SUSPECTED, not scored');
+    expect(s?.rows.filter((r) => !r.counted).map((r) => [r.dimension, r.note])).toEqual([
+      ['accessibility', 'untested: the ledger holds no accessibility finding'],
+      ['performance', 'untested: the ledger holds no timing measure'],
+    ]);
+  });
+
+  it('check names a CONFIRMED finding with no severity tag', async () => {
+    const { mdPath } = await fixture();
+    await edit(mdPath, '## 4 Findings\n', '## 4 Findings\n\n- CONFIRMED The store page shows no products.\n- SUSPECTED The refund page reads a stale price.\n');
+    const problems = await checkReport(mdPath);
+    expect(codes(problems)).toEqual(['finding-severity']);
+    expect(problems[0]?.message).toContain('the CONFIRMED finding "The store page shows no products." has no severity tag');
+  });
+
+  it('draws the config weights and gauge colour on the rendered page, with the breakdown', async () => {
+    const { dir, mdPath } = await fixture();
+    await edit(mdPath, '## 4 Findings\n', '## 4 Findings\n\n- CONFIRMED [high] The store page shows no products to a guest.\n');
+    const score = { weights: { findings: 0.6 }, gaugeColor: 'rgb(16 185 129)' };
+    const html = await readFile(await renderReport(mdPath, RENDERER_DIR, dir, { score }), 'utf8');
+    expect(html).toContain('stroke="rgb(16 185 129)"');
+    expect(html).toContain('<tr data-dimension="findings" data-counted="true"><td>Findings</td><td>85</td><td>0.6</td><td>counted</td>');
+    expect(html).toContain('<tr data-dimension="performance" data-counted="false">');
+    // (85 * 0.6 + 100 * 0.1 + 100 * 0.15 + 100 * 0.1) / 0.95 = 90.53, rounded to 91.
+    expect(html).toContain('aria-label="QA score 91 of 100"');
+    const plain = await readFile(await renderReport(mdPath, RENDERER_DIR, dir), 'utf8');
+    expect(plain).toContain(`stroke="${DEFAULT_GAUGE_COLOR}"`);
   });
 
   it('leaves the gauge off a report before any row runs', async () => {

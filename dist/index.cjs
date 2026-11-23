@@ -826,6 +826,142 @@ var init_kernel = __esm({
   }
 });
 
+// src/services/score.mts
+function deductScore(counts) {
+  const lost = (counts.critical ?? 0) * SEVERITY_DEDUCTION.critical + (counts.high ?? 0) * SEVERITY_DEDUCTION.high + (counts.medium ?? 0) * SEVERITY_DEDUCTION.medium + (counts.low ?? 0) * SEVERITY_DEDUCTION.low;
+  return Math.max(0, 100 - lost);
+}
+function consoleScore(errors) {
+  if (errors <= 0) return 100;
+  if (errors <= 3) return 70;
+  if (errors <= 10) return 40;
+  return 10;
+}
+function computeScore(input, weights = {}) {
+  const w = { ...DEFAULT_SCORE_WEIGHTS, ...weights };
+  const dimensions = {};
+  if (input.findings) dimensions.findings = deductScore(input.findings);
+  if (input.consoleErrors !== void 0) dimensions.console = consoleScore(input.consoleErrors);
+  if (input.coverage !== void 0) dimensions.coverage = percentScore(input.coverage);
+  if (input.evidence !== void 0) dimensions.evidence = percentScore(input.evidence);
+  if (input.accessibility) dimensions.accessibility = deductScore(input.accessibility);
+  if (input.performance) dimensions.performance = deductScore(input.performance);
+  let weighted = 0;
+  let total = 0;
+  for (const dim of Object.keys(dimensions)) {
+    const value = dimensions[dim];
+    if (value === void 0) continue;
+    weighted += value * w[dim];
+    total += w[dim];
+  }
+  const score = total > 0 ? Math.round(weighted / total) : 0;
+  const confidenceParts = [];
+  if (input.coverage !== void 0) confidenceParts.push(clamp(input.coverage, 0, 1));
+  if (input.evidence !== void 0) confidenceParts.push(clamp(input.evidence, 0, 1));
+  const confidence = confidenceParts.length > 0 ? Math.min(...confidenceParts) : 0;
+  return { score, dimensions, confidence };
+}
+function renderScoreGauge(score, opts = {}) {
+  const size2 = opts.size ?? 160;
+  const value = clamp(Math.round(score), 0, 100);
+  const ring = attr(opts.color ?? DEFAULT_GAUGE_COLOR);
+  const track = attr(opts.track ?? NEUTRAL_TRACK);
+  const stroke = Math.max(2, Math.round(size2 * 0.09));
+  const radius = (size2 - stroke) / 2;
+  const center = size2 / 2;
+  const circumference = 2 * Math.PI * radius;
+  const filled = value / 100 * circumference;
+  const numberSize = Math.round(size2 * 0.3);
+  const font = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+  const numberY = opts.label ? center - numberSize * 0.12 : center;
+  const label = opts.label ? `<text x="${center}" y="${center + numberSize * 0.72}" text-anchor="middle" dominant-baseline="central" font-family="${font}" font-size="${Math.round(size2 * 0.1)}" fill="${LABEL_INK}">${content(opts.label)}</text>` : "";
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size2} ${size2}" width="${size2}" height="${size2}" role="img" aria-label="QA score ${value} of 100">`,
+    `<circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${track}" stroke-width="${stroke}"/>`,
+    `<circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${ring}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${filled.toFixed(3)} ${(circumference - filled).toFixed(3)}" transform="rotate(-90 ${center} ${center})"/>`,
+    `<text x="${center}" y="${numberY}" text-anchor="middle" dominant-baseline="central" font-family="${font}" font-size="${numberSize}" font-weight="700" fill="${ring}">${value}</text>`,
+    label,
+    "</svg>"
+  ].join("");
+}
+function scoreRows(result, weights = {}, notes = {}) {
+  const w = { ...DEFAULT_SCORE_WEIGHTS, ...weights };
+  return SCORE_DIMENSIONS.map(({ dimension, label }) => {
+    const score = result.dimensions[dimension] ?? null;
+    return { dimension, label, score, weight: w[dimension], counted: score !== null, note: notes[dimension] ?? (score === null ? "untested" : "") };
+  });
+}
+function renderScoreBreakdown(rows) {
+  const body = rows.map((r) => {
+    const state = r.counted ? "counted" : "untested";
+    return `<tr data-dimension="${r.dimension}" data-counted="${r.counted}"><td>${content(r.label)}</td><td>${r.score ?? "-"}</td><td>${r.weight}</td><td>${state}</td><td>${content(r.note)}</td></tr>`;
+  }).join("");
+  return `<table class="qa-score-table"><thead><tr><th>Dimension</th><th>Score</th><th>Weight</th><th>Counted</th><th>From</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+var DEFAULT_SCORE_WEIGHTS, SEVERITY_DEDUCTION, clamp, percentScore, DEFAULT_GAUGE_COLOR, NEUTRAL_TRACK, LABEL_INK, attr, content, SCORE_DIMENSIONS;
+var init_score = __esm({
+  "src/services/score.mts"() {
+    "use strict";
+    init_cjs_shims();
+    DEFAULT_SCORE_WEIGHTS = {
+      findings: 0.35,
+      console: 0.1,
+      coverage: 0.15,
+      evidence: 0.1,
+      accessibility: 0.15,
+      performance: 0.15
+    };
+    SEVERITY_DEDUCTION = { critical: 25, high: 15, medium: 8, low: 3 };
+    clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
+    percentScore = (fraction) => Math.round(clamp(fraction, 0, 1) * 100);
+    DEFAULT_GAUGE_COLOR = "#7c3aed";
+    NEUTRAL_TRACK = "#e2e8f0";
+    LABEL_INK = "#64748b";
+    attr = (value) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    content = (value) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    SCORE_DIMENSIONS = [
+      { dimension: "findings", label: "Findings" },
+      { dimension: "console", label: "Console and page errors" },
+      { dimension: "coverage", label: "Coverage" },
+      { dimension: "evidence", label: "Evidence" },
+      { dimension: "accessibility", label: "Accessibility" },
+      { dimension: "performance", label: "Performance" }
+    ];
+  }
+});
+
+// src/services/score-config.mts
+function isCssColor(value) {
+  const v = value.trim();
+  return HEX.test(v) || FUNCTIONAL.test(v) || NAMED_COLORS.has(v.toLowerCase());
+}
+var NAMED_COLORS, HEX, FUNCTIONAL, weight, scoreConfig;
+var init_score_config = __esm({
+  "src/services/score-config.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_kernel();
+    init_score();
+    NAMED_COLORS = new Set(
+      "aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen transparent currentcolor".split(" ")
+    );
+    HEX = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+    FUNCTIONAL = /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(\s*[-+0-9.%a-z\s,/]+\)$/i;
+    weight = import_zod6.z.number().nonnegative();
+    scoreConfig = import_zod6.z.object({
+      weights: import_zod6.z.strictObject({
+        findings: weight.optional(),
+        console: weight.optional(),
+        coverage: weight.optional(),
+        evidence: weight.optional(),
+        accessibility: weight.optional(),
+        performance: weight.optional()
+      }).default({}),
+      gaugeColor: import_zod6.z.string().refine(isCssColor, { message: "qa.score.gaugeColor must be a CSS colour: #rgb, #rrggbb, rgb(...), hsl(...), oklch(...) or a named colour" }).default(DEFAULT_GAUGE_COLOR)
+    });
+  }
+});
+
 // src/config.mts
 function withAppPaths(cfg, sections = {}) {
   const apps = sectionApps(sections);
@@ -842,6 +978,7 @@ var init_config2 = __esm({
     "use strict";
     init_cjs_shims();
     init_kernel();
+    init_score_config();
     legConfig = import_zod6.z.object({
       surface: import_zod6.z.enum(["web", "miniapp", "bot"]),
       target: import_zod6.z.string().min(1),
@@ -902,6 +1039,8 @@ var init_config2 = __esm({
         blackRatio: import_zod6.z.number().min(0).max(1).default(0.95),
         attempts: import_zod6.z.number().int().positive().default(3)
       }).prefault({}),
+      /** The 0-100 score (spec 2.11): weight overrides per dimension and the gauge ring colour. */
+      score: scoreConfig.prefault({}),
       /** Key of module `qa-device`, which parses it. The core keeps it whole. */
       device: import_zod6.z.record(import_zod6.z.string(), import_zod6.z.unknown()).default({}),
       /** Key of module `qa-intake`, which parses it. The core keeps it whole. */
@@ -7022,84 +7161,120 @@ plan -> ${target}`);
   }
 });
 
-// src/services/score.mts
-function deductScore(counts) {
-  const lost = (counts.critical ?? 0) * SEVERITY_DEDUCTION.critical + (counts.high ?? 0) * SEVERITY_DEDUCTION.high + (counts.medium ?? 0) * SEVERITY_DEDUCTION.medium + (counts.low ?? 0) * SEVERITY_DEDUCTION.low;
-  return Math.max(0, 100 - lost);
-}
-function consoleScore(errors) {
-  if (errors <= 0) return 100;
-  if (errors <= 3) return 70;
-  if (errors <= 10) return 40;
-  return 10;
-}
-function computeScore(input, weights = {}) {
-  const w = { ...DEFAULT_SCORE_WEIGHTS, ...weights };
-  const dimensions = {};
-  if (input.findings) dimensions.findings = deductScore(input.findings);
-  if (input.consoleErrors !== void 0) dimensions.console = consoleScore(input.consoleErrors);
-  if (input.coverage !== void 0) dimensions.coverage = percentScore(input.coverage);
-  if (input.evidence !== void 0) dimensions.evidence = percentScore(input.evidence);
-  if (input.accessibility) dimensions.accessibility = deductScore(input.accessibility);
-  if (input.performance) dimensions.performance = deductScore(input.performance);
-  let weighted = 0;
-  let total = 0;
-  for (const dim of Object.keys(dimensions)) {
-    const value = dimensions[dim];
-    if (value === void 0) continue;
-    weighted += value * w[dim];
-    total += w[dim];
+// src/services/findings.mts
+function parseFindings(lines2, from = 0, to = lines2.length) {
+  const out = [];
+  let fence = false;
+  for (let i = from; i < to; i += 1) {
+    const line = lines2[i].trim();
+    if (line.startsWith("```")) fence = !fence;
+    if (fence) continue;
+    const m = FINDING_RE.exec(line);
+    if (!m) continue;
+    const rest = m[2].trim();
+    const t = TAG_RE.exec(rest);
+    const tag = t ? t[1].trim().toLowerCase() : null;
+    out.push({ line: i, status: m[1], tag, severity: tag !== null && isSeverity(tag) ? tag : null, claim: t ? t[2].trim() : rest });
   }
-  const score = total > 0 ? Math.round(weighted / total) : 0;
-  const confidenceParts = [];
-  if (input.coverage !== void 0) confidenceParts.push(clamp(input.coverage, 0, 1));
-  if (input.evidence !== void 0) confidenceParts.push(clamp(input.evidence, 0, 1));
-  const confidence = confidenceParts.length > 0 ? Math.min(...confidenceParts) : 0;
-  return { score, dimensions, confidence };
+  return out;
 }
-function renderScoreGauge(score, opts = {}) {
-  const size2 = opts.size ?? 160;
-  const value = clamp(Math.round(score), 0, 100);
-  const ring = attr(opts.color ?? NEUTRAL_RING);
-  const track = attr(opts.track ?? NEUTRAL_TRACK);
-  const stroke = Math.max(2, Math.round(size2 * 0.09));
-  const radius = (size2 - stroke) / 2;
-  const center = size2 / 2;
-  const circumference = 2 * Math.PI * radius;
-  const filled = value / 100 * circumference;
-  const numberSize = Math.round(size2 * 0.3);
-  const font = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-  const numberY = opts.label ? center - numberSize * 0.12 : center;
-  const label = opts.label ? `<text x="${center}" y="${center + numberSize * 0.72}" text-anchor="middle" dominant-baseline="central" font-family="${font}" font-size="${Math.round(size2 * 0.1)}" fill="${track}">${content(opts.label)}</text>` : "";
-  return [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size2} ${size2}" width="${size2}" height="${size2}" role="img" aria-label="QA score ${value} of 100">`,
-    `<circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${track}" stroke-width="${stroke}"/>`,
-    `<circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${ring}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${filled.toFixed(3)} ${(circumference - filled).toFixed(3)}" transform="rotate(-90 ${center} ${center})"/>`,
-    `<text x="${center}" y="${numberY}" text-anchor="middle" dominant-baseline="central" font-family="${font}" font-size="${numberSize}" font-weight="700" fill="${ring}">${value}</text>`,
-    label,
-    "</svg>"
-  ].join("");
+function tallyFindings(findings) {
+  const confirmed = { critical: 0, high: 0, medium: 0, low: 0 };
+  let suspected = 0;
+  for (const f of findings) {
+    if (f.status === "SUSPECTED") suspected += 1;
+    else if (f.severity) confirmed[f.severity] += 1;
+  }
+  return { confirmed, suspected };
 }
-var DEFAULT_SCORE_WEIGHTS, SEVERITY_DEDUCTION, clamp, percentScore, NEUTRAL_RING, NEUTRAL_TRACK, attr, content;
-var init_score = __esm({
-  "src/services/score.mts"() {
+function findingProblems(findings) {
+  const out = [];
+  const form = `"CONFIRMED [${SEVERITIES.join("|")}] <claim>"`;
+  for (const f of findings) {
+    const at = `line ${f.line + 1}`;
+    if (f.tag !== null && f.severity === null) out.push(`${at}: the ${f.status} finding has the tag [${f.tag}], which is not a severity. Write ${form}.`);
+    else if (f.status === "CONFIRMED" && f.tag === null) out.push(`${at}: the CONFIRMED finding "${f.claim}" has no severity tag. Write ${form}.`);
+  }
+  return out;
+}
+var SEVERITIES, FINDING_RE, TAG_RE, isSeverity;
+var init_findings = __esm({
+  "src/services/findings.mts"() {
     "use strict";
     init_cjs_shims();
-    DEFAULT_SCORE_WEIGHTS = {
-      findings: 0.35,
-      console: 0.1,
-      coverage: 0.15,
-      evidence: 0.1,
-      accessibility: 0.15,
-      performance: 0.15
-    };
-    SEVERITY_DEDUCTION = { critical: 25, high: 15, medium: 8, low: 3 };
-    clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
-    percentScore = (fraction) => Math.round(clamp(fraction, 0, 1) * 100);
-    NEUTRAL_RING = "#64748b";
-    NEUTRAL_TRACK = "#e2e8f0";
-    attr = (value) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    content = (value) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    SEVERITIES = ["critical", "high", "medium", "low"];
+    FINDING_RE = /^(?:[-*+]\s+|#{3,6}\s+)?\**(CONFIRMED|SUSPECTED)\b\**:?\s*(.*)$/;
+    TAG_RE = /^\[([^\]]*)\]\s*(.*)$/;
+    isSeverity = (tag) => SEVERITIES.includes(tag);
+  }
+});
+
+// src/services/report-score.mts
+function runFacts(input) {
+  const pairs = plannedPairs(input.manifest);
+  const latest = /* @__PURE__ */ new Map();
+  for (const r of input.results) latest.set(pairKey(r.row, r.leg), r);
+  const provenances = /* @__PURE__ */ new Map();
+  const withFile = /* @__PURE__ */ new Set();
+  for (const e of input.entries) {
+    const key = pairKey(e.row, e.leg);
+    const set = provenances.get(key) ?? /* @__PURE__ */ new Set();
+    set.add(e.provenance);
+    provenances.set(key, set);
+    if (e.kind === "screenshot" || e.kind === "step" || e.kind === "video") withFile.add(key);
+  }
+  const facts = { pairs: pairs.length, covered: 0, evidenced: 0, ran: 0, pageErrors: 0 };
+  for (const { shot, leg } of pairs) {
+    const key = pairKey(shot.id, leg);
+    const provs = provenances.get(key);
+    if (provs?.has("live") || provs?.has("mounted")) facts.covered += 1;
+    const r = latest.get(key);
+    if (r) facts.ran += 1;
+    if (r?.status === "passed" && withFile.has(key)) facts.evidenced += 1;
+    if (r?.failures.includes("page-error")) facts.pageErrors += 1;
+  }
+  return facts;
+}
+function inputOf(facts, findings) {
+  if (facts.pairs === 0) return {};
+  const out = { coverage: facts.covered / facts.pairs, evidence: facts.evidenced / facts.pairs };
+  if (facts.ran > 0) out.consoleErrors = facts.pageErrors;
+  if (facts.ran > 0 && findings) out.findings = findings.confirmed;
+  return out;
+}
+function findingsNote(findings, ran) {
+  if (!findings) return "untested: the section 4 findings were not read";
+  if (ran === 0) return "untested: no row ran";
+  const c = findings.confirmed;
+  const total = c.critical + c.high + c.medium + c.low;
+  const levels = ["critical", "high", "medium", "low"].filter((s) => c[s] > 0).map((s) => `${c[s]} ${s}`);
+  const confirmed = total === 0 ? "no CONFIRMED finding" : `${total} CONFIRMED (${levels.join(", ")})`;
+  return findings.suspected > 0 ? `${confirmed}; ${findings.suspected} SUSPECTED, not scored` : confirmed;
+}
+function reportScore(input, weights = {}) {
+  const facts = runFacts(input);
+  const scoreInput = inputOf(facts, input.findings);
+  if (Object.keys(scoreInput).length === 0) return null;
+  const result = computeScore(scoreInput, weights);
+  const notRun = "untested: no row ran";
+  const notes = {
+    findings: findingsNote(input.findings, facts.ran),
+    console: facts.ran === 0 ? notRun : `${facts.pageErrors} of ${facts.ran} row legs that ran had a page error`,
+    coverage: `${facts.covered} of ${facts.pairs} row legs live or mounted`,
+    evidence: `${facts.evidenced} of ${facts.pairs} row legs passed with a file`,
+    accessibility: "untested: the ledger holds no accessibility finding",
+    performance: "untested: the ledger holds no timing measure"
+  };
+  return { input: scoreInput, result, rows: scoreRows(result, weights, notes) };
+}
+var init_report_score = __esm({
+  "src/services/report-score.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_evidence();
+    init_findings();
+    init_ledger();
+    init_score();
   }
 });
 
@@ -7681,6 +7856,11 @@ function withoutIntakeLinks(text2, reportDir, root) {
     return target ? intakeStaysLocal(target.id) : null;
   }).join("\n");
 }
+function reportFindings(text2) {
+  const p = parse2(text2);
+  const s4 = sectionRange(p, 4);
+  return s4 ? parseFindings(p.lines, s4[0], s4[1]) : [];
+}
 function headerIssues(p) {
   return (p.fields.get("Issues")?.value ?? "").split(/[\s,]+/).filter(Boolean);
 }
@@ -7829,6 +8009,7 @@ async function checkReport(mdPath, opts = {}) {
     if (at.length > 0) order.push(at[0]);
   }
   if (order.some((v, i) => i > 0 && v < order[i - 1])) add("section", "the sections are not in the order 1 to 6");
+  for (const message of findingProblems(reportFindings(r.text))) add("finding-severity", message);
   for (const e of r.manifestErrors) add("plan", e);
   if (!r.manifest) return problems;
   const manifest = r.manifest;
@@ -7953,49 +8134,27 @@ async function updateReport(mdPath, opts = {}) {
   await (0, import_promises13.writeFile)(mdPath, lines2.join("\n"));
   return status;
 }
-function reportScoreInput(input) {
-  const pairs = plannedPairs(input.manifest);
-  if (pairs.length === 0) return {};
-  const latest = /* @__PURE__ */ new Map();
-  for (const r of input.results) latest.set(pairKey(r.row, r.leg), r);
-  const provenances = /* @__PURE__ */ new Map();
-  const withFile = /* @__PURE__ */ new Set();
-  for (const e of input.entries) {
-    const key = pairKey(e.row, e.leg);
-    const set = provenances.get(key) ?? /* @__PURE__ */ new Set();
-    set.add(e.provenance);
-    provenances.set(key, set);
-    if (e.kind === "screenshot" || e.kind === "step" || e.kind === "video") withFile.add(key);
-  }
-  let covered = 0;
-  let evidenced = 0;
-  let ran = 0;
-  let pageErrors = 0;
-  for (const { shot, leg } of pairs) {
-    const key = pairKey(shot.id, leg);
-    const provs = provenances.get(key);
-    if (provs?.has("live") || provs?.has("mounted")) covered += 1;
-    const r = latest.get(key);
-    if (r) ran += 1;
-    if (r?.status === "passed" && withFile.has(key)) evidenced += 1;
-    if (r?.failures.includes("page-error")) pageErrors += 1;
-  }
-  const out = { coverage: covered / pairs.length, evidence: evidenced / pairs.length };
-  if (ran > 0) out.consoleErrors = pageErrors;
-  return out;
-}
-function scoreBlock(loaded) {
+function loadedScore(loaded, weights = {}) {
   const entries = loaded.ledger?.entries ?? [];
-  if (!loaded.manifest || loaded.results.length === 0 && entries.length === 0) return "";
-  const input = reportScoreInput({ manifest: loaded.manifest, results: loaded.results, entries });
-  if (Object.keys(input).length === 0) return "";
-  const { score, confidence } = computeScore(input);
+  if (!loaded.manifest || loaded.results.length === 0 && entries.length === 0) return null;
+  return reportScore({ manifest: loaded.manifest, results: loaded.results, entries, findings: tallyFindings(reportFindings(loaded.text)) }, weights);
+}
+async function scoreReport(mdPath, opts = {}) {
+  return loadedScore(await loadReport(mdPath, opts), opts.score?.weights);
+}
+function scoreBlock(loaded, opts) {
+  const s = loadedScore(loaded, opts.weights);
+  if (!s) return "";
+  const { score, confidence } = s.result;
   const percent = Math.round(confidence * 100);
-  const gauge = renderScoreGauge(score, { size: 132, label: `${percent}%` });
+  const gauge = renderScoreGauge(score, { size: 132, label: `${percent}%`, ...opts.gaugeColor ? { color: opts.gaugeColor } : {} });
   return [
-    '<div class="qa-score" style="display:flex;align-items:center;gap:1.1rem;margin:0 0 2.4rem;flex-wrap:wrap">',
+    '<div class="qa-score" style="margin:0 0 2.4rem">',
+    '<div style="display:flex;align-items:center;gap:1.1rem;flex-wrap:wrap">',
     `<div style="flex:0 0 auto">${gauge}</div>`,
-    `<p style="margin:0;max-width:34ch;color:var(--ink-soft)">QA score <strong style="color:var(--ink)">${score}</strong> of 100. The weighted score covers the dimensions this run tested. Confidence ${percent}% comes from the live coverage and the evidence.</p>`,
+    `<p style="margin:0;max-width:34ch;color:var(--ink-soft)">QA score <strong style="color:var(--ink)">${score}</strong> of 100. The weighted score averages the counted dimensions below. Confidence ${percent}% comes from the live coverage and the evidence.</p>`,
+    "</div>",
+    `<div style="overflow-x:auto">${renderScoreBreakdown(s.rows)}</div>`,
     "</div>",
     ""
   ].join("\n");
@@ -8028,7 +8187,7 @@ async function renderReport(mdPath, rendererDir, root, opts = {}) {
   const range = field("Range");
   const values = /* @__PURE__ */ new Map([
     ["NAV", rendered.toc.map((e) => `<li><a href="#${e.anchor}"><span class="n">${e.eyebrow}</span>${escapeHtml(plain(e.title))}</a></li>`).join("")],
-    ["BODY", scoreBlock(loaded) + rendered.body],
+    ["BODY", scoreBlock(loaded, opts.score ?? {}) + rendered.body],
     ["TITLE", escapeHtml(p.title)],
     ["DATE", escapeHtml(field("Date") ?? slug3.slice(0, 10))],
     ["STATUS", escapeHtml(field("Status") ?? "")],
@@ -8064,9 +8223,12 @@ var init_report = __esm({
     init_ledger();
     init_manifest2();
     init_png();
+    init_findings();
+    init_report_score();
     init_score();
     init_render();
     init_types();
+    init_report_score();
     REPORT_SECTIONS = [
       { n: 1, title: "What this run covered" },
       { n: 2, title: "What the code claims" },
@@ -8286,17 +8448,20 @@ function page(input) {
   ].join("\n");
 }
 function scoreBlock2(input, opts) {
-  const scoreInput = reportScoreInput(input);
-  if (Object.keys(scoreInput).length === 0) {
+  const s = reportScore(input, opts.weights);
+  if (!s) {
     return '<div class="qa-score"><p>No rows have run yet, so the score has no dimension to average.</p></div>';
   }
-  const { score, confidence } = computeScore(scoreInput);
+  const { score, confidence } = s.result;
   const percent = Math.round(confidence * 100);
   const gauge = renderScoreGauge(score, { size: 148, label: `${percent}%`, ...opts.gaugeColor ? { color: opts.gaugeColor } : {} });
   return [
     '<div class="qa-score">',
     `<div class="qa-gauge">${gauge}</div>`,
-    `<p>QA score <strong>${score}</strong> of 100. The weighted score covers the dimensions this run tested. Confidence ${percent}% comes from the live coverage and the evidence. A low coverage or evidence caps the confidence, so a thin run does not read as a clean pass.</p>`,
+    '<div class="qa-score-text">',
+    `<p>QA score <strong>${score}</strong> of 100. The weighted score averages the counted dimensions. Confidence ${percent}% comes from the live coverage and the evidence. A low coverage or evidence caps the confidence, so a thin run does not read as a clean pass.</p>`,
+    `<div class="qa-score-scroll">${renderScoreBreakdown(s.rows)}</div>`,
+    "</div>",
     "</div>"
   ].join("");
 }
@@ -8425,7 +8590,8 @@ async function loadViewerInput(mdPath, opts = {}) {
     status,
     manifest,
     results: loaded.results,
-    entries
+    entries,
+    findings: tallyFindings(reportFindings(loaded.text))
   };
   return { input, slug: loaded.slug, reportDir: loaded.reportDir };
 }
@@ -8457,7 +8623,9 @@ var init_viewer = __esm({
     init_evidence();
     init_ledger();
     init_manifest2();
+    init_findings();
     init_report();
+    init_report_score();
     init_score();
     MEDIA_PREFIX = "../../";
     viewerDirName = (slug3) => `${slug3}-viewer`;
@@ -8492,6 +8660,12 @@ h3{font-size:1.1rem;margin:0 0 .5rem}
 .qa-score p{margin:0;max-width:46ch;color:var(--ink-soft)}
 .qa-score strong{color:var(--ink);font-size:1.15em}
 .qa-gauge{flex:0 0 auto}
+.qa-score-text{flex:1 1 22rem;min-width:0}
+.qa-score-scroll{overflow-x:auto;margin-top:.8rem}
+.qa-score-table{width:100%;border-collapse:collapse;font-size:.86rem}
+.qa-score-table th,.qa-score-table td{text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--rule)}
+.qa-score-table th{color:var(--ink-soft);font-weight:600}
+.qa-score-table tr[data-counted="false"] td{color:var(--ink-soft)}
 .qa-findings table{width:100%;border-collapse:collapse;font-size:.92rem}
 .qa-findings th,.qa-findings td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--rule);vertical-align:top}
 .qa-findings th{color:var(--ink-soft);font-weight:600}
@@ -8690,8 +8864,8 @@ var init_qa_report = __esm({
     ACTIONS = ["check", "update", "render", "viewer"];
     USAGE4 = [
       "usage: lw qa report <check|update|render|viewer> <report.md>",
-      "  check   exit 1 and list every problem: missing, blank, unembedded or edited evidence, a wrong Status, an issue with no statement",
-      "  update  write section 3, the section 5 lines and the Status, Legs and Coverage lines from the ledger",
+      "  check   exit 1 and list every problem: missing, blank, unembedded or edited evidence, a wrong Status, an issue with no statement, a CONFIRMED finding with no severity",
+      "  update  write section 3, the section 5 lines and the Status, Legs and Coverage lines from the ledger, and print the score",
       "  render  write <reportDir>/dist/<slug>.html with the spec renderer",
       "  viewer  write the interactive multi-page viewer under <reportDir>/dist/<slug>-viewer/"
     ];
@@ -8718,17 +8892,20 @@ var init_qa_report = __esm({
             for (const p of problems) opts.err(`  ${p.code}: ${p.message}`);
             return 1;
           }
+          const score = config.score;
           if (action === "update") {
             const status = await updateReport(md, { legs });
-            opts.out(`lw qa report update: ${file} Status: ${status}`);
+            const scored = await scoreReport(md, { legs, score });
+            const scoreText = scored ? `, score ${scored.result.score} of 100, confidence ${Math.round(scored.result.confidence * 100)}%` : "";
+            opts.out(`lw qa report update: ${file} Status: ${status}${scoreText}`);
             return 0;
           }
           if (action === "viewer") {
-            const result = await buildViewer(md, { legs });
+            const result = await buildViewer(md, { legs, weights: score.weights, gaugeColor: score.gaugeColor });
             opts.out(`lw qa report viewer: wrote ${result.pages.length} pages, open ${result.index}`);
             return 0;
           }
-          const page2 = await renderReport(md, RENDERER_DIR, opts.cwd, { legs });
+          const page2 = await renderReport(md, RENDERER_DIR, opts.cwd, { legs, score });
           opts.out(`lw qa report render: wrote ${page2}`);
           return 0;
         } catch (cause) {
@@ -13910,7 +14087,8 @@ async function serve2(arg, chosen, opts) {
   const { input, reportDir } = await loadViewerInput(md, { legs: legNames(opts) });
   const store = fileCommentStore((0, import_node_path46.join)(opts.cwd, COMMENTS_DIR));
   const viewerDir = `dist/${viewerDirName(slug3)}`;
-  const renderPages = (comments2) => renderViewerBundle({ ...input, comments: comments2 }, {}).pages;
+  const { weights, gaugeColor } = qaConfigOf(opts.config).score;
+  const renderPages = (comments2) => renderViewerBundle({ ...input, comments: comments2 }, { weights, gaugeColor }).pages;
   const server = await startCommentServer({ reportDir, viewerDir, slug: slug3, store, renderPages, clock: systemClock, ...chosen === void 0 ? {} : { port: chosen } });
   const stop = processSignal(opts.signal);
   try {
@@ -14113,6 +14291,7 @@ __export(src_exports, {
   BOT_STORE_DIR: () => BOT_STORE_DIR,
   COMMENTS_DIR: () => COMMENTS_DIR,
   CONSENT_DIR: () => CONSENT_DIR,
+  DEFAULT_GAUGE_COLOR: () => DEFAULT_GAUGE_COLOR,
   DEFAULT_SCORE_WEIGHTS: () => DEFAULT_SCORE_WEIGHTS,
   DELETE_CONFIRM: () => DELETE_CONFIRM,
   EXTENSION_PREFIX: () => EXTENSION_PREFIX,
@@ -14123,6 +14302,8 @@ __export(src_exports, {
   QA_TARGET_SPEC_VERSION: () => QA_TARGET_SPEC_VERSION,
   REPORT_STATUSES: () => REPORT_STATUSES,
   ROW_FAILURES: () => ROW_FAILURES,
+  SCORE_DIMENSIONS: () => SCORE_DIMENSIONS,
+  SEVERITIES: () => SEVERITIES,
   SEVERITY_DEDUCTION: () => SEVERITY_DEDUCTION,
   SUBCOMMANDS: () => SUBCOMMANDS,
   addComment: () => addComment,
@@ -14144,8 +14325,10 @@ __export(src_exports, {
   fileBotStore: () => fileBotStore,
   fileCommentStore: () => fileCommentStore,
   fileConsentStore: () => fileConsentStore,
+  findingProblems: () => findingProblems,
   grant: () => grant,
   isCodedError: () => isCodedError,
+  isCssColor: () => isCssColor,
   issueMarkdown: () => issueMarkdown,
   listIssues: () => listIssues,
   loadExtensions: () => loadExtensions,
@@ -14155,6 +14338,7 @@ __export(src_exports, {
   missingCredentials: () => missingCredentials,
   newBot: () => newBot,
   parseBotToken: () => parseBotToken,
+  parseFindings: () => parseFindings,
   pngSize: () => pngSize,
   qaCommand: () => qaCommand,
   qaConfig: () => qaConfig,
@@ -14164,11 +14348,15 @@ __export(src_exports, {
   recordDir: () => recordDir,
   recordGrants: () => recordGrants,
   recordId: () => recordId,
+  renderScoreBreakdown: () => renderScoreBreakdown,
   renderScoreGauge: () => renderScoreGauge,
   replyToComment: () => replyToComment,
   resolveComments: () => resolveComments,
+  scoreConfig: () => scoreConfig,
+  scoreRows: () => scoreRows,
   setStatus: () => setStatus,
   startCommentServer: () => startCommentServer,
+  tallyFindings: () => tallyFindings,
   validateAnchor: () => validateAnchor,
   withAppPaths: () => withAppPaths,
   writeIssue: () => writeIssue
@@ -14457,6 +14645,8 @@ init_comments();
 init_comment_export();
 init_comment_server();
 init_score();
+init_score_config();
+init_findings();
 init_targets();
 init_types();
 init_video();
@@ -14469,6 +14659,7 @@ init_tokens2();
   BOT_STORE_DIR,
   COMMENTS_DIR,
   CONSENT_DIR,
+  DEFAULT_GAUGE_COLOR,
   DEFAULT_SCORE_WEIGHTS,
   DELETE_CONFIRM,
   EXTENSION_PREFIX,
@@ -14479,6 +14670,8 @@ init_tokens2();
   QA_TARGET_SPEC_VERSION,
   REPORT_STATUSES,
   ROW_FAILURES,
+  SCORE_DIMENSIONS,
+  SEVERITIES,
   SEVERITY_DEDUCTION,
   SUBCOMMANDS,
   addComment,
@@ -14500,8 +14693,10 @@ init_tokens2();
   fileBotStore,
   fileCommentStore,
   fileConsentStore,
+  findingProblems,
   grant,
   isCodedError,
+  isCssColor,
   issueMarkdown,
   listIssues,
   loadExtensions,
@@ -14511,6 +14706,7 @@ init_tokens2();
   missingCredentials,
   newBot,
   parseBotToken,
+  parseFindings,
   pngSize,
   qaCommand,
   qaConfig,
@@ -14520,11 +14716,15 @@ init_tokens2();
   recordDir,
   recordGrants,
   recordId,
+  renderScoreBreakdown,
   renderScoreGauge,
   replyToComment,
   resolveComments,
+  scoreConfig,
+  scoreRows,
   setStatus,
   startCommentServer,
+  tallyFindings,
   validateAnchor,
   withAppPaths,
   writeIssue

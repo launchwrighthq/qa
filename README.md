@@ -72,6 +72,50 @@ The `fake` target opens no connection, so any loopback URL works. A pass also ne
 A leg may have any name, for example `[legs.fake-web]`. Every command that reads a plan accepts the
 legs of the config.
 
+### The score
+
+`lw-qa report render` and `lw-qa report viewer` draw a 0-100 score as a circular gauge, with a
+breakdown table beside it. `lw-qa report update` prints the score. The score is the weighted average
+of the dimensions that the run tested:
+
+| Dimension | Score | Default weight |
+|---|---|---|
+| `findings` | 100, minus 25, 15, 8 or 3 per `CONFIRMED` finding of section 4 (critical, high, medium, low). Floor 0. | 0.35 |
+| `console` | 100 with no row leg that had a page error; 70 for 1 to 3; 40 for 4 to 10; 10 for more. | 0.1 |
+| `coverage` | The percent of planned row legs with `live` or `mounted` evidence. | 0.15 |
+| `evidence` | The percent of planned row legs that passed with a file. | 0.1 |
+| `accessibility` | Untested: the ledger holds no accessibility finding. | 0.15 |
+| `performance` | Untested: the ledger holds no timing measure. | 0.15 |
+
+An untested dimension drops from the average, and the breakdown marks it `untested`. The findings
+and console dimensions count once a row ran.
+
+A finding of section 4 starts its line with `CONFIRMED` or `SUSPECTED`, then a severity tag:
+
+```markdown
+- CONFIRMED [high] The checkout button stays disabled after a valid card.
+### SUSPECTED [low] The empty cart copy is cut on a narrow phone.
+```
+
+The tags are `[critical]`, `[high]`, `[medium]` and `[low]`. `lw-qa report check` fails a
+`CONFIRMED` finding with no tag. A `SUSPECTED` finding is read from the code and not reproduced, so
+it deducts nothing.
+
+The `[score]` table of `qa.toml` sets the weights and the gauge colour:
+
+```toml
+[score]
+gaugeColor = "#0ea5e9"
+
+[score.weights]
+findings = 0.5
+performance = 0
+```
+
+A weight is a number of 0 or more, and a weight left out keeps its default. `gaugeColor` is a CSS
+colour: `#rgb`, `#rrggbb`, `rgb(...)`, `hsl(...)`, `oklch(...)` or a named colour. The default is
+purple, `#7c3aed`.
+
 `lw-qa session run` exits 1 when a row failed, and also when no row and leg pair ran (every pair is
 `not-run`), so CI never reads an empty run as green.
 

@@ -70,6 +70,31 @@ describe('lw qa report', () => {
     expect(html).not.toMatch(/\{\{[A-Z_]+\}\}/);
   });
 
+  it('render, viewer and update read config qa.score (spec 2.11)', async () => {
+    const { root, mdPath, slug } = await project();
+    const text = await readFile(mdPath, 'utf8');
+    await writeFile(mdPath, text.replace('## 4 Findings\n', '## 4 Findings\n\n- CONFIRMED [critical] The store page shows no products to a guest.\n'));
+    const score = { weights: { findings: 1, console: 0, coverage: 0, evidence: 0 }, gaugeColor: '#0ea5e9' };
+    const c = io();
+    const opts = { ...c.opts(root), config: { qa: { score } } };
+    expect(await report.run(['render', `docs/qa/${slug}.md`], opts)).toBe(0);
+    const page = await readFile(join(root, `docs/qa/dist/${slug}.html`), 'utf8');
+    expect(page).toContain('stroke="#0ea5e9"');
+    expect(page).toContain('aria-label="QA score 75 of 100"');
+    expect(await report.run(['viewer', `docs/qa/${slug}.md`], opts)).toBe(0);
+    const index = await readFile(join(root, `docs/qa/dist/${slug}-viewer/index.html`), 'utf8');
+    expect(index).toContain('stroke="#0ea5e9"');
+    expect(index).toContain('aria-label="QA score 75 of 100"');
+    expect(await report.run(['update', `docs/qa/${slug}.md`], opts)).toBe(0);
+    expect(c.out.at(-1)).toContain('Status: passed, score 75 of 100, confidence 100%');
+  });
+
+  it('refuses a gauge colour that is not a CSS colour', async () => {
+    const { root, slug } = await project();
+    const c = io();
+    await expect(report.run(['render', `docs/qa/${slug}.md`], { ...c.opts(root), config: { qa: { score: { gaugeColor: 'url(x)' } } } })).rejects.toThrow(/CSS colour/);
+  });
+
   it('render names the page template and the package when the template is missing', async () => {
     const { root, slug } = await project();
     const missing = join(root, 'no-renderer');

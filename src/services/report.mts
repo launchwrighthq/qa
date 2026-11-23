@@ -25,7 +25,9 @@ import {
 import { type Ledger, LEDGER_FILE, pairKey, readLedger, readResults, reportPaths, RESULTS_FILE, verifyLedger } from './ledger.mts';
 import { type Manifest, validateManifest, type ValidateOptions } from './manifest.mts';
 import { blankFailure, pngSize, type PngSize } from './png.mts';
-import { computeScore, renderScoreGauge, type ScoreInput } from './score.mts';
+import { type Finding, findingProblems, parseFindings, tallyFindings } from './findings.mts';
+import { type ReportScore, reportScore } from './report-score.mts';
+import { renderScoreBreakdown, renderScoreGauge, type ScoreWeights } from './score.mts';
 import { inline, plain, renderBody, TEMPLATE_DIR } from '../render/index.mts';
 import { INTAKE_DIR, type LedgerEntry, type QaIssue, REPORT_STATUSES, type ReportStatus, type RowResult } from './types.mts';
 
@@ -78,7 +80,8 @@ export interface ReportProblem {
     | 'intake-link'
     | 'issue-statement'
     | 'issue-unknown'
-    | 'issue-evidence';
+    | 'issue-evidence'
+    | 'finding-severity';
   message: string;
   row?: string;
   leg?: string;
@@ -244,6 +247,13 @@ export function withoutIntakeLinks(text: string, reportDir: string, root: string
 export const ISSUE_STATEMENT = /^- issue ([A-Za-z0-9._-]+): (REPRODUCED|NOT REPRODUCED)$/;
 /** A line that starts like a statement, so a malformed one is named and not passed over. */
 const STATEMENT_LIKE = /^- issue \S+:/;
+
+/** The `CONFIRMED` and `SUSPECTED` finding lines of section 4 (spec 2.11), as `findings.mts` parses them. */
+export function reportFindings(text: string): Finding[] {
+  const p = parse(text);
+  const s4 = sectionRange(p, 4);
+  return s4 ? parseFindings(p.lines, s4[0], s4[1]) : [];
+}
 
 /** The ids of the `Issues:` header line, split on commas and spaces. */
 function headerIssues(p: Parsed): string[] {
@@ -435,6 +445,7 @@ export async function checkReport(mdPath: string, opts: CheckOptions = {}): Prom
     if (at.length > 0) order.push(at[0] as number);
   }
   if (order.some((v, i) => i > 0 && v < (order[i - 1] as number))) add('section', 'the sections are not in the order 1 to 6');
+  for (const message of findingProblems(reportFindings(r.text))) add('finding-severity', message);
 
   for (const e of r.manifestErrors) add('plan', e);
   if (!r.manifest) return problems;
@@ -589,57 +600,40 @@ export function reportSkeleton(input: { title: string; date: string; source: { f
 /** The folder of the page template of the spec renderer. */
 export const RENDERER_DIR = TEMPLATE_DIR;
 
-/**
- * The score input the report's own data supports (spec 2.11). Coverage is the share of planned row
- * legs with a `live` or `mounted` ledger entry. Evidence is the share that passed with a real file.
- * The console band reads the page errors the results name. Findings, accessibility and performance
- * need a severity the report does not hold, so they stay untested and drop from the average.
- */
-export function reportScoreInput(input: { manifest: Manifest; results: readonly RowResult[]; entries: readonly LedgerEntry[] }): ScoreInput {
-  const pairs = plannedPairs(input.manifest);
-  if (pairs.length === 0) return {};
-  const latest = new Map<string, RowResult>();
-  for (const r of input.results) latest.set(pairKey(r.row, r.leg), r);
-  const provenances = new Map<string, Set<string>>();
-  const withFile = new Set<string>();
-  for (const e of input.entries) {
-    const key = pairKey(e.row, e.leg);
-    const set = provenances.get(key) ?? new Set<string>();
-    set.add(e.provenance);
-    provenances.set(key, set);
-    if (e.kind === 'screenshot' || e.kind === 'step' || e.kind === 'video') withFile.add(key);
-  }
-  let covered = 0;
-  let evidenced = 0;
-  let ran = 0;
-  let pageErrors = 0;
-  for (const { shot, leg } of pairs) {
-    const key = pairKey(shot.id, leg);
-    const provs = provenances.get(key);
-    if (provs?.has('live') || provs?.has('mounted')) covered += 1;
-    const r = latest.get(key);
-    if (r) ran += 1;
-    if (r?.status === 'passed' && withFile.has(key)) evidenced += 1;
-    if (r?.failures.includes('page-error')) pageErrors += 1;
-  }
-  const out: ScoreInput = { coverage: covered / pairs.length, evidence: evidenced / pairs.length };
-  if (ran > 0) out.consoleErrors = pageErrors;
-  return out;
+export { reportScoreInput } from './report-score.mts';
+
+/** Config `qa.score` as the render, the update and the viewer take it (spec 2.11). */
+export interface ScoreOptions {
+  weights?: Partial<ScoreWeights>;
+  gaugeColor?: string;
 }
 
-/** The score gauge for the top of a run report's page, or '' for a report that has not run. */
-function scoreBlock(loaded: LoadedReport): string {
+/** The score of a loaded report with its section 4 findings, or null before any row runs. */
+function loadedScore(loaded: LoadedReport, weights: Partial<ScoreWeights> = {}): ReportScore | null {
   const entries = loaded.ledger?.entries ?? [];
-  if (!loaded.manifest || (loaded.results.length === 0 && entries.length === 0)) return '';
-  const input = reportScoreInput({ manifest: loaded.manifest, results: loaded.results, entries });
-  if (Object.keys(input).length === 0) return '';
-  const { score, confidence } = computeScore(input);
+  if (!loaded.manifest || (loaded.results.length === 0 && entries.length === 0)) return null;
+  return reportScore({ manifest: loaded.manifest, results: loaded.results, entries, findings: tallyFindings(reportFindings(loaded.text)) }, weights);
+}
+
+/** The score of the report at `mdPath` with the config weights, or null before any row runs. */
+export async function scoreReport(mdPath: string, opts: ValidateOptions & { score?: ScoreOptions } = {}): Promise<ReportScore | null> {
+  return loadedScore(await loadReport(mdPath, opts), opts.score?.weights);
+}
+
+/** The score gauge and its breakdown for the top of a run report's page, or '' for a report that has not run. */
+function scoreBlock(loaded: LoadedReport, opts: ScoreOptions): string {
+  const s = loadedScore(loaded, opts.weights);
+  if (!s) return '';
+  const { score, confidence } = s.result;
   const percent = Math.round(confidence * 100);
-  const gauge = renderScoreGauge(score, { size: 132, label: `${percent}%` });
+  const gauge = renderScoreGauge(score, { size: 132, label: `${percent}%`, ...(opts.gaugeColor ? { color: opts.gaugeColor } : {}) });
   return [
-    '<div class="qa-score" style="display:flex;align-items:center;gap:1.1rem;margin:0 0 2.4rem;flex-wrap:wrap">',
+    '<div class="qa-score" style="margin:0 0 2.4rem">',
+    '<div style="display:flex;align-items:center;gap:1.1rem;flex-wrap:wrap">',
     `<div style="flex:0 0 auto">${gauge}</div>`,
-    `<p style="margin:0;max-width:34ch;color:var(--ink-soft)">QA score <strong style="color:var(--ink)">${score}</strong> of 100. The weighted score covers the dimensions this run tested. Confidence ${percent}% comes from the live coverage and the evidence.</p>`,
+    `<p style="margin:0;max-width:34ch;color:var(--ink-soft)">QA score <strong style="color:var(--ink)">${score}</strong> of 100. The weighted score averages the counted dimensions below. Confidence ${percent}% comes from the live coverage and the evidence.</p>`,
+    '</div>',
+    `<div style="overflow-x:auto">${renderScoreBreakdown(s.rows)}</div>`,
     '</div>',
     '',
   ].join('\n');
@@ -648,9 +642,10 @@ function scoreBlock(loaded: LoadedReport): string {
 /**
  * Renders a report to `<reportDir>/dist/<slug>.html` with the spec renderer and the page template
  * in `rendererDir`. The page links the evidence as `../assets/<slug>/<file>`. `root` is the project
- * root, where the section 4 links to reporter media resolve. Returns the page path.
+ * root, where the section 4 links to reporter media resolve. `opts.score` is config `qa.score`.
+ * Returns the page path.
  */
-export async function renderReport(mdPath: string, rendererDir: string, root: string, opts: ValidateOptions = {}): Promise<string> {
+export async function renderReport(mdPath: string, rendererDir: string, root: string, opts: ValidateOptions & { score?: ScoreOptions } = {}): Promise<string> {
   const slug = slugOf(mdPath);
   const template = join(rendererDir, 'spec-template.html');
   let shell: string;
@@ -687,7 +682,7 @@ export async function renderReport(mdPath: string, rendererDir: string, root: st
   const range = field('Range');
   const values = new Map<string, string>([
     ['NAV', rendered.toc.map((e) => `<li><a href="#${e.anchor}"><span class="n">${e.eyebrow}</span>${escapeHtml(plain(e.title))}</a></li>`).join('')],
-    ['BODY', scoreBlock(loaded) + rendered.body],
+    ['BODY', scoreBlock(loaded, opts.score ?? {}) + rendered.body],
     ['TITLE', escapeHtml(p.title)],
     ['DATE', escapeHtml(field('Date') ?? slug.slice(0, 10))],
     ['STATUS', escapeHtml(field('Status') ?? '')],

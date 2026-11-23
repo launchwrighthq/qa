@@ -1,4 +1,5 @@
 import { appDir, sectionApps, z } from './kernel/index.mts';
+import { scoreConfig } from './services/score-config.mts';
 
 /** One leg (spec 2.3). The key of `qa.legs` is its name. */
 export const legConfig = z.object({
@@ -67,6 +68,8 @@ export const qaConfig = z.object({
       attempts: z.number().int().positive().default(3),
     })
     .prefault({}),
+  /** The 0-100 score (spec 2.11): weight overrides per dimension and the gauge ring colour. */
+  score: scoreConfig.prefault({}),
   /** Key of module `qa-device`, which parses it. The core keeps it whole. */
   device: z.record(z.string(), z.unknown()).default({}),
   /** Key of module `qa-intake`, which parses it. The core keeps it whole. */

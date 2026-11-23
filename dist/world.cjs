@@ -763,6 +763,32 @@ async function openWorld(entry, sections, env, overlay) {
 // src/kernel/services/args.mts
 var import_node_util = require("util");
 
+// src/services/score.mts
+var DEFAULT_GAUGE_COLOR = "#7c3aed";
+
+// src/services/score-config.mts
+var NAMED_COLORS = new Set(
+  "aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen transparent currentcolor".split(" ")
+);
+var HEX = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+var FUNCTIONAL = /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(\s*[-+0-9.%a-z\s,/]+\)$/i;
+function isCssColor(value) {
+  const v = value.trim();
+  return HEX.test(v) || FUNCTIONAL.test(v) || NAMED_COLORS.has(v.toLowerCase());
+}
+var weight = import_zod6.z.number().nonnegative();
+var scoreConfig = import_zod6.z.object({
+  weights: import_zod6.z.strictObject({
+    findings: weight.optional(),
+    console: weight.optional(),
+    coverage: weight.optional(),
+    evidence: weight.optional(),
+    accessibility: weight.optional(),
+    performance: weight.optional()
+  }).default({}),
+  gaugeColor: import_zod6.z.string().refine(isCssColor, { message: "qa.score.gaugeColor must be a CSS colour: #rgb, #rrggbb, rgb(...), hsl(...), oklch(...) or a named colour" }).default(DEFAULT_GAUGE_COLOR)
+});
+
 // src/config.mts
 var legConfig = import_zod6.z.object({
   surface: import_zod6.z.enum(["web", "miniapp", "bot"]),
@@ -824,6 +850,8 @@ var qaConfig = import_zod6.z.object({
     blackRatio: import_zod6.z.number().min(0).max(1).default(0.95),
     attempts: import_zod6.z.number().int().positive().default(3)
   }).prefault({}),
+  /** The 0-100 score (spec 2.11): weight overrides per dimension and the gauge ring colour. */
+  score: scoreConfig.prefault({}),
   /** Key of module `qa-device`, which parses it. The core keeps it whole. */
   device: import_zod6.z.record(import_zod6.z.string(), import_zod6.z.unknown()).default({}),
   /** Key of module `qa-intake`, which parses it. The core keeps it whole. */

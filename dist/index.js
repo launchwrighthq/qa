@@ -6,10 +6,10 @@ import {
   loadExtensions,
   qaCommand,
   qaProvider
-} from "./chunk-SYN6R5ZP.js";
+} from "./chunk-HOTB3Y25.js";
 import {
   createStatesCommand
-} from "./chunk-UF3OGAIM.js";
+} from "./chunk-AGGRX66T.js";
 import {
   QA_TARGETS
 } from "./chunk-CR6DWKU7.js";
@@ -57,10 +57,12 @@ import "./chunk-62VIRJ2H.js";
 import "./chunk-ZYIHPZ3V.js";
 import "./chunk-YDFQPHPI.js";
 import {
+  isCssColor,
   qaConfig,
   qaConfigOf,
+  scoreConfig,
   withAppPaths
-} from "./chunk-7OHVK72J.js";
+} from "./chunk-4B5GWDFB.js";
 import "./chunk-5KDQJ25J.js";
 import "./chunk-SQO6FPZ2.js";
 import "./chunk-NYZ72SDM.js";
@@ -80,11 +82,11 @@ import {
   mimeOfExtension
 } from "./chunk-B7UB2WOJ.js";
 import {
-  DEFAULT_SCORE_WEIGHTS,
-  SEVERITY_DEDUCTION,
-  computeScore,
-  renderScoreGauge
-} from "./chunk-ZXEFVZDQ.js";
+  SEVERITIES,
+  findingProblems,
+  parseFindings,
+  tallyFindings
+} from "./chunk-RFUDK5EX.js";
 import {
   QA_TARGET_CAPABILITIES,
   QA_TARGET_SPEC_VERSION
@@ -102,6 +104,16 @@ import {
   ROW_FAILURES
 } from "./chunk-SA2YN55L.js";
 import "./chunk-GZ2IEQDP.js";
+import {
+  DEFAULT_GAUGE_COLOR,
+  DEFAULT_SCORE_WEIGHTS,
+  SCORE_DIMENSIONS,
+  SEVERITY_DEDUCTION,
+  computeScore,
+  renderScoreBreakdown,
+  renderScoreGauge,
+  scoreRows
+} from "./chunk-2VQTE6KZ.js";
 import "./chunk-5AJ7M7K5.js";
 import {
   isCodedError
@@ -113,6 +125,7 @@ export {
   BOT_STORE_DIR,
   COMMENTS_DIR,
   CONSENT_DIR,
+  DEFAULT_GAUGE_COLOR,
   DEFAULT_SCORE_WEIGHTS,
   DELETE_CONFIRM,
   EXTENSION_PREFIX,
@@ -123,6 +136,8 @@ export {
   QA_TARGET_SPEC_VERSION,
   REPORT_STATUSES,
   ROW_FAILURES,
+  SCORE_DIMENSIONS,
+  SEVERITIES,
   SEVERITY_DEDUCTION,
   SUBCOMMANDS,
   addComment,
@@ -144,8 +159,10 @@ export {
   fileBotStore,
   fileCommentStore,
   fileConsentStore,
+  findingProblems,
   grant,
   isCodedError,
+  isCssColor,
   issueMarkdown,
   listIssues,
   loadExtensions,
@@ -155,6 +172,7 @@ export {
   missingCredentials,
   newBot,
   parseBotToken,
+  parseFindings,
   pngSize,
   qaCommand,
   qaConfig,
@@ -164,11 +182,15 @@ export {
   recordDir,
   recordGrants,
   recordId,
+  renderScoreBreakdown,
   renderScoreGauge,
   replyToComment,
   resolveComments,
+  scoreConfig,
+  scoreRows,
   setStatus,
   startCommentServer,
+  tallyFindings,
   validateAnchor,
   withAppPaths,
   writeIssue

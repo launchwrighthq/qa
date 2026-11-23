@@ -53,7 +53,8 @@ async function serve(arg: string, chosen: number | undefined, opts: QaCommandOpt
   const { input, reportDir } = await loadViewerInput(md, { legs: legNames(opts) });
   const store = fileCommentStore(join(opts.cwd, COMMENTS_DIR));
   const viewerDir = `dist/${viewerDirName(slug)}`;
-  const renderPages = (comments: readonly Comment[]): Map<string, string> => renderViewerBundle({ ...input, comments }, {}).pages;
+  const { weights, gaugeColor } = qaConfigOf(opts.config).score;
+  const renderPages = (comments: readonly Comment[]): Map<string, string> => renderViewerBundle({ ...input, comments }, { weights, gaugeColor }).pages;
   const server = await startCommentServer({ reportDir, viewerDir, slug, store, renderPages, clock: systemClock, ...(chosen === undefined ? {} : { port: chosen }) });
   const stop = processSignal(opts.signal);
   try {
