@@ -1,0 +1,40 @@
+{
+  "targetCreated": {
+    "method": "Target.targetCreated",
+    "params": { "targetInfo": { "targetId": "page-1", "type": "page", "isProvisional": false, "isPaused": false } }
+  },
+  "consoleMessages": {
+    "page-error": {
+      "source": "javascript",
+      "level": "error",
+      "text": "Error: contract page error",
+      "type": "log",
+      "line": 1,
+      "column": 181,
+      "url": "{url}",
+      "repeatCount": 1
+    },
+    "console-error": {
+      "source": "console-api",
+      "level": "error",
+      "text": "contract console error",
+      "type": "log",
+      "line": 1,
+      "column": 72,
+      "url": "",
+      "repeatCount": 1,
+      "parameters": [{ "type": "string", "value": "contract console error" }]
+    },
+    "response-5xx": {
+      "source": "network",
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+      "type": "log",
+      "line": 0,
+      "column": 0,
+      "url": "{origin}/site/fail",
+      "repeatCount": 1,
+      "networkRequestId": "0.42"
+    }
+  }
+}

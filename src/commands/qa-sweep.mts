@@ -2,7 +2,7 @@
 // world state and address (spec 1.3).
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { LaunchwrightError, systemClock } from '../kernel/index.mts';
+import { isCodedError, LaunchwrightError, systemClock } from '../kernel/index.mts';
 import { parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { readTextOrNullSync } from '../kernel/services/fs.mts';
 import { qaConfigOf } from '../config.mts';
@@ -87,7 +87,7 @@ const sweep: QaSubcommand = {
       // Owed states are red rows of the report, not a planner failure. `--strict` makes them one.
       return strict && manifest.sweep.owed > 0 ? 1 : 0;
     } catch (cause) {
-      if (!(cause instanceof LaunchwrightError)) throw cause;
+      if (!isCodedError(cause)) throw cause;
       opts.err(`lw qa sweep: ${cause.message}`);
       return 1;
     }

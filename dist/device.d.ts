@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Q as QaConfig$1 } from './config-B-lxHEnb.js';
-import { P as Provider, Q as QaExtension } from './extensions-Ba_HvLm5.js';
-import { Q as QaTarget } from './contract-braBVxB_.js';
+import { P as Provider, Q as QaExtension } from './extensions-J0JM1qlT.js';
+import { Q as QaTarget } from './contract-xgrBaS32.js';
 import './app-KXgbRXYO.js';
 
 /** The host proxy of a rig whose gateway does not hairpin (spec 2.9, `ingress: host-proxy`). */

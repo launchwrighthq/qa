@@ -1,0 +1,35 @@
+[
+  {
+    "description": "{\"attached\":false,\"empty\":false,\"height\":2157,\"screenX\":0,\"screenY\":0,\"visible\":false,\"width\":1080}",
+    "devtoolsFrontendUrl": "https://chrome-devtools-frontend.appspot.com/serve_rev/@fixture/inspector.html?ws=127.0.0.1:9222/devtools/page/A1",
+    "id": "A1",
+    "title": "contract",
+    "type": "page",
+    "url": "{origin}/site/next",
+    "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/A1"
+  },
+  {
+    "description": "",
+    "id": "SW",
+    "title": "Service Worker {origin}/sw.js",
+    "type": "service_worker",
+    "url": "{origin}/sw.js",
+    "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/SW"
+  },
+  {
+    "description": "{\"attached\":true,\"empty\":false,\"height\":2157,\"screenX\":0,\"screenY\":0,\"visible\":true,\"width\":1080}",
+    "devtoolsFrontendUrl": "https://chrome-devtools-frontend.appspot.com/serve_rev/@fixture/inspector.html?ws=127.0.0.1:9222/devtools/page/C3",
+    "id": "C3",
+    "title": "contract",
+    "type": "page",
+    "url": "{origin}/site/",
+    "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/C3"
+  },
+  {
+    "description": "",
+    "id": "D4",
+    "title": "contract",
+    "type": "page",
+    "url": "{origin}/site/busy"
+  }
+]

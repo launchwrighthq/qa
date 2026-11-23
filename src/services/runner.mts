@@ -11,7 +11,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { type Clock, LaunchwrightError, messageOf } from '../kernel/index.mts';
+import { type Clock, isCodedError, LaunchwrightError, messageOf } from '../kernel/index.mts';
 import type { QaConfig } from '../config.mts';
 import type { QaSession, QaTarget, QaTargetCapability, QaTargetRegistry, SessionLogLine } from '../drivers/target/contract.mts';
 import { attemptFailures } from './evidence.mts';
@@ -278,7 +278,7 @@ class Run {
         pngs.push(stepRel);
       }
     } catch (err) {
-      const code = err instanceof LaunchwrightError ? err.code : '';
+      const code = isCodedError(err) ? err.code : '';
       failures.add(code === 'qa.target.settle' || code === 'qa.target.act' ? 'expect' : 'crashed');
       notes.push(failureText(err));
     }
@@ -296,7 +296,7 @@ class Run {
           (err: unknown) => {
             // A target that cannot read the page console (iOS Safari over WebDriver) refuses with
             // qa.target.capability. The log item is then n/a with that reason (spec 2.11.1).
-            if (err instanceof LaunchwrightError && err.code === 'qa.target.capability') return { na: failureText(err) };
+            if (isCodedError(err) && err.code === 'qa.target.capability') return { na: failureText(err) };
             throw err;
           },
         );
@@ -378,7 +378,7 @@ class Run {
 
 /** The message of `err`, after its code when it has one. */
 function failureText(err: unknown): string {
-  if (err instanceof LaunchwrightError) return `${err.code}: ${err.message}`;
+  if (isCodedError(err)) return `${err.code}: ${err.message}`;
   return messageOf(err);
 }
 

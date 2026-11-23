@@ -1,0 +1,8 @@
+[
+  {
+    "deviceId": "FAKE-UDID-0001",
+    "deviceName": "Fixture iPhone",
+    "deviceOSVersion": "18.6",
+    "url": "127.0.0.1:9222"
+  }
+]

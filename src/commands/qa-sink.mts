@@ -2,7 +2,7 @@
 // tunnel. A QA row or a webhook test points an outbound sender at the printed URL.
 import { randomInt } from 'node:crypto';
 import { join } from 'node:path';
-import { createContainer, LaunchwrightError, systemClock } from '../kernel/index.mts';
+import { createContainer, isCodedError, LaunchwrightError, systemClock } from '../kernel/index.mts';
 import { parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { type Tunnel, loadTunnel, type TunnelManagerInstance } from '../services/peers.mts';
 import { parseFaults } from '../sink/services/faults.mts';
@@ -111,7 +111,7 @@ const sink: QaSubcommand = {
     try {
       return await serve(values, opts);
     } catch (cause) {
-      if (!(cause instanceof LaunchwrightError)) throw cause;
+      if (!isCodedError(cause)) throw cause;
       opts.err(`lw qa sink: ${cause.code}: ${cause.message}`);
       return 1;
     }

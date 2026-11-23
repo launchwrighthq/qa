@@ -167,7 +167,7 @@ function has(h: TargetHarness, cap: QaTargetCapability): boolean {
   return h.target.capabilities.has(cap);
 }
 
-/** The cases file: `modules/qa/fixtures/contract/target.cases.json`. */
+/** The cases file: `fixtures/contract/target.cases.json` of the package. */
 const CASES_FILE = moduleFixture(import.meta.url, 'contract/target.cases.json');
 
 /** The contract suite of the `qa.target` driver kind. */

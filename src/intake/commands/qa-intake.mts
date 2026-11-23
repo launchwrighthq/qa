@@ -1,7 +1,7 @@
 // `lw qa intake`: reads a GitHub issue or a Telegram chat into issue records (spec 2.15). Output
 // names ids, counts and paths only: no reporter text, no reporter name, no token, no session.
 import { relative } from 'node:path';
-import { LaunchwrightError } from '../../kernel/index.mts';
+import { isCodedError, LaunchwrightError } from '../../kernel/index.mts';
 import { parseCommandArgs, UsageError } from '../../kernel/services/args.mts';
 import { INTAKE_DIR, listIssues, type QaCommandOptions, qaConfig, type QaSubcommand, recordDir, recordId, writeIssue } from '../../index.mts';
 import { type IntakeConfig, qaIntakeConfig as intakeSchema } from '../config.mts';
@@ -170,7 +170,7 @@ export function createIntakeCommand(deps: IntakeDeps = {}): QaSubcommand {
         if (sub === 'telegram') return await telegram(rest, opts, deps);
         if (sub === 'list') return await list(rest, opts);
       } catch (error) {
-        if (!(error instanceof LaunchwrightError)) throw error;
+        if (!isCodedError(error)) throw error;
         opts.err(`lw qa intake: ${error.message} (${error.code})`);
         return 1;
       }

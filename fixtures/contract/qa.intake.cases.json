@@ -1,0 +1,13 @@
+{
+  "kind": "qa.intake",
+  "specVersion": "1",
+  "cases": [
+    { "name": "fetch returns the items of the ref in time order with unique ids" },
+    { "name": "every media holds bytes and a media type, or a skip reason" },
+    { "name": "the media kinds of the fixtures arrive with bytes" },
+    { "name": "a media over qa.intake.maxFileMb is skipped as too-large" },
+    { "name": "a bad ref fails with a qa.intake error code" },
+    { "name": "a fetch from the cursor of a fetch reads no old item" },
+    { "name": "a since bound keeps only the items after it" }
+  ]
+}

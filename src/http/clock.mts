@@ -1,6 +1,6 @@
 // `POST /__qa/clock {shift}` (spec 2.6): moves the kernel CLOCK of the QA API, so a time-bound
 // state is reachable. `{shift: "reset"}` puts it back. The provider binds the shift clock.
-import { CLOCK, LaunchwrightError } from '../kernel/index.mts';
+import { CLOCK, isCodedError } from '../kernel/index.mts';
 import { type HandlerArgs, loadHttp } from '../services/peers.mts';
 import { parseShift, ShiftClock } from '../world/services/clock.mts';
 
@@ -19,7 +19,7 @@ export async function moveClock({ ctx, input }: HandlerArgs<{ shift?: unknown }>
     try {
       clock.shift(parseShift(shift));
     } catch (cause) {
-      if (cause instanceof LaunchwrightError) throw new HttpError(400, cause.code, cause.message, { cause });
+      if (isCodedError(cause)) throw new HttpError(400, cause.code, cause.message, { cause });
       throw cause;
     }
   }

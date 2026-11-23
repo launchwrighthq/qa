@@ -4,7 +4,7 @@
 // peer, so the driver imports it only when a session opens.
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { type Clock, LaunchwrightError, systemClock } from '../../kernel/index.mts';
+import { type Clock, isCodedError, LaunchwrightError, systemClock } from '../../kernel/index.mts';
 import type { Browser, BrowserContext, BrowserContextOptions, BrowserType, Page } from '@playwright/test';
 import { pngSize } from '../../services/png.mts';
 import type { Act, Leg, Settle } from '../../services/types.mts';
@@ -186,7 +186,7 @@ class PlaywrightSession implements QaSession {
           return;
       }
     } catch (err) {
-      if (err instanceof LaunchwrightError && err.code === 'qa.target.act') throw err;
+      if (isCodedError(err) && err.code === 'qa.target.act') throw err;
       throw this.fail('qa.target.act', `Leg ${this.opts.leg.name} could not run the act ${what}.`, err, { act: step });
     }
   }

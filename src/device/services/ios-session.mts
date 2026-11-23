@@ -2,7 +2,7 @@
 // inspector, with `location.href` as its only navigation and `Page.snapshotRect` as its screenshot.
 // `ios-simulator` opens URLs with `simctl`, films and photographs the whole screen with `simctl io`,
 // and reads the page through an inspector proxy on the simulator socket when one is configured.
-import { LaunchwrightError } from '../../kernel/index.mts';
+import { isCodedError, LaunchwrightError } from '../../kernel/index.mts';
 import type { Act, Settle } from '../../index.mts';
 import type { Capture, OpenOptions, QaSession, SessionLogLine, VideoCapture } from '../drivers/target/contract.mts';
 import { deviceKeys, iosDeviceKeys, type SimulatorDeviceKeys, simulatorDeviceKeys } from '../config.mts';
@@ -110,7 +110,7 @@ async function loadAndWait(ctx: DeviceContext, access: WebkitAccess, load: () =>
         const [origin, state] = (await access.evaluate('[performance.timeOrigin, document.readyState]')) as [number, string];
         return origin !== before && state !== 'loading' ? true : null;
       } catch (err) {
-        if (err instanceof LaunchwrightError && err.code.startsWith('qa.device.webkit')) return null;
+        if (isCodedError(err) && err.code.startsWith('qa.device.webkit')) return null;
         throw err;
       }
     },

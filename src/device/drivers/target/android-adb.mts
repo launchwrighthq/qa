@@ -1,7 +1,7 @@
 // The `android-adb` qa.target driver (spec 2.8): any adb serial, on USB here or on a rig. Input is
 // raw CDP in the visible WebView plus adb `input`; screenshots are `screencap`; video is
 // `screenrecord` (one clip up to the evidence cap) or `scrcpy --record`; the dump is uiautomator.
-import { LaunchwrightError } from '../../../kernel/index.mts';
+import { isCodedError } from '../../../kernel/index.mts';
 import type { Leg } from '../../../index.mts';
 import { deviceState } from '../../services/adb.mts';
 import { androidHandle, AndroidSession, stateFix } from '../../services/android-session.mts';
@@ -40,7 +40,7 @@ export class AndroidTarget implements QaTarget {
       const state = await deviceState(h.rig, h.adb.serial, this.ctx.deps, this.ctx.config.device.tools.adb);
       return state === 'device' ? { ready: true } : { ready: false, reason: stateFix(state, h.adb.serial, h.rig.name) };
     } catch (err) {
-      if (err instanceof LaunchwrightError) return { ready: false, reason: err.message };
+      if (isCodedError(err)) return { ready: false, reason: err.message };
       throw err;
     }
   }

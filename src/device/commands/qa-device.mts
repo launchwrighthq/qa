@@ -1,7 +1,7 @@
 // `lw qa device <verb>` (spec 2.9): parses the verb and its flags, runs it through the
 // `DeviceVerbs` service and prints the outcome. Every verb takes `--device <name>`; with one device
 // in config it may be left out.
-import { LaunchwrightError } from '../../kernel/index.mts';
+import { isCodedError } from '../../kernel/index.mts';
 import { parseCommandArgs } from '../../kernel/services/args.mts';
 import type { QaCommandOptions, QaSubcommand } from '../../index.mts';
 import { qaConfigOf } from '../config.mts';
@@ -49,14 +49,14 @@ export async function runDeviceCommand(args: string[], opts: QaCommandOptions, d
     parsed = parseDeviceArgs(rest);
     ctx = createDeviceContext(qaConfigOf(opts.config), deps);
   } catch (err) {
-    if (!(err instanceof LaunchwrightError)) throw err;
+    if (!isCodedError(err)) throw err;
     opts.err(`lw qa device ${verb}: ${err.message}`);
     return 2;
   }
   try {
     return await new DeviceVerbs(ctx, opts).run(verb as Verb, parsed);
   } catch (err) {
-    if (!(err instanceof LaunchwrightError)) throw err;
+    if (!isCodedError(err)) throw err;
     opts.err(`lw qa device ${verb}: ${err.message} [${err.code}]`);
     return err.code === 'qa.device.usage' ? 2 : 1;
   }

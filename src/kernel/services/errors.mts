@@ -11,6 +11,21 @@ export class LaunchwrightError extends Error {
   }
 }
 
+/** A dotted code such as `qa.target.act`. A Node system code such as `ENOENT` has no dot. */
+const DOTTED_CODE = /^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)+$/i;
+
+/**
+ * True for a LaunchwrightError of any copy of the kernel: an object with a string `message` and a
+ * dotted string `code`. `instanceof LaunchwrightError` holds only for the class of this copy, and a
+ * framework app throws the class of its own kernel.
+ */
+export function isCodedError(e: unknown): e is { code: string; message: string } {
+  if (e instanceof LaunchwrightError) return true;
+  if (typeof e !== 'object' || e === null) return false;
+  const { code, message } = e as { code?: unknown; message?: unknown };
+  return typeof message === 'string' && typeof code === 'string' && DOTTED_CODE.test(code);
+}
+
 /** A failure at createApp or boot. The message names the module, the key and the env file. */
 export class BootError extends LaunchwrightError {}
 

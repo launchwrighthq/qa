@@ -1,5 +1,5 @@
 // `lw qa changes [--since <date|sha> | --last] [--json]`: what a commit range changed (spec 1.3).
-import { LaunchwrightError, systemClock } from '../kernel/index.mts';
+import { isCodedError, systemClock } from '../kernel/index.mts';
 import { parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { qaConfigOf } from '../config.mts';
 import { digest, renderChanges, repoRoot } from '../services/changes.mts';
@@ -35,7 +35,7 @@ const changes: QaSubcommand = {
       opts.out(json ? JSON.stringify(result, null, 2) : renderChanges(result));
       return 0;
     } catch (cause) {
-      if (!(cause instanceof LaunchwrightError)) throw cause;
+      if (!isCodedError(cause)) throw cause;
       opts.err(`lw qa changes: ${cause.message}`);
       return 1;
     }

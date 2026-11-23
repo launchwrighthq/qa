@@ -1,12 +1,40 @@
-import { P as Provider } from './extensions-Ba_HvLm5.js';
-export { E as EXTENSION_PREFIX, a as QaCommandOptions, Q as QaExtension, b as QaSubcommand, e as extensionNames, c as extensionTargets, l as loadExtensions } from './extensions-Ba_HvLm5.js';
-export { L as LegConfig, Q as QaConfig, q as qaConfig, a as qaConfigOf, w as withAppPaths } from './config-B-lxHEnb.js';
-import { L as Leg, A as Act, S as Settle, a as LedgerEntry, O as OpenTargetRegistry } from './contract-braBVxB_.js';
-export { b as ACT_KINDS, c as ActKind, d as AttachmentKind, C as Capture, E as EvidenceKind, I as INTAKE_DIR, e as Isolation, f as OpenOptions, P as Provenance, g as QA_TARGET_CAPABILITIES, h as QA_TARGET_SPEC_VERSION, i as QaIssue, j as QaSession, Q as QaTarget, k as QaTargetCapability, l as QaTargetRegistry, R as REPORT_STATUSES, m as ROW_FAILURES, n as RawMedia, o as ReportStatus, p as RowFailure, q as RowResult, r as SessionLogLine, s as SkipReason, t as Surface, T as TargetReadiness, V as VideoCapture } from './contract-braBVxB_.js';
-export { I as IssueDraft, i as issueMarkdown, l as listIssues, r as readIssue, a as recordDir, b as recordId, w as writeIssue } from './records-DM_T-aMl.js';
+import { a as QaSubcommand, P as Provider } from './extensions-J0JM1qlT.js';
+export { E as EXTENSION_PREFIX, b as QaCommandOptions, Q as QaExtension, S as SUBCOMMANDS, e as extensionNames, c as extensionTargets, l as loadExtensions, q as qaCommand } from './extensions-J0JM1qlT.js';
 import { C as Clock } from './clock-BUdCJ9bN.js';
+import { a as QaTargetRegistry, Q as QaTarget, L as Leg, A as Act, S as Settle, b as LedgerEntry, O as OpenTargetRegistry } from './contract-xgrBaS32.js';
+export { c as ACT_KINDS, d as ActKind, e as AttachmentKind, C as Capture, E as EvidenceKind, I as INTAKE_DIR, f as Isolation, g as OpenOptions, P as Provenance, h as QA_TARGET_CAPABILITIES, i as QA_TARGET_SPEC_VERSION, j as QaIssue, k as QaSession, l as QaTargetCapability, R as REPORT_STATUSES, m as ROW_FAILURES, n as RawMedia, o as ReportStatus, p as RowFailure, q as RowResult, r as SessionLogLine, s as SkipReason, t as Surface, T as TargetReadiness, V as VideoCapture } from './contract-xgrBaS32.js';
+import { Q as QaConfig } from './config-B-lxHEnb.js';
+export { L as LegConfig, q as qaConfig, a as qaConfigOf, w as withAppPaths } from './config-B-lxHEnb.js';
+export { i as isCodedError } from './errors-DgRPaUlC.js';
+export { I as IssueDraft, i as issueMarkdown, l as listIssues, r as readIssue, a as recordDir, b as recordId, w as writeIssue } from './records-CKl-a2_W.js';
 import { T as Token } from './app-KXgbRXYO.js';
 import 'zod';
+
+/** The dependencies of a run. A test passes fakes; the command builds the defaults. */
+interface RunDeps {
+    targets: QaTargetRegistry;
+    clock: Clock;
+    /** The commit and the dirty flag of the checkout, for each ledger entry. */
+    revision: (cwd: string) => {
+        commit: string;
+        dirty: boolean;
+    };
+}
+
+/** Builds the subcommand. A test passes fake targets, a fake clock and a fixed revision. */
+declare function createStatesCommand(overrides?: Partial<RunDeps>): QaSubcommand;
+
+interface PlaywrightTargetOptions {
+    clock?: Clock;
+    /** A browser binary to launch instead of the one that `playwright install` put in place. */
+    executablePath?: string;
+    /** How long one act step may take. Default 15 s. */
+    actTimeoutMs?: number;
+    /** The settle budget when a rule names none. Default 20 s. */
+    settleTimeoutMs?: number;
+}
+/** The `playwright` `qa.target` driver. */
+declare function createPlaywrightTarget(opts?: PlaywrightTargetOptions): QaTarget;
 
 /**
  * Binds QA_TARGETS. With config `qa.routes` on, it wraps CLOCK in the shift clock of
@@ -500,10 +528,17 @@ interface GaugeOptions {
  */
 declare function renderScoreGauge(score: number, opts?: GaugeOptions): string;
 
+/**
+ * Every registered target. `extra` adds targets or replaces a built-in one, for example a fake
+ * with scripted routes. The registry key is the name a leg's `target` field uses. The built-in
+ * targets read no key of `_config`; the parameter stays for the callers of the earlier signature.
+ */
+declare function createTargetRegistry(_config: QaConfig, extra?: Record<string, QaTarget>, clock?: Clock): OpenTargetRegistry;
+
 /** The shortest video that counts as evidence, in seconds (spec 2.11.2). */
 declare const MIN_VIDEO_S = 1;
 
 /** The registered `qa.target` drivers: `app.get(QA_TARGETS).get('playwright')`. Extension modules add theirs at boot. */
 declare const QA_TARGETS: Token<OpenTargetRegistry>;
 
-export { ANCHOR_KINDS, Act, BOTFATHER, BOT_STORE_DIR, type BotCommand, type BotFatherChat, type BotGetMe, type BotRecord, type BotStore, COMMENTS_DIR, type Comment, type CommentAnchor, type CommentReply, type CommentServer, type CommentServerOptions, type CommentStore, type ConfigureBotOptions, type ConsentGrant, type ConsentGroup, type ConsentManifest, type ConsentRecord, type ConsentStore, type CredentialNeed, DEFAULT_SCORE_WEIGHTS, DELETE_CONFIRM, type DataNeed, type DeadBot, type ExportContext, type FlowAnchor, type GaugeOptions, type GrantChoices, LedgerEntry, Leg, MIN_VIDEO_S, type ManifestInput, type ManifestItem, type NewBot, type NewComment, OpenTargetRegistry, type OutwardNeed, QA_TARGETS, type RegionAnchor, type ResolvedComment, SEVERITY_DEDUCTION, type ScoreDimension, type ScoreInput, type ScoreResult, type ScoreWeights, Settle, type SeverityCounts, type StepAnchor, type TextAnchor, type TimeAnchor, type UserbotLease, type UserbotProvider, addComment, botIdOf, commentsFile, computeManifest, computeScore, configureBot, destroyBot, diff, exportTaskList, extensionOf, fileBotStore, fileCommentStore, fileConsentStore, grant, makeComment, manifestHash, mimeOfExtension, newBot, parseBotToken, pngSize, qaProvider, renderScoreGauge, replyToComment, resolveComments, setStatus, startCommentServer, validateAnchor };
+export { ANCHOR_KINDS, Act, BOTFATHER, BOT_STORE_DIR, type BotCommand, type BotFatherChat, type BotGetMe, type BotRecord, type BotStore, COMMENTS_DIR, type Comment, type CommentAnchor, type CommentReply, type CommentServer, type CommentServerOptions, type CommentStore, type ConfigureBotOptions, type ConsentGrant, type ConsentGroup, type ConsentManifest, type ConsentRecord, type ConsentStore, type CredentialNeed, DEFAULT_SCORE_WEIGHTS, DELETE_CONFIRM, type DataNeed, type DeadBot, type ExportContext, type FlowAnchor, type GaugeOptions, type GrantChoices, LedgerEntry, Leg, MIN_VIDEO_S, type ManifestInput, type ManifestItem, type NewBot, type NewComment, OpenTargetRegistry, type OutwardNeed, type PlaywrightTargetOptions, QA_TARGETS, QaConfig, QaSubcommand, QaTarget, QaTargetRegistry, type RegionAnchor, type ResolvedComment, SEVERITY_DEDUCTION, type ScoreDimension, type ScoreInput, type ScoreResult, type ScoreWeights, Settle, type SeverityCounts, type StepAnchor, type TextAnchor, type TimeAnchor, type UserbotLease, type UserbotProvider, addComment, botIdOf, commentsFile, computeManifest, computeScore, configureBot, createPlaywrightTarget, createStatesCommand, createTargetRegistry, destroyBot, diff, exportTaskList, extensionOf, fileBotStore, fileCommentStore, fileConsentStore, grant, makeComment, manifestHash, mimeOfExtension, newBot, parseBotToken, pngSize, qaProvider, renderScoreGauge, replyToComment, resolveComments, setStatus, startCommentServer, validateAnchor };

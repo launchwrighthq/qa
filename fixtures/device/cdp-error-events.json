@@ -1,0 +1,39 @@
+{
+  "page-error": {
+    "method": "Runtime.exceptionThrown",
+    "params": {
+      "timestamp": 1794480000123.4,
+      "exceptionDetails": {
+        "exceptionId": 1,
+        "text": "Uncaught",
+        "lineNumber": 0,
+        "columnNumber": 180,
+        "scriptId": "7",
+        "url": "{origin}/site/errors",
+        "exception": { "type": "object", "subtype": "error", "className": "Error", "description": "Error: contract page error\n    at {origin}/site/errors:1:181", "objectId": "-2954315245367429433.1.1" },
+        "executionContextId": 1
+      }
+    }
+  },
+  "console-error": {
+    "method": "Runtime.consoleAPICalled",
+    "params": {
+      "type": "error",
+      "args": [{ "type": "string", "value": "contract console error" }],
+      "executionContextId": 1,
+      "timestamp": 1794480000120.1,
+      "stackTrace": { "callFrames": [{ "functionName": "", "scriptId": "7", "url": "{origin}/site/errors", "lineNumber": 0, "columnNumber": 72 }] }
+    }
+  },
+  "response-5xx": {
+    "method": "Network.responseReceived",
+    "params": {
+      "requestId": "4821.12",
+      "loaderId": "8E1C",
+      "timestamp": 1201.553,
+      "type": "Fetch",
+      "response": { "url": "{origin}/site/fail", "status": 500, "statusText": "Internal Server Error", "headers": { "content-type": "text/plain" }, "mimeType": "text/plain" },
+      "frameId": "8E1C"
+    }
+  }
+}

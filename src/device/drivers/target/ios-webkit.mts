@@ -1,7 +1,7 @@
 // The `ios-webkit` qa.target driver (spec 2.8): a real iPhone on a rig, through
 // `ios_webkit_debug_proxy` forwarded over the rig's ssh master. It navigates by `location.href`
 // only, photographs the WebView with `Page.snapshotRect`, and has no video.
-import { LaunchwrightError } from '../../../kernel/index.mts';
+import { isCodedError } from '../../../kernel/index.mts';
 import type { Leg } from '../../../index.mts';
 import { deviceAccess, iosDevice, PhoneSession } from '../../services/ios-session.mts';
 import type { DeviceContext } from '../../services/rigs.mts';
@@ -26,7 +26,7 @@ class IosWebkitTarget implements QaTarget {
       await access.close();
       return { ready: true };
     } catch (err) {
-      if (err instanceof LaunchwrightError) return { ready: false, reason: err.message };
+      if (isCodedError(err)) return { ready: false, reason: err.message };
       throw err;
     }
   }

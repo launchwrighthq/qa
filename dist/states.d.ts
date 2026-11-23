@@ -1,16 +1,7 @@
-import { t as Surface, P as Provenance, E as EvidenceKind, j as QaSession, u as RoutablePage, S as Settle } from './contract-braBVxB_.js';
+import { t as Surface, P as Provenance, E as EvidenceKind, k as QaSession, u as RoutablePage, S as Settle } from './contract-xgrBaS32.js';
 import { Q as QaConfig } from './config-B-lxHEnb.js';
+import { L as LaunchwrightError } from './errors-DgRPaUlC.js';
 import 'zod';
-
-/** The base error of the framework. `code` is a stable, dotted identifier such as `kernel.unbound`. */
-declare class LaunchwrightError extends Error {
-    readonly code: string;
-    readonly context: Record<string, unknown>;
-    constructor(code: string, message: string, opts?: {
-        cause?: unknown;
-        context?: Record<string, unknown>;
-    });
-}
 
 /** The cap on one candidate stream, over every phase. A ten-field shape stays under it. */
 declare const MAX_CANDIDATES = 500;
@@ -359,141 +350,6 @@ declare function validateInventory(inv: unknown): string[];
  */
 declare function plannedCaptures(inv: Pick<Inventory, 'unions'>): PlannedCapture[];
 
-/** A source file, project-relative, with its text. */
-interface SourceText {
-    file: string;
-    text: string;
-}
-/** A finding of the scan that is not a union: an opt-out without a reason, or a duplicate name. */
-interface ScanProblem {
-    code: 'ignore-without-reason' | 'ignore-directive' | 'ignore-repeated' | 'duplicate-union' | 'invalid-shape';
-    file: string;
-    line: number;
-    union: string;
-    message: string;
-}
-/**
- * True for a product source file, false for a test or a declaration file. A test declares local
- * functions that return a union and inline props that hold it. No capture can reach those, so
- * counting them would add states that no screenshot covers.
- */
-declare function isProductSource(rel: string): boolean;
-/** The result of a scan: the inventory, and every problem found on the way. */
-interface ScanResult {
-    inventory: Inventory;
-    problems: ScanProblem[];
-}
-/**
- * The inventory from file contents. Pure and without I/O. `sources` declare the unions and hold the
- * sites. `extraTypes` only name the file and the fields of a parameter type. Problems are returned,
- * not thrown, so `lw qa check` can report each one (spec 2.14 rule C1).
- */
-declare function analyzeSources(input: {
-    sources: SourceText[];
-    extraTypes?: SourceText[];
-    roots: string[];
-    generated: string;
-}): ScanResult;
-/** Every product source under one project-relative folder, project-relative and sorted. */
-declare function readTree(projectRoot: string, dir: string): SourceText[];
-/** Scans a project: every client root, plus the type roots for parameter shapes. */
-declare function scanProject(projectRoot: string, options: {
-    clientRoots: string[];
-    typeRoots?: string[];
-    generated: string;
-}): ScanResult & {
-    sources: SourceText[];
-};
-
-/** One route table: a file and the surface its routes serve. */
-interface RouteTable {
-    file: string;
-    surface: Surface;
-}
-/** `qa.routeTables` as tables. A plain string is a `web` table. */
-declare function normaliseTables(entries: readonly (string | RouteTable)[]): RouteTable[];
-/** One table of the route map, as the summary prints it. */
-interface TableSummary {
-    file: string;
-    surface: Surface;
-    found: boolean;
-    rows: number;
-    resolved: number;
-    unresolved: string[];
-    pageless: string[];
-}
-interface RouteMapUnion {
-    union: string;
-    kind: UnionEntry['kind'];
-    mechanism: ReturnType<typeof mechanismFor>;
-    anchor: string;
-    members: string[];
-    routes: DeliveryRoute[];
-    why?: string;
-}
-interface RouteMap {
-    generated: string;
-    tables: TableSummary[];
-    unions: RouteMapUnion[];
-}
-/**
- * The route map: every union, and every address that draws it, nearest first. Pure and without I/O.
- *
- * @param sources the client sources and the route table files
- * @param pageRoots the client roots that hold `pages/`
- */
-declare function buildRouteMap(input: {
-    inventory: Pick<Inventory, 'unions'>;
-    sources: readonly SourceText[];
-    tables: readonly RouteTable[];
-    pageRoots: readonly string[];
-    aliases?: Readonly<Record<string, string>>;
-    generated: string;
-}): RouteMap;
-/** The inventory with each union's routes, and the reason when it has none. */
-declare function attachRoutes<I extends Pick<Inventory, 'unions'>>(inventory: I, map: RouteMap): I;
-/** The summary a person reads: one block per union, and a sentence where there is no route. */
-declare function renderRouteSummary(map: RouteMap): string;
-
-/** The project-relative path of the inventory file (spec 2.7). */
-declare const STATES_FILE = ".lw/qa/states.json";
-/**
- * The import aliases of the client roots, read from `compilerOptions.paths` of a tsconfig in each
- * root or in its parent folder (for `apps/client/src`, that is `apps/client`). An `extends` chain
- * is not followed.
- */
-declare function readAliases(projectRoot: string, clientRoots: readonly string[]): Record<string, string>;
-interface StatesScan {
-    /** The inventory with the routes of each union attached. */
-    inventory: Inventory;
-    problems: ScanProblem[];
-    map: RouteMap;
-}
-/** Scans the states of a project and derives the route of each union. */
-declare function scanStates(projectRoot: string, config: Pick<QaConfig, 'clientRoots' | 'typeRoots' | 'routeTables'>, generated: string): StatesScan;
-
-interface StateFinding {
-    rule: 'C1' | 'C4';
-    union: string;
-    file: string;
-    line: number;
-    message: string;
-}
-/**
- * Rule C1: every visible state comes from a named state union, or carries
- * `@qa-states ignore <reason>`. It fails a `neither` union, an ignore tag without a reason or with
- * another directive, a repeated tag, and two unions of one name.
- */
-declare function c1Findings(inventory: Pick<Inventory, 'unions'>, problems: readonly ScanProblem[]): StateFinding[];
-/**
- * Rule C4: every route sits in the route table. It fails a union that no route in the tables
- * delivers and no harness can mount: nothing reaches its states. A `neither` union is C1's.
- * The inventory must carry the routes of `scanStates`.
- */
-declare function c4Findings(inventory: Pick<Inventory, 'unions'>): StateFinding[];
-/** Runs the scan of a project and returns every C1 and C4 finding, sorted by file and line. */
-declare function stateFindings(projectRoot: string, config: Pick<QaConfig, 'clientRoots' | 'typeRoots' | 'routeTables'>, generated: string): StateFinding[];
-
 /** An inventory from text, validated, or an error that names every problem. */
 declare function parseInventory(text: string, source: string): Inventory;
 /** The unions that nothing takes and nothing returns. Each fails the run (spec 2.14 rule C1). */
@@ -694,6 +550,141 @@ declare function captureGroup(session: QaSession, page: RoutablePage, group: Cap
     results: StateResult[];
     notes: string[];
 }>;
+
+/** A source file, project-relative, with its text. */
+interface SourceText {
+    file: string;
+    text: string;
+}
+/** A finding of the scan that is not a union: an opt-out without a reason, or a duplicate name. */
+interface ScanProblem {
+    code: 'ignore-without-reason' | 'ignore-directive' | 'ignore-repeated' | 'duplicate-union' | 'invalid-shape';
+    file: string;
+    line: number;
+    union: string;
+    message: string;
+}
+/**
+ * True for a product source file, false for a test or a declaration file. A test declares local
+ * functions that return a union and inline props that hold it. No capture can reach those, so
+ * counting them would add states that no screenshot covers.
+ */
+declare function isProductSource(rel: string): boolean;
+/** The result of a scan: the inventory, and every problem found on the way. */
+interface ScanResult {
+    inventory: Inventory;
+    problems: ScanProblem[];
+}
+/**
+ * The inventory from file contents. Pure and without I/O. `sources` declare the unions and hold the
+ * sites. `extraTypes` only name the file and the fields of a parameter type. Problems are returned,
+ * not thrown, so `lw qa check` can report each one (spec 2.14 rule C1).
+ */
+declare function analyzeSources(input: {
+    sources: SourceText[];
+    extraTypes?: SourceText[];
+    roots: string[];
+    generated: string;
+}): ScanResult;
+/** Every product source under one project-relative folder, project-relative and sorted. */
+declare function readTree(projectRoot: string, dir: string): SourceText[];
+/** Scans a project: every client root, plus the type roots for parameter shapes. */
+declare function scanProject(projectRoot: string, options: {
+    clientRoots: string[];
+    typeRoots?: string[];
+    generated: string;
+}): ScanResult & {
+    sources: SourceText[];
+};
+
+/** One route table: a file and the surface its routes serve. */
+interface RouteTable {
+    file: string;
+    surface: Surface;
+}
+/** `qa.routeTables` as tables. A plain string is a `web` table. */
+declare function normaliseTables(entries: readonly (string | RouteTable)[]): RouteTable[];
+/** One table of the route map, as the summary prints it. */
+interface TableSummary {
+    file: string;
+    surface: Surface;
+    found: boolean;
+    rows: number;
+    resolved: number;
+    unresolved: string[];
+    pageless: string[];
+}
+interface RouteMapUnion {
+    union: string;
+    kind: UnionEntry['kind'];
+    mechanism: ReturnType<typeof mechanismFor>;
+    anchor: string;
+    members: string[];
+    routes: DeliveryRoute[];
+    why?: string;
+}
+interface RouteMap {
+    generated: string;
+    tables: TableSummary[];
+    unions: RouteMapUnion[];
+}
+/**
+ * The route map: every union, and every address that draws it, nearest first. Pure and without I/O.
+ *
+ * @param sources the client sources and the route table files
+ * @param pageRoots the client roots that hold `pages/`
+ */
+declare function buildRouteMap(input: {
+    inventory: Pick<Inventory, 'unions'>;
+    sources: readonly SourceText[];
+    tables: readonly RouteTable[];
+    pageRoots: readonly string[];
+    aliases?: Readonly<Record<string, string>>;
+    generated: string;
+}): RouteMap;
+/** The inventory with each union's routes, and the reason when it has none. */
+declare function attachRoutes<I extends Pick<Inventory, 'unions'>>(inventory: I, map: RouteMap): I;
+/** The summary a person reads: one block per union, and a sentence where there is no route. */
+declare function renderRouteSummary(map: RouteMap): string;
+
+/** The project-relative path of the inventory file (spec 2.7). */
+declare const STATES_FILE = ".lw/qa/states.json";
+/**
+ * The import aliases of the client roots, read from `compilerOptions.paths` of a tsconfig in each
+ * root or in its parent folder (for `apps/client/src`, that is `apps/client`). An `extends` chain
+ * is not followed.
+ */
+declare function readAliases(projectRoot: string, clientRoots: readonly string[]): Record<string, string>;
+interface StatesScan {
+    /** The inventory with the routes of each union attached. */
+    inventory: Inventory;
+    problems: ScanProblem[];
+    map: RouteMap;
+}
+/** Scans the states of a project and derives the route of each union. */
+declare function scanStates(projectRoot: string, config: Pick<QaConfig, 'clientRoots' | 'typeRoots' | 'routeTables'>, generated: string): StatesScan;
+
+interface StateFinding {
+    rule: 'C1' | 'C4';
+    union: string;
+    file: string;
+    line: number;
+    message: string;
+}
+/**
+ * Rule C1: every visible state comes from a named state union, or carries
+ * `@qa-states ignore <reason>`. It fails a `neither` union, an ignore tag without a reason or with
+ * another directive, a repeated tag, and two unions of one name.
+ */
+declare function c1Findings(inventory: Pick<Inventory, 'unions'>, problems: readonly ScanProblem[]): StateFinding[];
+/**
+ * Rule C4: every route sits in the route table. It fails a union that no route in the tables
+ * delivers and no harness can mount: nothing reaches its states. A `neither` union is C1's.
+ * The inventory must carry the routes of `scanStates`.
+ */
+declare function c4Findings(inventory: Pick<Inventory, 'unions'>): StateFinding[];
+/** Runs the scan of a project and returns every C1 and C4 finding, sorted by file and line. */
+declare function stateFindings(projectRoot: string, config: Pick<QaConfig, 'clientRoots' | 'typeRoots' | 'routeTables'>, generated: string): StateFinding[];
 
 /** The harness route, relative to the surface base (spec 2.7). */
 declare const STATES_HARNESS_PATH = "/__states";

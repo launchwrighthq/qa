@@ -1,0 +1,20 @@
+{
+  "kind": "qa.target",
+  "specVersion": "1",
+  "cases": [
+    { "name": "navigate shows the route relative to the surface base" },
+    { "name": "a redirect shows in currentRoute" },
+    { "name": "click on a role selector opens the linked route" },
+    { "name": "type, press, scroll, wait and back run in order" },
+    { "name": "an act on a missing element fails with qa.target.act" },
+    { "name": "settle waits for a selector, artwork, a playing video and no busy element" },
+    { "name": "settle on a missing selector fails with qa.target.settle" },
+    { "name": "screenshot writes a PNG whose header gives the capture size" },
+    { "name": "startVideo and stopVideo write a clip with a duration" },
+    { "name": "logs hold page errors, console errors and 5xx responses" },
+    { "name": "a missing capability rejects with qa.target.capability" },
+    { "name": "trace and dump give a written path or null" },
+    { "name": "ready answers a boolean and a reason when not ready" },
+    { "name": "close ends the session and a second close does nothing" }
+  ]
+}

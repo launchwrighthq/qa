@@ -467,6 +467,13 @@ var LaunchwrightError = class extends Error {
     this.context = opts?.context ?? {};
   }
 };
+var DOTTED_CODE = /^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)+$/i;
+function isCodedError(e) {
+  if (e instanceof LaunchwrightError) return true;
+  if (typeof e !== "object" || e === null) return false;
+  const { code, message } = e;
+  return typeof message === "string" && typeof code === "string" && DOTTED_CODE.test(code);
+}
 function messageOf(err) {
   return err instanceof Error ? err.message : String(err);
 }
@@ -1065,8 +1072,8 @@ var FakeTelegramServer = class {
     } catch (cause) {
       chat.error = messageOf(cause);
       this.touch();
-      const status = cause instanceof LaunchwrightError && cause.code === "telegram.fake.webhook" ? 502 : 400;
-      sendJson(res, status, { ok: false, error: chat.error, code: cause instanceof LaunchwrightError ? cause.code : "telegram.fake.action" });
+      const status = isCodedError(cause) && cause.code === "telegram.fake.webhook" ? 502 : 400;
+      sendJson(res, status, { ok: false, error: chat.error, code: isCodedError(cause) ? cause.code : "telegram.fake.action" });
     }
   }
   async runAction(action, bot, persona, chat, body) {

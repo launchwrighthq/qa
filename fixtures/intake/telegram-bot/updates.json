@@ -1,0 +1,93 @@
+{
+  "format": 1,
+  "tool": "bot-api",
+  "recorded": "2026-11-12",
+  "token": "123456789:FixtureBotTokenAAAAAAAAAAAAAAAAAAAAAA",
+  "chat": "-1001234567890",
+  "updates": [
+    {
+      "update_id": 7001,
+      "message": {
+        "message_id": 301,
+        "date": 1793527200,
+        "chat": { "id": -1001234567890, "type": "supergroup", "title": "QA reports" },
+        "from": { "id": 5001, "is_bot": false, "first_name": "Tester", "last_name": "One" },
+        "caption": "Bot chat: the checkout button does nothing on my phone.",
+        "photo": [
+          { "file_id": "photo-small", "file_unique_id": "ps", "width": 90, "height": 160, "file_size": 20 },
+          { "file_id": "photo-large", "file_unique_id": "pl", "width": 720, "height": 1280, "file_size": 48 }
+        ]
+      }
+    },
+    {
+      "update_id": 7002,
+      "message": {
+        "message_id": 302,
+        "date": 1793527500,
+        "chat": { "id": -1001234567890, "type": "supergroup", "title": "QA reports" },
+        "from": { "id": 5001, "is_bot": false, "first_name": "Tester", "last_name": "One" },
+        "caption": "Bot chat: here is a recording of the tap.",
+        "video": { "file_id": "video-1", "file_unique_id": "v1", "width": 720, "height": 1280, "duration": 4, "mime_type": "video/mp4", "file_name": "tap.mp4", "file_size": 48 }
+      }
+    },
+    {
+      "update_id": 7003,
+      "message": {
+        "message_id": 88,
+        "date": 1793527600,
+        "chat": { "id": 5009, "type": "private", "first_name": "Someone" },
+        "from": { "id": 5009, "is_bot": false, "first_name": "Someone" },
+        "text": "Bot chat: a private message in another chat."
+      }
+    },
+    {
+      "update_id": 7004,
+      "message": {
+        "message_id": 303,
+        "date": 1793529000,
+        "chat": { "id": -1001234567890, "type": "supergroup", "title": "QA reports" },
+        "from": { "id": 5002, "is_bot": false, "first_name": "Developer" },
+        "text": "Bot chat: which phone model is it?",
+        "reply_to_message": { "message_id": 301, "date": 1793527200, "chat": { "id": -1001234567890, "type": "supergroup" } }
+      }
+    },
+    {
+      "update_id": 7005,
+      "message": {
+        "message_id": 304,
+        "date": 1793529600,
+        "chat": { "id": -1001234567890, "type": "supergroup", "title": "QA reports" },
+        "from": { "id": 5001, "is_bot": false, "first_name": "Tester", "last_name": "One" },
+        "reply_to_message": { "message_id": 303, "date": 1793529000, "chat": { "id": -1001234567890, "type": "supergroup" } },
+        "voice": { "file_id": "voice-1", "file_unique_id": "vo1", "duration": 3, "mime_type": "audio/ogg", "file_size": 30 }
+      }
+    },
+    {
+      "update_id": 7006,
+      "message": {
+        "message_id": 305,
+        "date": 1793606400,
+        "chat": { "id": -1001234567890, "type": "supergroup", "title": "QA reports" },
+        "from": { "id": 5004, "is_bot": false, "username": "tester_two" },
+        "caption": "Bot chat: the profile page shows an empty avatar.",
+        "document": { "file_id": "big-1", "file_unique_id": "b1", "file_name": "screen-recording.mov", "mime_type": "video/quicktime", "file_size": 26214400 }
+      }
+    },
+    {
+      "update_id": 7007,
+      "message": {
+        "message_id": 306,
+        "date": 1793607600,
+        "chat": { "id": -1001234567890, "type": "supergroup", "title": "QA reports" },
+        "from": { "id": 5004, "is_bot": false, "username": "tester_two" },
+        "caption": "Bot chat: the log of the session.",
+        "document": { "file_id": "gone-1", "file_unique_id": "g1", "file_name": "session.log", "mime_type": "text/plain", "file_size": 100 }
+      }
+    }
+  ],
+  "files": {
+    "photo-large": { "path": "photos/file_1.jpg", "base64": "iVBORw0KGgoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAByZWNvcmRlZCBwaG90bw==" },
+    "video-1": { "path": "videos/file_2.mp4", "base64": "AAAAGGZ0eXBtcDQyAAAAAAAAAAAAAAAAAAAAAAAAAAByZWNvcmRlZCB2aWRlbw==" },
+    "voice-1": { "path": "voice/file_3.oga", "base64": "T2dnUwAAAAAAAAAAAAAAAHJlY29yZGVkIHZvaWNl" }
+  }
+}

@@ -1,0 +1,6 @@
+List of devices attached
+FAKE0SERIAL01	device
+FAKE0SERIAL02	unauthorized
+emulator-5554	device
+emulator-5556	offline
+

@@ -7,7 +7,7 @@
 // that section 4 links (spec 2.15.4).
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { escapeHtml, LaunchwrightError } from '../kernel/index.mts';
+import { escapeHtml, isCodedError, LaunchwrightError } from '../kernel/index.mts';
 import { pathKind, readTextOrNull } from '../kernel/services/fs.mts';
 import {
   COVERAGE_END,
@@ -518,7 +518,7 @@ export async function checkReport(mdPath: string, opts: CheckOptions = {}): Prom
       try {
         blank = blankFailure(await readFile(join(r.reportDir, e.path)), opts.blankStdDev ?? 2);
       } catch (cause) {
-        if (!(cause instanceof LaunchwrightError) || cause.code !== 'qa.png.unsupported') throw cause;
+        if (!isCodedError(cause) || cause.code !== 'qa.png.unsupported') throw cause;
         add('blank', `${e.path} cannot be read as a PNG (${cause.message}), and its row passed (row ${e.row}, leg ${e.leg})`, { row: e.row, leg: e.leg });
         continue;
       }

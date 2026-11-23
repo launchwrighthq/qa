@@ -1,6 +1,6 @@
 // `lw qa gc --keep <n>` (spec 2.12.3): deletes the evidence of older reports and keeps the reports.
 import { resolve } from 'node:path';
-import { LaunchwrightError } from '../kernel/index.mts';
+import { isCodedError } from '../kernel/index.mts';
 import { parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { qaConfigOf } from '../config.mts';
 import { gcReports } from '../services/gc.mts';
@@ -29,7 +29,7 @@ const gc: QaSubcommand = {
       opts.out(`lw qa gc: kept the evidence of ${result.kept.length} reports, deleted ${result.deleted.length}`);
       return 0;
     } catch (cause) {
-      if (!(cause instanceof LaunchwrightError)) throw cause;
+      if (!isCodedError(cause)) throw cause;
       opts.err(`lw qa gc: ${cause.code}: ${cause.message}`);
       return 1;
     }

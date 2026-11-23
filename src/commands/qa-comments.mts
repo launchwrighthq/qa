@@ -3,7 +3,7 @@
 // comments in the browser. `export` resolves each open comment to its target, writes the crop of each
 // region comment and prints an agent task list. `resolve` marks one comment resolved in the store.
 import { basename, isAbsolute, join, resolve } from 'node:path';
-import { LaunchwrightError, systemClock } from '../kernel/index.mts';
+import { isCodedError, LaunchwrightError, systemClock } from '../kernel/index.mts';
 import { qaConfigOf } from '../config.mts';
 import { legDefinitions } from '../services/legs.mts';
 import { startCommentServer } from '../services/comment-server.mts';
@@ -112,7 +112,7 @@ const comments: QaSubcommand = {
       if (verb === 'resolve') return await resolveComment(slug, id as string, reply, opts);
       return await exportComments(slug, opts);
     } catch (cause) {
-      if (!(cause instanceof LaunchwrightError)) throw cause;
+      if (!isCodedError(cause)) throw cause;
       opts.err(`lw qa comments ${verb}: ${cause.code}: ${cause.message}`);
       return 1;
     }

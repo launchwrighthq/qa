@@ -3,7 +3,7 @@
 // it in the local run store. `destroy` revokes and deletes the bot, confirmed dead by a getMe 401.
 // The token lives only in `.lw/qa/bots`; no line here prints, logs or commits it.
 import { join } from 'node:path';
-import { type Clock, LaunchwrightError, systemClock } from '../kernel/index.mts';
+import { type Clock, isCodedError, LaunchwrightError, systemClock } from '../kernel/index.mts';
 import { BOT_STORE_DIR, type BotRecord, type BotStore, fileBotStore } from '../services/bot-store.mts';
 import {
   BOTFATHER,
@@ -71,7 +71,7 @@ async function connect(lease: UserbotLease): Promise<UserClient> {
   try {
     return await connectUserClient({ apiId: lease.apiId, apiHash: lease.apiHash, session: lease.session, ...(lease.proxy ? { proxy: lease.proxy } : {}) });
   } catch (cause) {
-    if (cause instanceof LaunchwrightError && cause.code === 'telegram.mtproto.missing') {
+    if (isCodedError(cause) && cause.code === 'telegram.mtproto.missing') {
       throw new LaunchwrightError('qa.bot.module', 'lw qa telegram bot needs GramJS. Add the npm package "telegram" (2.26 or later).', { cause });
     }
     throw cause;

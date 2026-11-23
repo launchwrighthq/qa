@@ -1,0 +1,65 @@
+{
+  "format": 1,
+  "tool": "gh",
+  "recorded": "2026-11-12",
+  "calls": [
+    {
+      "args": ["issue", "view", "https://github.com/acme-test/widget/issues/42", "--json", "number,title,body,author,labels,comments,createdAt,url,state"],
+      "code": 0,
+      "stdout": {
+        "number": 42,
+        "title": "Checkout button does nothing",
+        "body": "The fixture body: the checkout button does nothing after a tap.\r\n\r\n<img width=\"320\" alt=\"screen\" src=\"https://github.com/user-attachments/assets/1b2c3d4e-0000-4000-8000-000000000001\" />\r\n\r\nhttps://github.com/user-attachments/assets/1b2c3d4e-0000-4000-8000-000000000002\r\n\r\n![older shot](https://user-images.githubusercontent.com/1000/legacy-shot.png)",
+        "author": { "id": "U_1", "is_bot": false, "login": "fixture-reporter", "name": "Fixture Reporter" },
+        "labels": [{ "id": "L_1", "name": "bug", "description": "", "color": "d73a4a" }],
+        "comments": [
+          {
+            "id": "IC_1",
+            "author": { "login": "fixture-dev" },
+            "authorAssociation": "MEMBER",
+            "body": "The fixture comment: a long recording.\n\n![long](https://private-user-images.githubusercontent.com/1000/big-video.mp4?jwt=eyJfixture.signature)",
+            "createdAt": "2026-11-10T09:30:00Z",
+            "url": "https://github.com/acme-test/widget/issues/42#issuecomment-1"
+          },
+          {
+            "id": "IC_2",
+            "author": { "login": "fixture-reporter" },
+            "authorAssociation": "NONE",
+            "body": "The fixture reply: see [the report page](https://example.com/report) and https://github.com/user-attachments/assets/1b2c3d4e-0000-4000-8000-000000000003",
+            "createdAt": "2026-11-10T10:00:00Z",
+            "url": "https://github.com/acme-test/widget/issues/42#issuecomment-2"
+          }
+        ],
+        "createdAt": "2026-11-10T09:00:00Z",
+        "url": "https://github.com/acme-test/widget/issues/42",
+        "state": "OPEN"
+      }
+    },
+    {
+      "args": ["auth", "token"],
+      "code": 0,
+      "stdout": "gho_fixture_token_for_tests\n"
+    },
+    {
+      "args": ["issue", "view", "https://github.com/acme-test/private/issues/7", "--json", "number,title,body,author,labels,comments,createdAt,url,state"],
+      "code": 1,
+      "stdout": "",
+      "stderr": "GraphQL: Could not resolve to a Repository with the name 'acme-test/private'. (repository)\n"
+    },
+    {
+      "args": ["issue", "view", "https://github.com/acme-test/widget/issues/43", "--json", "number,title,body,author,labels,comments,createdAt,url,state"],
+      "code": 0,
+      "stdout": {
+        "number": 43,
+        "title": "A pull request",
+        "body": "",
+        "author": { "login": "fixture-dev" },
+        "labels": [],
+        "comments": [],
+        "createdAt": "2026-11-10T11:00:00Z",
+        "url": "https://github.com/acme-test/widget/pull/43",
+        "state": "OPEN"
+      }
+    }
+  ]
+}

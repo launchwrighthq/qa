@@ -1,6 +1,6 @@
 // `lw qa publish <slug>` (spec 2.12.3): copies a report bundle to the `qa.publish.storage` disk.
 import type { App } from '../kernel/index.mts';
-import { LaunchwrightError } from '../kernel/index.mts';
+import { isCodedError } from '../kernel/index.mts';
 import { qaConfigOf } from '../config.mts';
 import { loadStorage } from '../services/peers.mts';
 import { legDefinitions } from '../services/legs.mts';
@@ -42,7 +42,7 @@ const publish: QaSubcommand = {
       opts.out(`lw qa publish: ${files.length} files to storage disk ${disk}`);
       return 0;
     } catch (cause) {
-      if (!(cause instanceof LaunchwrightError)) throw cause;
+      if (!isCodedError(cause)) throw cause;
       opts.err(`lw qa publish: ${cause.code}: ${cause.message}`);
       return 1;
     }

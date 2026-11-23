@@ -185,19 +185,22 @@ var manifestSchema = import_zod4.z.object({
 // src/kernel/services/module-fixture.mts
 var import_node_fs = require("fs");
 function moduleFixture(from, relative2) {
-  let pkg = new URL(".", from);
-  while (!(0, import_node_fs.existsSync)(new URL("package.json", pkg))) {
-    const parent = new URL("..", pkg);
-    if (parent.href === pkg.href) {
-      throw new LaunchwrightError("kernel.fixture.package", `No package.json is above ${String(from)}, so its fixtures/ folder is unknown.`, {
-        context: { file: String(from) }
-      });
-    }
-    pkg = parent;
+  let dir = new URL(".", from);
+  let pkg;
+  for (; ; ) {
+    const candidate = new URL(`fixtures/${relative2}`, dir);
+    if ((0, import_node_fs.existsSync)(candidate)) return candidate;
+    const parent = new URL("..", dir);
+    if (pkg !== void 0 || parent.href === dir.href) break;
+    if ((0, import_node_fs.existsSync)(new URL("package.json", dir))) pkg = dir;
+    dir = parent;
   }
-  const published = new URL(`fixtures/${relative2}`, pkg);
-  const repo = new URL(`../fixtures/${relative2}`, pkg);
-  return (0, import_node_fs.existsSync)(published) || !(0, import_node_fs.existsSync)(repo) ? published : repo;
+  if (pkg === void 0) {
+    throw new LaunchwrightError("kernel.fixture.package", `No package.json is above ${String(from)}, so its fixtures/ folder is unknown.`, {
+      context: { file: String(from) }
+    });
+  }
+  return new URL(`fixtures/${relative2}`, pkg);
 }
 
 // src/kernel/services/resolve-import.mts

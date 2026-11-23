@@ -14,11 +14,11 @@ import {
   stageBatch,
   writeCursor,
   writeProposal
-} from "./chunk-4FJYH53F.js";
+} from "./chunk-H323EBXL.js";
 import {
   FAKE_INTAKE_ITEMS,
   FakeIntakeDriver
-} from "./chunk-MT6KMLQO.js";
+} from "./chunk-FI33MU4L.js";
 import {
   isGithubMediaHost,
   isGithubUpload,
@@ -30,13 +30,28 @@ import {
   kindOf,
   mimeOf,
   sniffMime
-} from "./chunk-LAFOB6RX.js";
+} from "./chunk-HVRFRQJC.js";
 import {
   QA_INTAKE_CAPABILITIES,
   QA_INTAKE_SPEC_VERSION
 } from "./chunk-K3F4HTKJ.js";
-import "./chunk-RZJZNFR2.js";
-import "./chunk-APXO3KTC.js";
+import "./chunk-3NHPBT7P.js";
+import "./chunk-GUHFATHG.js";
+import "./chunk-CWVGWAJ5.js";
+import "./chunk-SKL7TLL4.js";
+import "./chunk-37DKYQMH.js";
+import "./chunk-SYG32WE6.js";
+import "./chunk-N3XSGPAN.js";
+import "./chunk-62VIRJ2H.js";
+import "./chunk-ZYIHPZ3V.js";
+import "./chunk-YDFQPHPI.js";
+import "./chunk-7OHVK72J.js";
+import "./chunk-5KDQJ25J.js";
+import "./chunk-SQO6FPZ2.js";
+import "./chunk-NYZ72SDM.js";
+import "./chunk-AA7FPMJ7.js";
+import "./chunk-LBZC23FE.js";
+import "./chunk-277Y4WQJ.js";
 import {
   issueMarkdown,
   listIssues,
@@ -44,15 +59,22 @@ import {
   recordDir,
   recordId,
   writeIssue
-} from "./chunk-7DHZXG6M.js";
-import "./chunk-6LHTNS5B.js";
+} from "./chunk-O5NSNELG.js";
+import "./chunk-B7UB2WOJ.js";
+import "./chunk-ZXEFVZDQ.js";
+import "./chunk-K3P52YYY.js";
+import "./chunk-XZN5EDSR.js";
+import "./chunk-3OHR7PBT.js";
+import "./chunk-H3DGWSMZ.js";
+import "./chunk-SA2YN55L.js";
+import "./chunk-GZ2IEQDP.js";
 import {
   CONFIG,
   provider
-} from "./chunk-WUOHAWEI.js";
+} from "./chunk-5AJ7M7K5.js";
 import {
   BootError
-} from "./chunk-L57WEOVE.js";
+} from "./chunk-KK6DCU3O.js";
 
 // src/intake/provider.mts
 var qaIntakeProvider = provider({
@@ -72,7 +94,7 @@ var qaIntakeProvider = provider({
 // src/intake/services/extension.mts
 var qaExtension = {
   name: "qa-intake",
-  subcommands: { intake: async () => (await import("./qa-intake-UYPZMZD6.js")).default }
+  subcommands: { intake: async () => (await import("./qa-intake-WD5OHCD7.js")).default }
 };
 export {
   FAKE_INTAKE_ITEMS,

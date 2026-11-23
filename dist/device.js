@@ -51,22 +51,45 @@ import {
   writeBytes,
   writeHeld,
   writePng
-} from "./chunk-466HMMHW.js";
+} from "./chunk-33RJBPBQ.js";
+import "./chunk-3NHPBT7P.js";
+import "./chunk-GUHFATHG.js";
 import {
   QA_TARGETS
-} from "./chunk-RZJZNFR2.js";
-import "./chunk-APXO3KTC.js";
+} from "./chunk-CWVGWAJ5.js";
+import "./chunk-SKL7TLL4.js";
+import "./chunk-37DKYQMH.js";
+import "./chunk-SYG32WE6.js";
+import "./chunk-N3XSGPAN.js";
+import "./chunk-62VIRJ2H.js";
+import "./chunk-ZYIHPZ3V.js";
+import "./chunk-YDFQPHPI.js";
+import "./chunk-7OHVK72J.js";
+import "./chunk-5KDQJ25J.js";
+import "./chunk-SQO6FPZ2.js";
+import "./chunk-NYZ72SDM.js";
+import "./chunk-AA7FPMJ7.js";
+import "./chunk-LBZC23FE.js";
+import "./chunk-277Y4WQJ.js";
+import "./chunk-O5NSNELG.js";
+import "./chunk-B7UB2WOJ.js";
+import "./chunk-ZXEFVZDQ.js";
 import {
   QA_TARGET_SPEC_VERSION
-} from "./chunk-7DHZXG6M.js";
-import "./chunk-6LHTNS5B.js";
+} from "./chunk-K3P52YYY.js";
+import "./chunk-XZN5EDSR.js";
+import "./chunk-3OHR7PBT.js";
+import "./chunk-H3DGWSMZ.js";
+import "./chunk-SA2YN55L.js";
+import "./chunk-GZ2IEQDP.js";
 import {
   CONFIG,
   provider
-} from "./chunk-WUOHAWEI.js";
+} from "./chunk-5AJ7M7K5.js";
 import {
-  LaunchwrightError
-} from "./chunk-L57WEOVE.js";
+  LaunchwrightError,
+  isCodedError
+} from "./chunk-KK6DCU3O.js";
 
 // src/device/drivers/target/android-adb.mts
 var ANDROID_CAPABILITIES = ["input", "screenshot", "video", "webview", "native", "telegram"];
@@ -95,7 +118,7 @@ var AndroidTarget = class {
       const state = await deviceState(h.rig, h.adb.serial, this.ctx.deps, this.ctx.config.device.tools.adb);
       return state === "device" ? { ready: true } : { ready: false, reason: stateFix(state, h.adb.serial, h.rig.name) };
     } catch (err) {
-      if (err instanceof LaunchwrightError) return { ready: false, reason: err.message };
+      if (isCodedError(err)) return { ready: false, reason: err.message };
       throw err;
     }
   }
@@ -321,7 +344,7 @@ var BrowserstackTarget = class {
       if (this.budget.startedAt !== null) checkBudget(this.budget.startedAt, this.ctx.deps.clock.now(), cfg);
       return { ready: true };
     } catch (err) {
-      if (err instanceof LaunchwrightError) return { ready: false, reason: err.message };
+      if (isCodedError(err)) return { ready: false, reason: err.message };
       throw err;
     }
   }
@@ -352,7 +375,7 @@ var IosSimulatorTarget = class {
       const reason = simulatorReadiness(resolved.name, deviceKeys(resolved.name, resolved.device, simulatorDeviceKeys));
       return reason ? { ready: false, reason } : { ready: true };
     } catch (err) {
-      if (err instanceof LaunchwrightError) return { ready: false, reason: err.message };
+      if (isCodedError(err)) return { ready: false, reason: err.message };
       throw err;
     }
   }
@@ -384,7 +407,7 @@ var IosWebkitTarget = class {
       await access.close();
       return { ready: true };
     } catch (err) {
-      if (err instanceof LaunchwrightError) return { ready: false, reason: err.message };
+      if (isCodedError(err)) return { ready: false, reason: err.message };
       throw err;
     }
   }
@@ -422,7 +445,7 @@ var qaDeviceProvider = provider({
 // src/device/services/extension.mts
 var qaExtension = {
   name: "qa-device",
-  subcommands: { device: async () => (await import("./qa-device-ZI5RAIE4.js")).default },
+  subcommands: { device: async () => (await import("./qa-device-AMANTL6F.js")).default },
   targets: (config, root) => deviceTargets(withDevice(config), systemDeviceDeps(root))
 };
 export {

@@ -1,7 +1,5 @@
 // `lw qa <sub>`: each core subcommand is the default export of `./qa-<sub>.mts` (spec 2.2). An
 // extension module adds its own subcommands and targets (`./extensions.mts`).
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { qaConfigOf } from '../config.mts';
 import type { QaTarget } from '../drivers/target/contract.mts';
 import { extensionTargets, loadExtensions, type QaExtension } from './extensions.mts';
@@ -53,31 +51,49 @@ export const SUBCOMMANDS = [
   'telegram', 'sink', 'comments',
 ] as const;
 
-function fileOf(sub: string): URL {
-  const own = new URL(`./qa-${sub}.mts`, import.meta.url);
-  return existsSync(fileURLToPath(own)) ? own : new URL(`./qa-${sub}.mjs`, import.meta.url);
+type CoreSubcommand = (typeof SUBCOMMANDS)[number];
+
+/**
+ * The module of each core subcommand. Each import has a literal specifier, so a bundle carries every
+ * subcommand, and each module still loads on first use.
+ */
+const CORE: Readonly<Record<CoreSubcommand, () => Promise<{ default: QaSubcommand }>>> = {
+  changes: () => import('./qa-changes.mts'),
+  session: () => import('./qa-session.mts'),
+  sweep: () => import('./qa-sweep.mts'),
+  report: () => import('./qa-report.mts'),
+  publish: () => import('./qa-publish.mts'),
+  gc: () => import('./qa-gc.mts'),
+  check: () => import('./qa-check.mts'),
+  world: () => import('./qa-world.mts'),
+  fixture: () => import('./qa-fixture.mts'),
+  worktree: () => import('./qa-worktree.mts'),
+  job: () => import('./qa-job.mts'),
+  states: () => import('./qa-states.mts'),
+  paths: () => import('./qa-paths.mts'),
+  telegram: () => import('./qa-telegram.mts'),
+  sink: () => import('./qa-sink.mts'),
+  comments: () => import('./qa-comments.mts'),
+};
+
+function isCore(sub: string): sub is CoreSubcommand {
+  return Object.hasOwn(CORE, sub);
 }
 
-async function load(sub: string): Promise<QaSubcommand | null> {
-  const url = fileOf(sub);
-  if (!existsSync(fileURLToPath(url))) return null;
-  const mod = (await import(url.href)) as { default?: QaSubcommand };
-  return mod.default ?? null;
+async function load(sub: CoreSubcommand): Promise<QaSubcommand> {
+  return (await CORE[sub]()).default;
 }
 
-/** The subcommand `sub` of the core or of an extension: undefined when none has it, null when its file is missing. */
-async function subcommandOf(sub: string, extensions: readonly QaExtension[]): Promise<QaSubcommand | null | undefined> {
-  if ((SUBCOMMANDS as readonly string[]).includes(sub)) return load(sub);
+/** The subcommand `sub` of the core or of an extension: undefined when none has it. */
+async function subcommandOf(sub: string, extensions: readonly QaExtension[]): Promise<QaSubcommand | undefined> {
+  if (isCore(sub)) return load(sub);
   const loader = extensions.find((e) => e.subcommands?.[sub])?.subcommands?.[sub];
   return loader ? loader() : undefined;
 }
 
 async function usage(opts: QaCommandOptions, extensions: readonly QaExtension[]): Promise<number> {
   opts.err('usage: lw qa <subcommand> [args]');
-  for (const sub of SUBCOMMANDS) {
-    const spec = await load(sub);
-    opts.err(`  ${sub.padEnd(10)} ${spec?.summary ?? 'not built'}`);
-  }
+  for (const sub of SUBCOMMANDS) opts.err(`  ${sub.padEnd(10)} ${(await load(sub)).summary}`);
   for (const ext of extensions) {
     for (const [sub, loader] of Object.entries(ext.subcommands ?? {})) opts.err(`  ${sub.padEnd(10)} ${(await loader()).summary} (module ${ext.name})`);
   }
@@ -108,10 +124,6 @@ export const qaCommand = {
     if (spec === undefined) {
       opts.err(`lw qa: unknown subcommand ${first}. A subcommand of an extension module needs that module in the project config, for example qa-${first}.`);
       return usage(opts, extensions);
-    }
-    if (spec === null) {
-      opts.err(`lw qa ${first}: the subcommand file qa-${first}.mts is missing`);
-      return 2;
     }
     const added = extensions.some((e) => e.targets) ? extensionTargets(extensions, qaConfigOf(opts.config), opts.cwd) : {};
     return spec.run(rest, { ...opts, targets: { ...added, ...opts.targets } });

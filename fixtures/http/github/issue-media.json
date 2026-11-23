@@ -1,0 +1,41 @@
+{
+  "format": 1,
+  "driver": "github",
+  "recorded": "2026-11-12",
+  "exchanges": [
+    {
+      "request": { "method": "GET", "url": "https://github.com/user-attachments/assets/1b2c3d4e-0000-4000-8000-000000000001", "headers": {} },
+      "response": {
+        "status": 302,
+        "headers": { "location": "https://github-production-user-asset-6210df.s3.amazonaws.com/1000/screen.png?X-Amz-Signature=fixture" }
+      }
+    },
+    {
+      "request": { "method": "GET", "url": "https://github-production-user-asset-6210df.s3.amazonaws.com/1000/screen.png?X-Amz-Signature=fixture", "headers": {} },
+      "response": { "status": 200, "headers": { "content-type": "image/png" }, "body": "recorded screenshot bytes" }
+    },
+    {
+      "request": { "method": "GET", "url": "https://github.com/user-attachments/assets/1b2c3d4e-0000-4000-8000-000000000002", "headers": {} },
+      "response": {
+        "status": 302,
+        "headers": { "location": "https://github-production-user-asset-6210df.s3.amazonaws.com/1000/tap.mp4?X-Amz-Signature=fixture" }
+      }
+    },
+    {
+      "request": { "method": "GET", "url": "https://github-production-user-asset-6210df.s3.amazonaws.com/1000/tap.mp4?X-Amz-Signature=fixture", "headers": {} },
+      "response": { "status": 200, "headers": { "content-type": "video/mp4" }, "body": "recorded video bytes" }
+    },
+    {
+      "request": { "method": "GET", "url": "https://user-images.githubusercontent.com/1000/legacy-shot.png", "headers": {} },
+      "response": { "status": 200, "headers": { "content-type": "application/octet-stream" }, "body": "GIF89a recorded legacy shot" }
+    },
+    {
+      "request": { "method": "GET", "url": "https://private-user-images.githubusercontent.com/1000/big-video.mp4?jwt=eyJfixture.signature", "headers": {} },
+      "response": { "status": 200, "headers": { "content-type": "video/mp4", "content-length": "524288000" }, "body": "x" }
+    },
+    {
+      "request": { "method": "GET", "url": "https://github.com/user-attachments/assets/1b2c3d4e-0000-4000-8000-000000000003", "headers": {} },
+      "response": { "status": 404, "headers": { "content-type": "text/plain" }, "body": "Not Found" }
+    }
+  ]
+}

@@ -30,7 +30,7 @@ export { type Clock, systemClock } from './services/clock.mts';
 export { safeEqual } from './services/hmac.mts';
 export { type EnvProfiles, type EnvProfilesOptions, envProfiles } from './services/env-grammar.mts';
 export { type Driver, BaseDriver } from './services/driver.mts';
-export { BootError, LaunchwrightError, messageOf } from './services/errors.mts';
+export { BootError, isCodedError, LaunchwrightError, messageOf } from './services/errors.mts';
 export { type EventBus, type EventDef, type EventHandler, type EventTransport, defineEvent } from './events.mts';
 export { type HealthRegistry, type HealthResult, createHealthRegistry } from './services/health.mts';
 export { escapeHtml } from './services/html.mts';

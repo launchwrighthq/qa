@@ -1,7 +1,7 @@
 // `lw qa session resolve|check|run` (spec 2.4, 2.15.4).
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { LaunchwrightError, systemClock } from '../kernel/index.mts';
+import { isCodedError, LaunchwrightError, systemClock } from '../kernel/index.mts';
 import { parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { type QaConfig, qaConfigOf } from '../config.mts';
 import { git, repoRoot } from '../services/changes.mts';
@@ -243,7 +243,7 @@ const session: QaSubcommand = {
       }
       if (action === 'run') return await run(rest, opts, config);
     } catch (cause) {
-      if (!(cause instanceof LaunchwrightError)) throw cause;
+      if (!isCodedError(cause)) throw cause;
       opts.err(`lw qa session ${action}: ${cause.code}: ${cause.message}`);
       return cause instanceof UsageError || cause.code === 'qa.session.usage' ? 2 : 1;
     }

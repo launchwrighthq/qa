@@ -6,7 +6,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import { readFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
-import { type Clock, LaunchwrightError, systemClock } from '../kernel/index.mts';
+import { type Clock, isCodedError, LaunchwrightError, systemClock } from '../kernel/index.mts';
 import { addComment, type Comment, type CommentStore, makeComment, replyToComment, setStatus } from './comments.mts';
 import { mimeOfExtension } from './mime.mts';
 
@@ -146,7 +146,7 @@ export async function startCommentServer(opts: CommentServerOptions): Promise<Co
         res.end();
         return;
       }
-      const code = cause instanceof LaunchwrightError ? cause.code : 'qa.comment.server';
+      const code = isCodedError(cause) ? cause.code : 'qa.comment.server';
       sendJson(res, 400, { error: code });
     });
   });

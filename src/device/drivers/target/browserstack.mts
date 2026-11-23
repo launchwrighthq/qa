@@ -1,6 +1,6 @@
 // The `browserstack` qa.target driver (spec 2.8): a real cloud phone on BrowserStack Automate over
 // W3C WebDriver. One target instance is one run: its minute budget starts with its first session.
-import { LaunchwrightError } from '../../../kernel/index.mts';
+import { isCodedError } from '../../../kernel/index.mts';
 import type { Leg } from '../../../index.mts';
 import { cloudDeviceKeys, deviceKeys } from '../../config.mts';
 import { CloudSession, type RunBudget } from '../../services/cloud-session.mts';
@@ -34,7 +34,7 @@ class BrowserstackTarget implements QaTarget {
       if (this.budget.startedAt !== null) checkBudget(this.budget.startedAt, this.ctx.deps.clock.now(), cfg);
       return { ready: true };
     } catch (err) {
-      if (err instanceof LaunchwrightError) return { ready: false, reason: err.message };
+      if (isCodedError(err)) return { ready: false, reason: err.message };
       throw err;
     }
   }

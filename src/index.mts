@@ -1,6 +1,7 @@
 // The public API of @launchwrighthq/qa.
 export { EXTENSION_PREFIX, extensionNames, extensionTargets, loadExtensions, type QaExtension } from './commands/extensions.mts';
-export type { QaCommandOptions, QaSubcommand } from './commands/qa.command.mts';
+export { qaCommand, type QaCommandOptions, type QaSubcommand, SUBCOMMANDS } from './commands/qa.command.mts';
+export { createStatesCommand } from './commands/qa-states.mts';
 export { type LegConfig, qaConfig, type QaConfig, qaConfigOf, withAppPaths } from './config.mts';
 export {
   type Capture,
@@ -16,6 +17,8 @@ export {
   type TargetReadiness,
   type VideoCapture,
 } from './drivers/target/contract.mts';
+export { createPlaywrightTarget, type PlaywrightTargetOptions } from './drivers/target/playwright.mts';
+export { isCodedError } from './kernel/services/errors.mts';
 export { qaProvider } from './provider.mts';
 export { extensionOf, mimeOfExtension } from './services/mime.mts';
 export { pngSize } from './services/png.mts';
@@ -91,6 +94,7 @@ export {
   SEVERITY_DEDUCTION,
   type SeverityCounts,
 } from './services/score.mts';
+export { createTargetRegistry } from './services/targets.mts';
 export * from './services/types.mts';
 export { MIN_VIDEO_S } from './services/video.mts';
 export { QA_TARGETS } from './tokens.mts';

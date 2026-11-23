@@ -1,7 +1,7 @@
 // `lw qa check [--build]` (spec 2.14, 2.11.5, 2.6): the testability gate of a project. It prints
 // each finding as `<rule> <file>:<line> <message>` and exits 1 on any. `lw verify` runs it when
 // the qa module is installed.
-import { LaunchwrightError, systemClock } from '../kernel/index.mts';
+import { isCodedError, LaunchwrightError, systemClock } from '../kernel/index.mts';
 import { parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { qaConfig, withAppPaths } from '../config.mts';
 import { findingLine, runChecks } from '../services/check.mts';
@@ -52,7 +52,7 @@ const check: QaSubcommand = {
     try {
       return await run(args, opts);
     } catch (cause) {
-      if (!(cause instanceof LaunchwrightError)) throw cause;
+      if (!isCodedError(cause)) throw cause;
       opts.err(`lw qa check: ${cause.message} (${cause.code})`);
       return 1;
     }

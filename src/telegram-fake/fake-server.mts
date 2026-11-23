@@ -4,7 +4,7 @@
 // them to the bot's webhook or keeps them for `getUpdates`.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { type Clock, LaunchwrightError, messageOf, safeEqual, systemClock } from '../kernel/index.mts';
+import { type Clock, isCodedError, LaunchwrightError, messageOf, safeEqual, systemClock } from '../kernel/index.mts';
 import { chatPageHtml } from './chat-page.mts';
 import { FakeBotApi, readParams } from './fake-bot-api.mts';
 import { botIdOfToken, type InlineKeyboardButton, type KeyboardButton, signInitData, type TgMessage, type TgUpdate, type TgUser, webhookSecret } from './protocol.mts';
@@ -516,8 +516,8 @@ class FakeTelegramServer {
     } catch (cause) {
       chat.error = messageOf(cause);
       this.touch();
-      const status = cause instanceof LaunchwrightError && cause.code === 'telegram.fake.webhook' ? 502 : 400;
-      sendJson(res, status, { ok: false, error: chat.error, code: cause instanceof LaunchwrightError ? cause.code : 'telegram.fake.action' });
+      const status = isCodedError(cause) && cause.code === 'telegram.fake.webhook' ? 502 : 400;
+      sendJson(res, status, { ok: false, error: chat.error, code: isCodedError(cause) ? cause.code : 'telegram.fake.action' });
     }
   }
 

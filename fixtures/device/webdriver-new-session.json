@@ -1,0 +1,17 @@
+{
+  "value": {
+    "sessionId": "{id}",
+    "capabilities": {
+      "acceptInsecureCerts": false,
+      "browserName": "safari",
+      "browserVersion": "18.6",
+      "platformName": "ios",
+      "setWindowRect": false,
+      "strictFileInteractability": false,
+      "timeouts": { "implicit": 0, "pageLoad": 300000, "script": 30000 },
+      "unhandledPromptBehavior": "dismiss and notify",
+      "safari:automaticInspection": false,
+      "safari:automaticProfiling": false
+    }
+  }
+}

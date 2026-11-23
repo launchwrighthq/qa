@@ -1,0 +1,43 @@
+{
+  "format": 1,
+  "driver": "browserstack",
+  "recorded": "2026-11-12",
+  "exchanges": [
+    {
+      "request": { "method": "GET", "url": "https://api.browserstack.com/automate/plan.json", "headers": {} },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json; charset=utf-8" },
+        "body": {
+          "automate_plan": "Free",
+          "parallel_sessions_running": 0,
+          "team_parallel_sessions_max_allowed": 1,
+          "parallel_sessions_max_allowed": 1,
+          "queued_sessions": 0,
+          "queued_sessions_max_allowed": 5
+        }
+      }
+    },
+    {
+      "request": { "method": "GET", "url": "https://api.browserstack.com/automate/builds.json?limit=100&offset=0", "headers": {} },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json; charset=utf-8" },
+        "body": [
+          { "automation_build": { "name": "qa", "hashed_id": "fixturebuild0001", "duration": 251, "status": "done", "build_tag": null } }
+        ]
+      }
+    },
+    {
+      "request": { "method": "GET", "url": "https://api.browserstack.com/automate/builds/fixturebuild0001/sessions.json?limit=100&offset=0", "headers": {} },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json; charset=utf-8" },
+        "body": [
+          { "automation_session": { "name": "safari-ios bs-iphone", "duration": 131, "os": "ios", "os_version": "18", "device": "iPhone 16", "status": "done", "hashed_id": "fixturesession0001" } },
+          { "automation_session": { "name": "safari-ios bs-iphone", "duration": 120, "os": "ios", "os_version": "18", "device": "iPhone 16", "status": "done", "hashed_id": "fixturesession0002" } }
+        ]
+      }
+    }
+  ]
+}

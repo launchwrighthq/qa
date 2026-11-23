@@ -2,7 +2,7 @@
 // user client over GramJS (the optional npm peer `telegram`), with a session that the operator supplies. A method allowlist wraps the
 // client: history, messages by id and media download. Any other method fails with
 // `qa.intake.telegram.method`. The allowlist is an accident guard, not a sandbox (spec 3.5).
-import { BaseDriver, LaunchwrightError, z } from '../../../kernel/index.mts';
+import { BaseDriver, isCodedError, LaunchwrightError, z } from '../../../kernel/index.mts';
 import { kindOf, mimeOf } from '../../services/media.mts';
 import { type GramJsClient, type GramJsModule, loadGramJs, UserClient } from '../../../telegram/mtproto.mts';
 import { type IntakeBatch, type IntakeWindow, QA_INTAKE_SPEC_VERSION, type QaIntakeDriver, type RawItem, type RawMedia } from './contract.mts';
@@ -181,7 +181,7 @@ export class TelegramMtprotoIntakeDriver extends BaseDriver implements QaIntakeD
             ...(first && sinceDate ? { offsetDate: Math.floor(sinceDate.getTime() / 1000) } : {}),
           })) as GramMessage[];
         } catch (cause) {
-          if (cause instanceof LaunchwrightError) throw cause;
+          if (isCodedError(cause)) throw cause;
           throw new LaunchwrightError('qa.intake.telegram.read', `Cannot read the history of chat ${chat}. The session must be a member of the chat.`, { cause, context: { chat } });
         }
         for (const m of page) {
@@ -236,7 +236,7 @@ export class TelegramMtprotoIntakeDriver extends BaseDriver implements QaIntakeD
     try {
       data = await tg.call('downloadMedia', m);
     } catch (cause) {
-      if (cause instanceof LaunchwrightError && cause.code === 'telegram.mtproto.download') {
+      if (isCodedError(cause) && cause.code === 'telegram.mtproto.download') {
         return { from, kind: kindOf(declared, voice), mime: declared, ...(name ? { name } : {}), skipped: 'unreachable' };
       }
       throw cause;

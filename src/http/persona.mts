@@ -1,6 +1,6 @@
 // `GET /__qa/persona/<id>` (spec 2.6): the user that the QA world seeded for a persona, so both
 // persona checks compare a session route answer with that user id. 404 for an unseeded persona.
-import { LaunchwrightError } from '../kernel/index.mts';
+import { isCodedError } from '../kernel/index.mts';
 import { type HandlerArgs, loadAuth, loadDb, loadHttp, type RequestContext } from '../services/peers.mts';
 import { idProblem, personaIds, QA_PROVIDER } from '../world/services/ids.mts';
 
@@ -25,7 +25,7 @@ export async function seededUser(ctx: RequestContext, persona: string): Promise<
     if (user.status !== 'active') throw new HttpError(403, 'qa.persona.blocked', `The user of ${account} is blocked.`);
     return { userId: user.id, tenantId };
   } catch (cause) {
-    if (cause instanceof LaunchwrightError && cause.code === 'auth.signup.closed') {
+    if (isCodedError(cause) && cause.code === 'auth.signup.closed') {
       throw new HttpError(404, 'qa.persona.unseeded', `Persona ${persona} has no account ${account} in the QA world. Run lw qa world reset.`, { cause });
     }
     throw cause;

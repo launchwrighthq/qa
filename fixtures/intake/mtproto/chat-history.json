@@ -1,0 +1,111 @@
+{
+  "format": 1,
+  "tool": "gramjs",
+  "recorded": "2026-11-12",
+  "chat": "-1001234567890",
+  "messages": [
+    {
+      "className": "Message",
+      "id": 201,
+      "date": 1793527200,
+      "message": "Recorded chat: the checkout button does nothing on my phone.",
+      "senderId": "5001",
+      "sender": { "className": "User", "firstName": "Tester", "lastName": "One", "username": "tester_one" },
+      "media": { "className": "MessageMediaPhoto", "photo": { "className": "Photo", "id": "9001" } }
+    },
+    {
+      "className": "Message",
+      "id": 202,
+      "date": 1793527500,
+      "message": "Recorded chat: here is a recording of the tap.",
+      "senderId": "5001",
+      "sender": { "className": "User", "firstName": "Tester", "lastName": "One" },
+      "media": {
+        "className": "MessageMediaDocument",
+        "document": {
+          "className": "Document",
+          "mimeType": "video/mp4",
+          "size": 48,
+          "attributes": [
+            { "className": "DocumentAttributeVideo", "duration": 4, "w": 720, "h": 1280 },
+            { "className": "DocumentAttributeFilename", "fileName": "tap.mp4" }
+          ]
+        }
+      }
+    },
+    {
+      "className": "MessageService",
+      "id": 203,
+      "date": 1793527560,
+      "senderId": "5003",
+      "action": { "className": "MessageActionChatAddUser", "users": ["5003"] }
+    },
+    {
+      "className": "Message",
+      "id": 204,
+      "date": 1793529000,
+      "message": "Recorded chat: which phone model is it?",
+      "senderId": "5002",
+      "sender": { "className": "User", "firstName": "Developer" },
+      "replyTo": { "className": "MessageReplyHeader", "replyToMsgId": 201 }
+    },
+    {
+      "className": "Message",
+      "id": 205,
+      "date": 1793529600,
+      "message": "",
+      "senderId": "5001",
+      "sender": { "className": "User", "firstName": "Tester", "lastName": "One" },
+      "replyTo": { "className": "MessageReplyHeader", "replyToMsgId": 204 },
+      "media": {
+        "className": "MessageMediaDocument",
+        "document": {
+          "className": "Document",
+          "mimeType": "audio/ogg",
+          "size": 30,
+          "attributes": [{ "className": "DocumentAttributeAudio", "voice": true, "duration": 3 }]
+        }
+      }
+    },
+    {
+      "className": "Message",
+      "id": 206,
+      "date": 1793606400,
+      "message": "Recorded chat: the profile page shows an empty avatar.",
+      "senderId": "5004",
+      "sender": { "className": "User", "username": "tester_two" },
+      "media": {
+        "className": "MessageMediaDocument",
+        "document": {
+          "className": "Document",
+          "mimeType": "video/quicktime",
+          "size": 314572800,
+          "attributes": [{ "className": "DocumentAttributeFilename", "fileName": "screen-recording.mov" }]
+        }
+      }
+    },
+    {
+      "className": "Message",
+      "id": 207,
+      "date": 1793607600,
+      "message": "Recorded chat: it happens on the desktop site too, see https://example.com/profile",
+      "senderId": "5004",
+      "sender": { "className": "User", "username": "tester_two" },
+      "media": { "className": "MessageMediaWebPage", "webpage": { "className": "WebPage", "url": "https://example.com/profile" } }
+    },
+    {
+      "className": "Message",
+      "id": 208,
+      "date": 1793607660,
+      "message": "",
+      "senderId": "5004",
+      "sender": { "className": "User", "username": "tester_two" },
+      "media": { "className": "MessageMediaGeo", "geo": { "className": "GeoPoint", "lat": 0, "long": 0 } }
+    }
+  ],
+  "files": {
+    "201": "iVBORw0KGgoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAByZWNvcmRlZCBwaG90bw==",
+    "202": "AAAAGGZ0eXBtcDQyAAAAAAAAAAAAAAAAAAAAAAAAAAByZWNvcmRlZCB2aWRlbw==",
+    "205": "T2dnUwAAAAAAAAAAAAAAAHJlY29yZGVkIHZvaWNl"
+  }
+}

@@ -1,0 +1,29 @@
+[
+  {
+    "devtoolsFrontendUrl": "",
+    "faviconUrl": "",
+    "thumbnailUrl": "",
+    "title": "JSContext",
+    "url": "",
+    "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/2",
+    "appId": "PID:412"
+  },
+  {
+    "devtoolsFrontendUrl": "",
+    "faviconUrl": "",
+    "thumbnailUrl": "",
+    "title": "",
+    "url": "about:blank",
+    "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/7",
+    "appId": "PID:388"
+  },
+  {
+    "devtoolsFrontendUrl": "/devtools/devtools.html?ws=localhost:9222/devtools/page/1",
+    "faviconUrl": "",
+    "thumbnailUrl": "/thumb/{url}",
+    "title": "contract",
+    "url": "{url}",
+    "webSocketDebuggerUrl": "ws://localhost:9222/devtools/page/1",
+    "appId": "PID:388"
+  }
+]

@@ -1,0 +1,7 @@
+== Devices ==
+-- iOS 18.6 --
+    iPhone Fixture 16 (FACE0001-0000-4000-8000-0000000000A1) (Booted)
+    iPad Fixture (FACE0002-0000-4000-8000-0000000000A2) (Shutdown)
+-- iOS 17.5 --
+    iPhone Fixture 8 (FACE0004-0000-4000-8000-0000000000A4) (Shutdown) (unavailable, runtime profile not found)
+-- watchOS 11.5 --

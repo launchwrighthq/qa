@@ -3,7 +3,7 @@
 // screenshot, recording, accessibility dump) runs through adb. A Mini App moves by `pushState`,
 // because a document load drops the launch data that Telegram puts in the URL.
 import { basename } from 'node:path';
-import { LaunchwrightError } from '../../kernel/index.mts';
+import { isCodedError, LaunchwrightError } from '../../kernel/index.mts';
 import { type Act, MIN_VIDEO_S, type Settle } from '../../index.mts';
 import type { Capture, OpenOptions, QaSession, SessionLogLine, VideoCapture } from '../drivers/target/contract.mts';
 import {
@@ -103,7 +103,7 @@ async function attachSocket(ctx: DeviceContext, h: AndroidHandle, pkg: string, s
       { timeoutMs: 30_000, everyMs: 1000, code: 'qa.device.webview', what: `A debuggable WebView of ${pkg} on ${h.adb.serial}` },
     );
   } catch (err) {
-    if (!(err instanceof LaunchwrightError) || err.code !== 'qa.device.webview') throw err;
+    if (!isCodedError(err) || err.code !== 'qa.device.webview') throw err;
     if (surface === 'web') {
       throw new LaunchwrightError(
         'qa.device.webview',

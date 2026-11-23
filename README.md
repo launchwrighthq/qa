@@ -16,7 +16,7 @@ A TypeScript or Node consumer pins the tag:
 ```json
 {
   "devDependencies": {
-    "@launchwrighthq/qa": "github:launchwrighthq/qa#v0.1.4"
+    "@launchwrighthq/qa": "github:launchwrighthq/qa#v0.1.5"
   }
 }
 ```
@@ -146,6 +146,35 @@ import { render } from '@launchwrighthq/qa/render';
 
 The device targets and the issue intake are subpath exports, `@launchwrighthq/qa/device` and
 `@launchwrighthq/qa/intake`.
+
+A CLI that embeds the `lw-qa` command imports it and its parts from the package root:
+
+```ts
+import { createPlaywrightTarget, createStatesCommand, createTargetRegistry, qaCommand, SUBCOMMANDS } from '@launchwrighthq/qa';
+
+const code = await qaCommand.run(['session', '--help'], { cwd: process.cwd(), out: console.log, err: console.error });
+```
+
+The contract suites of the `qa.target` and `qa.intake` drivers are in `@launchwrighthq/qa/testing`.
+They run under Vitest, an optional peer, so import the subpath only from a test file. They read the
+case files in the `fixtures/contract/` folder of the package.
+
+A thrown error with a dotted string `code`, such as `qa.target.act`, is a Launchwright error. The
+library prints it as one line, also when it comes from the kernel copy of a framework app. The
+package root exports the check as `isCodedError`.
+
+## Develop
+
+```bash
+pnpm install
+pnpm typecheck   # the source and the tests
+pnpm test        # Vitest over tests/
+pnpm compile     # tsup writes dist/, which the repository commits
+```
+
+The build script is `compile`. The package has no `build`, `prepare`, `prepack` or `install` script.
+npm runs `prepare` for a git dependency, and with a `build` script it installs the dev dependencies
+to build first. So an npm consumer of the git tag installs the committed `dist/` as it is.
 
 ## License
 

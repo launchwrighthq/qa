@@ -1,6 +1,6 @@
 // `lw qa report check|update|render|viewer <md>` (spec 2.12.3, 2.8).
 import { isAbsolute, resolve } from 'node:path';
-import { LaunchwrightError } from '../kernel/index.mts';
+import { isCodedError } from '../kernel/index.mts';
 import { qaConfigOf } from '../config.mts';
 import { legDefinitions } from '../services/legs.mts';
 import { checkReport, RENDERER_DIR, renderReport, updateReport } from '../services/report.mts';
@@ -54,7 +54,7 @@ const report: QaSubcommand = {
       opts.out(`lw qa report render: wrote ${page}`);
       return 0;
     } catch (cause) {
-      if (!(cause instanceof LaunchwrightError)) throw cause;
+      if (!isCodedError(cause)) throw cause;
       opts.err(`lw qa report ${action}: ${cause.code}: ${cause.message}`);
       return 1;
     }

@@ -1,7 +1,7 @@
 // What the `lw qa world|fixture|job` commands share: the project facts, the QA database, the
 // overlay of the QA app, and argument parsing.
-import { type Clock, LaunchwrightError, systemClock } from '../../kernel/index.mts';
-import { parseCommandArgs, UsageError } from '../../kernel/services/args.mts';
+import { type Clock, isCodedError, LaunchwrightError, systemClock } from '../../kernel/index.mts';
+import { parseCommandArgs } from '../../kernel/services/args.mts';
 import { qaConfig, type QaConfig, withAppPaths } from '../../config.mts';
 import { loadAppEntry, openWorld, qaDatabase, type QaOverlay, type QaWorld } from './app.mts';
 import { type CheckoutFacts, readCheckout } from './checkout.mts';
@@ -66,6 +66,9 @@ export async function withWorld<T>(ctx: WorldContext, fn: (world: QaWorld, regis
   }
 }
 
+/** The code of the kernel UsageError. */
+const USAGE_CODE = 'kernel.usage';
+
 /**
  * Splits `args` into positional words and `--flag [value]` options. `flags` names the options that
  * take no value, `values` the options that take one. Any other option throws the kernel UsageError.
@@ -78,14 +81,17 @@ export function parseArgs(args: readonly string[], flags: readonly string[], val
   return { words: parsed.positionals, options };
 }
 
-/** Runs a command body: a LaunchwrightError becomes one line on stderr and exit 1, a UsageError exit 2. */
+/**
+ * Runs a command body: a LaunchwrightError becomes one line on stderr and exit 1, a UsageError exit 2.
+ * The error may come from the kernel copy of a framework app, so the check reads the code, not the class.
+ */
 export async function guarded(command: string, opts: Pick<WorldCommandOptions, 'err'>, body: () => Promise<number>): Promise<number> {
   try {
     return await body();
   } catch (cause) {
-    if (!(cause instanceof LaunchwrightError)) throw cause;
+    if (!isCodedError(cause)) throw cause;
     opts.err(`lw qa ${command}: ${cause.message} (${cause.code})`);
-    return cause instanceof UsageError ? 2 : 1;
+    return cause.code === USAGE_CODE ? 2 : 1;
   }
 }
 

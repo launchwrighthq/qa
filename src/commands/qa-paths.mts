@@ -3,7 +3,7 @@
 // scan, never from a route list of this file.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { type App, LaunchwrightError } from '../kernel/index.mts';
+import { type App, isCodedError, LaunchwrightError } from '../kernel/index.mts';
 import { type CommandArgs, parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { type QaConfig, qaConfigOf } from '../config.mts';
 import type { QaSession } from '../drivers/target/contract.mts';
@@ -282,7 +282,7 @@ export function createPathsCommand(overrides: Partial<RunDeps> = {}): QaSubcomma
         if (action === 'record') return await recordCmd(flags, inner, config, deps);
         return reportCmd(flags, inner, config, generated);
       } catch (cause) {
-        if (!(cause instanceof LaunchwrightError)) throw cause;
+        if (!isCodedError(cause)) throw cause;
         opts.err(`lw qa paths ${action}: ${cause.code}: ${cause.message}`);
         return cause instanceof UsageError || cause.code === 'qa.paths.usage' ? 2 : 1;
       }

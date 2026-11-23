@@ -46,7 +46,16 @@ var init_actor = __esm({
 });
 
 // src/kernel/services/errors.mts
-var LaunchwrightError, BootError;
+function isCodedError(e) {
+  if (e instanceof LaunchwrightError) return true;
+  if (typeof e !== "object" || e === null) return false;
+  const { code, message } = e;
+  return typeof message === "string" && typeof code === "string" && DOTTED_CODE.test(code);
+}
+function messageOf(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+var LaunchwrightError, DOTTED_CODE, BootError;
 var init_errors = __esm({
   "src/kernel/services/errors.mts"() {
     "use strict";
@@ -61,13 +70,87 @@ var init_errors = __esm({
         this.context = opts?.context ?? {};
       }
     };
+    DOTTED_CODE = /^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)+$/i;
     BootError = class extends LaunchwrightError {
     };
   }
 });
 
 // src/kernel/services/apps.mts
-var import_zod, APP_RUNTIMES, APP_NAME, processSchema, appSchema, appsSchema, contractSchema;
+function closeOverRequires(modules, requires, keep) {
+  const out = [...modules];
+  for (let i = 0; i < out.length; i++) {
+    for (const r of requires(out[i])) {
+      if (r !== "kernel" && !out.includes(r) && keep(r)) out.push(r);
+    }
+  }
+  return { modules: out, added: out.slice(modules.length) };
+}
+function defaultProcess(name, runtime) {
+  if (runtime === "node") return { name, command: "node --import tsx src/main.mts", port: true };
+  if (runtime === "web") return { name, command: "vite --configLoader runner", port: true };
+  return { name, command: `python -m ${name.replaceAll("-", "_")}` };
+}
+function checkApps(project) {
+  const installed = new Set(Object.keys(project.modules ?? {}));
+  const entries = Object.entries(project.apps ?? DEFAULT_APPS);
+  const findings = [];
+  const paths = /* @__PURE__ */ new Map();
+  const nodeApps = entries.filter(([, a]) => a.runtime === "node").map(([n]) => n);
+  for (const [name, app] of entries) {
+    for (const m of app.modules ?? []) {
+      if (!installed.has(m) && m !== "kernel") findings.push({ key: `apps.${name}.modules`, message: `app ${name} names module ${m}, which modules does not hold` });
+    }
+    const path = app.path ?? `apps/${name}`;
+    const other = paths.get(path);
+    if (other !== void 0) findings.push({ key: `apps.${name}.path`, message: `apps ${other} and ${name} share the path ${path}` });
+    paths.set(path, name);
+    if (app.servedBy !== void 0 && !nodeApps.includes(app.servedBy)) findings.push({ key: `apps.${name}.servedBy`, message: `app ${name} is served by ${app.servedBy}, which is not a node app` });
+    if (app.runtime === "web" && app.servedBy === void 0 && nodeApps.length > 1) findings.push({ key: `apps.${name}.servedBy`, message: `web app ${name} needs servedBy: the project has the node apps ${nodeApps.join(", ")}` });
+  }
+  return findings;
+}
+function resolveApps(project, opts = {}) {
+  const parsed = appsSchema.safeParse(project.apps ?? DEFAULT_APPS);
+  if (!parsed.success) {
+    const keys = parsed.error.issues.map((i) => `apps.${i.path.map(String).join(".")} ${i.message}`);
+    throw new LaunchwrightError("kernel.apps.invalid", `The apps section is invalid: ${keys.join("; ")}`, { cause: parsed.error, context: { keys } });
+  }
+  const findings = checkApps({ ...project, apps: parsed.data });
+  if (findings.length > 0) {
+    throw new LaunchwrightError("kernel.apps.invalid", `The apps section is invalid: ${findings.map((f) => f.message).join("; ")}`, { context: { keys: findings.map((f) => f.key) } });
+  }
+  const installed = Object.keys(project.modules ?? {});
+  const hasPackage = opts.hasPackage ?? (() => true);
+  const requires = opts.requires ?? (() => []);
+  const nodeApps = Object.entries(parsed.data).filter(([, a]) => a.runtime === "node").map(([n]) => n);
+  const apps = Object.entries(parsed.data).map(([name, app]) => {
+    const processes = app.processes === void 0 ? [defaultProcess(name, app.runtime)] : Object.entries(app.processes).map(([p, v]) => ({ name: p, ...v }));
+    const listed = app.modules ?? (app.runtime === "web" ? [] : installed.filter((m) => hasPackage(m, app.runtime)));
+    const { modules, added } = closeOverRequires(listed, requires, (m) => installed.includes(m) && hasPackage(m, app.runtime));
+    const servedBy = app.runtime === "web" ? app.servedBy ?? nodeApps[0] : void 0;
+    return { name, runtime: app.runtime, path: app.path ?? `apps/${name}`, modules, processes: processes.map((p) => closeProcess(p, modules, requires)), ...servedBy === void 0 ? {} : { servedBy }, ...added.length === 0 ? {} : { added } };
+  });
+  const outside = apps.flatMap((a) => a.processes.flatMap((p) => (p.modules ?? []).filter((m) => !a.modules.includes(m)).map((m) => ({ key: `apps.${a.name}.processes.${p.name}.modules`, m }))));
+  if (outside.length > 0) {
+    throw new LaunchwrightError("kernel.apps.invalid", `The apps section is invalid: ${outside.map((o) => `${o.key} names module ${o.m}, which its app does not hold`).join("; ")}`, {
+      context: { keys: outside.map((o) => o.key) }
+    });
+  }
+  return apps;
+}
+function closeProcess(process2, appModules, requires) {
+  if (process2.modules === void 0) return process2;
+  const { modules, added } = closeOverRequires(process2.modules, requires, (m) => appModules.includes(m));
+  return { ...process2, modules, ...added.length === 0 ? {} : { added } };
+}
+function sectionApps(sections) {
+  return Array.isArray(sections.apps) ? sections.apps : resolveApps({});
+}
+function appDir(template, apps) {
+  return template.replace(APP_DIR, (_m, name) => apps.find((a) => a.name === name)?.path ?? `apps/${name}`);
+}
+var import_zod, APP_RUNTIMES, APP_NAME, processSchema, appSchema, appsSchema, contractSchema, DEFAULT_APPS, APP_DIR;
 var init_apps = __esm({
   "src/kernel/services/apps.mts"() {
     "use strict";
@@ -97,6 +180,13 @@ var init_apps = __esm({
     });
     appsSchema = import_zod.z.record(import_zod.z.string().regex(APP_NAME, "must be letters, digits and -"), appSchema);
     contractSchema = import_zod.z.looseObject({ python: import_zod.z.array(import_zod.z.string().min(1)).optional(), ts: import_zod.z.array(import_zod.z.string().min(1)).optional() });
+    DEFAULT_APPS = {
+      api: { runtime: "node", path: "apps/api" },
+      client: { runtime: "web", path: "apps/client", servedBy: "api" },
+      console: { runtime: "web", path: "apps/console", servedBy: "api" },
+      ai: { runtime: "python", path: "apps/ai" }
+    };
+    APP_DIR = /\{app:([A-Za-z0-9][A-Za-z0-9-]*)\}/g;
   }
 });
 
@@ -122,7 +212,7 @@ var init_clock = __esm({
       now: () => Date.now(),
       date: () => new Date(Date.now()),
       sleep(ms, signal) {
-        return new Promise((resolve3, reject) => {
+        return new Promise((resolve4, reject) => {
           if (signal?.aborted) {
             reject(abortError(signal));
             return;
@@ -133,7 +223,7 @@ var init_clock = __esm({
           };
           const timer = setTimeout(() => {
             signal?.removeEventListener("abort", onAbort);
-            resolve3();
+            resolve4();
           }, ms);
           signal?.addEventListener("abort", onAbort, { once: true });
         });
@@ -625,7 +715,7 @@ var init_fake = __esm({
         const items = pool.filter((i) => (since === void 0 || after(i, since)) && (window.until === void 0 || before(i, window.until))).map((i) => this.capped(i));
         if (window.follow && window.signal && !window.signal.aborted) {
           const signal = window.signal;
-          await new Promise((resolve3) => signal.addEventListener("abort", () => resolve3(), { once: true }));
+          await new Promise((resolve4) => signal.addEventListener("abort", () => resolve4(), { once: true }));
         }
         const last = items.at(-1)?.id ?? window.cursor;
         return {
@@ -711,6 +801,15 @@ var init_extensions = __esm({
 });
 
 // src/config.mts
+function withAppPaths(cfg, sections = {}) {
+  const apps = sectionApps(sections);
+  const dir = (p) => appDir(p, apps);
+  const routeTables = cfg.routeTables.map((t) => typeof t === "string" ? dir(t) : { ...t, file: dir(t.file) });
+  return { ...cfg, app: dir(cfg.app), clientRoots: cfg.clientRoots.map(dir), buildDirs: cfg.buildDirs.map(dir), routeTables, typeRoots: cfg.typeRoots.map(dir) };
+}
+function qaConfigOf(sections = {}) {
+  return withAppPaths(qaConfig.parse(sections.qa ?? {}), sections);
+}
 var legConfig, qaConfig;
 var init_config3 = __esm({
   "src/config.mts"() {
@@ -786,13 +885,3004 @@ var init_config3 = __esm({
   }
 });
 
-// src/drivers/target/contract.mts
-var QA_TARGET_SPEC_VERSION;
-var init_contract2 = __esm({
-  "src/drivers/target/contract.mts"() {
+// src/commands/qa.command.mts
+var init_qa_command = __esm({
+  "src/commands/qa.command.mts"() {
     "use strict";
     init_cjs_shims();
-    QA_TARGET_SPEC_VERSION = "1";
+    init_config3();
+    init_extensions();
+  }
+});
+
+// src/kernel/services/args.mts
+function optionsOf(spec) {
+  const options = {};
+  for (const name of spec.values ?? []) options[name] = { type: "string" };
+  for (const name of spec.switches ?? []) options[name] = { type: "boolean" };
+  for (const name of spec.repeated ?? []) options[name] = { type: "string", multiple: true };
+  return options;
+}
+function asUsage(cause) {
+  const code = cause?.code;
+  if (typeof code !== "string" || !code.startsWith("ERR_PARSE_ARGS_")) return cause;
+  return new UsageError(String(cause.message), { cause, context: { code } });
+}
+function markNegatives(argv, valueFlags) {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    const word = argv[i];
+    if (word === "--") return [...out, ...argv.slice(i)];
+    const next = argv[i + 1];
+    if (word.startsWith("--") && valueFlags.has(word.slice(2)) && next !== void 0) {
+      out.push(...NEGATIVE.test(next) ? [`${word}=${next}`] : [word, next]);
+      i++;
+    } else out.push(NEGATIVE.test(word) ? NEGATIVE_MARK + word : word);
+  }
+  return out;
+}
+function unmark(word) {
+  return word.startsWith(NEGATIVE_MARK) ? word.slice(NEGATIVE_MARK.length) : word;
+}
+function parseCommandArgs(spec, argv) {
+  const valueFlags = /* @__PURE__ */ new Set([...spec.values ?? [], ...spec.repeated ?? []]);
+  let parsed;
+  try {
+    parsed = (0, import_node_util.parseArgs)({ args: markNegatives(argv, valueFlags), options: optionsOf(spec), strict: true, allowPositionals: true });
+  } catch (cause) {
+    throw asUsage(cause);
+  }
+  const found = parsed.values;
+  const values = {};
+  for (const name of spec.values ?? []) {
+    const value = found[name];
+    if (typeof value === "string") values[name] = value;
+  }
+  const switches = new Set((spec.switches ?? []).filter((name) => found[name] === true));
+  const lists = {};
+  for (const name of spec.repeated ?? []) {
+    const value = found[name];
+    lists[name] = Array.isArray(value) ? value : [];
+  }
+  return { positionals: parsed.positionals.map(unmark), values, switches, lists };
+}
+var import_node_util, UsageError, NEGATIVE, NEGATIVE_MARK;
+var init_args = __esm({
+  "src/kernel/services/args.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_util = require("util");
+    init_errors();
+    UsageError = class extends LaunchwrightError {
+      constructor(message, opts) {
+        super("kernel.usage", message, opts);
+      }
+    };
+    NEGATIVE = /^-\d+(\.\d+)?$/;
+    NEGATIVE_MARK = "\0";
+  }
+});
+
+// src/kernel/services/fs.mts
+function isMissing(err) {
+  return MISSING.has(String(err?.code));
+}
+function readError(path, cause) {
+  return new LaunchwrightError("kernel.fs.read", `Cannot read ${path}`, { cause, context: { path } });
+}
+async function readTextOrNull(path) {
+  try {
+    return await (0, import_promises2.readFile)(path, "utf8");
+  } catch (cause) {
+    if (isMissing(cause)) return null;
+    throw readError(path, cause);
+  }
+}
+async function readJsonOrNull(path) {
+  const text = await readTextOrNull(path);
+  if (text === null) return null;
+  try {
+    return JSON.parse(text);
+  } catch (cause) {
+    throw new LaunchwrightError("kernel.fs.json", `${path} is not valid JSON`, { cause, context: { path } });
+  }
+}
+function sha256(data) {
+  return (0, import_node_crypto2.createHash)("sha256").update(data).digest("hex");
+}
+async function hashFile(path) {
+  const hash = (0, import_node_crypto2.createHash)("sha256");
+  try {
+    for await (const chunk2 of (0, import_node_fs4.createReadStream)(path)) hash.update(chunk2);
+  } catch (cause) {
+    throw readError(path, cause);
+  }
+  return hash.digest("hex");
+}
+var import_node_crypto2, import_node_fs4, import_promises2, import_smol_toml2, MISSING;
+var init_fs = __esm({
+  "src/kernel/services/fs.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_crypto2 = require("crypto");
+    import_node_fs4 = require("fs");
+    import_promises2 = require("fs/promises");
+    import_smol_toml2 = require("smol-toml");
+    init_errors();
+    MISSING = /* @__PURE__ */ new Set(["ENOENT", "ENOTDIR"]);
+  }
+});
+
+// src/services/types.mts
+var INTAKE_DIR;
+var init_types = __esm({
+  "src/services/types.mts"() {
+    "use strict";
+    init_cjs_shims();
+    INTAKE_DIR = ".lw/qa/intake";
+  }
+});
+
+// src/services/ledger.mts
+function reportPaths(reportDir, slug) {
+  return {
+    md: (0, import_node_path4.join)(reportDir, `${slug}.md`),
+    plan: (0, import_node_path4.join)(reportDir, `${slug}.shots.json`),
+    assets: (0, import_node_path4.join)(reportDir, assetsRel(slug)),
+    ledger: (0, import_node_path4.join)(reportDir, assetsRel(slug), LEDGER_FILE),
+    results: (0, import_node_path4.join)(reportDir, assetsRel(slug), RESULTS_FILE),
+    html: (0, import_node_path4.join)(reportDir, "dist", `${slug}.html`)
+  };
+}
+async function fileDigest(path) {
+  const sha2562 = await hashFile(path);
+  return { sha256: sha2562, bytes: (await (0, import_promises3.stat)(path)).size };
+}
+async function ledgerEntry(reportDir, facts) {
+  checkEntryPath(facts.path);
+  const { sha256: sha2562, bytes: bytes2 } = await fileDigest((0, import_node_path4.join)(reportDir, facts.path));
+  return { ...facts, sha256: sha2562, bytes: bytes2 };
+}
+function checkEntryPath(path) {
+  if (!/^assets\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-][A-Za-z0-9._/-]*$/.test(path) || path.split("/").includes("..")) {
+    throw new LaunchwrightError("qa.ledger.path", `Ledger path ${path} is not assets/<slug>/<file>`, { context: { path } });
+  }
+}
+function entryProblem(e) {
+  if (!isObject(e)) return "not an object";
+  for (const key of ["path", "kind", "sha256", "capturedAt", "commit", "leg", "target", "provenance", "row"]) {
+    if (typeof e[key] !== "string" || e[key] === "") return `${key} is missing`;
+  }
+  if (!/^[0-9a-f]{64}$/.test(e.sha256)) return "sha256 is not 64 hex characters";
+  if (typeof e.bytes !== "number" || typeof e.attempt !== "number" || typeof e.dirty !== "boolean") return "bytes, attempt or dirty has the wrong type";
+  return null;
+}
+async function readLedger(path) {
+  const raw = await readTextOrNull(path);
+  if (raw === null) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new LaunchwrightError("qa.ledger.invalid", `The ledger ${path} is not JSON`, { cause, context: { path } });
+  }
+  if (!isObject(parsed) || parsed.format !== LEDGER_FORMAT || typeof parsed.slug !== "string" || !Array.isArray(parsed.entries)) {
+    throw new LaunchwrightError("qa.ledger.invalid", `The ledger ${path} is not format ${LEDGER_FORMAT} with slug and entries`, { context: { path } });
+  }
+  parsed.entries.forEach((e, i) => {
+    const problem = entryProblem(e);
+    if (problem) throw new LaunchwrightError("qa.ledger.invalid", `The ledger ${path} entry ${i}: ${problem}`, { context: { path, entry: i } });
+  });
+  return parsed;
+}
+async function writeLedger(path, ledger) {
+  const paths = /* @__PURE__ */ new Set();
+  for (const e of ledger.entries) {
+    checkEntryPath(e.path);
+    if (paths.has(e.path)) throw new LaunchwrightError("qa.ledger.duplicate", `The ledger lists ${e.path} twice`, { context: { path: e.path } });
+    paths.add(e.path);
+  }
+  const sorted = { ...ledger, entries: [...ledger.entries].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0) };
+  await (0, import_promises3.mkdir)((0, import_node_path4.dirname)(path), { recursive: true });
+  const tmp = `${path}.tmp`;
+  await (0, import_promises3.writeFile)(tmp, `${JSON.stringify(sorted, null, 2)}
+`);
+  await (0, import_promises3.rename)(tmp, path);
+  return sorted;
+}
+async function appendLedger(reportDir, slug, entries) {
+  const path = reportPaths(reportDir, slug).ledger;
+  const current = await readLedger(path) ?? { format: LEDGER_FORMAT, slug, entries: [] };
+  const byPath = new Map(current.entries.map((e) => [e.path, e]));
+  for (const e of entries) byPath.set(e.path, e);
+  return writeLedger(path, { format: LEDGER_FORMAT, slug, entries: [...byPath.values()] });
+}
+var import_promises3, import_node_path4, LEDGER_FILE, RESULTS_FILE, LEDGER_FORMAT, assetsRel, isObject;
+var init_ledger = __esm({
+  "src/services/ledger.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_promises3 = require("fs/promises");
+    import_node_path4 = require("path");
+    init_kernel();
+    init_fs();
+    init_types();
+    LEDGER_FILE = "evidence.lock.json";
+    RESULTS_FILE = "results.jsonl";
+    LEDGER_FORMAT = 1;
+    assetsRel = (slug) => `assets/${slug}`;
+    isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+  }
+});
+
+// src/states/services/inventory.mts
+function isStateUnionName(name) {
+  return STATE_SUFFIXES.some((s) => name.endsWith(s) && name.length > s.length);
+}
+function kindFor(inputs, outputs) {
+  const hasIn = inputs.length > 0;
+  const hasOut = outputs.length > 0;
+  if (hasIn && hasOut) return "both";
+  if (hasIn) return "input";
+  if (hasOut) return "output";
+  return "neither";
+}
+function mechanismFor(kind) {
+  if (kind === "input" || kind === "both") return "mount";
+  if (kind === "output") return "solve";
+  return null;
+}
+function validateInventory(inv) {
+  const errors = [];
+  if (!isPlainObject(inv)) return ["the inventory is not an object"];
+  if (typeof inv.generated !== "string" || inv.generated === "") errors.push("generated: missing");
+  if (!Array.isArray(inv.roots) || inv.roots.length === 0 || inv.roots.some((r) => typeof r !== "string")) {
+    errors.push("roots: must list the client roots the scan read");
+  }
+  if (!Array.isArray(inv.unions)) {
+    errors.push("unions: must be an array");
+    return errors;
+  }
+  const unions = inv.unions;
+  if (inv.ignored !== void 0) {
+    if (!Array.isArray(inv.ignored)) {
+      errors.push("ignored: must be an array");
+    } else {
+      for (const [i, g] of inv.ignored.entries()) {
+        const at = isPlainObject(g) && typeof g.name === "string" ? `ignored[${i}] "${g.name}"` : `ignored[${i}]`;
+        if (!isPlainObject(g)) {
+          errors.push(`${at}: not an object`);
+          continue;
+        }
+        if (typeof g.reason !== "string" || g.reason.trim() === "") errors.push(`${at}: needs a reason`);
+        if (!Array.isArray(g.members) || g.members.length === 0) {
+          errors.push(`${at}: must carry its members, so the report can count what is not covered`);
+        }
+        if (unions.some((u) => isPlainObject(u) && u.name === g.name)) {
+          errors.push(`${at}: is also in unions, so its states would be counted twice`);
+        }
+      }
+    }
+  }
+  const seen = /* @__PURE__ */ new Set();
+  for (const [i, u] of unions.entries()) {
+    const at = isPlainObject(u) && typeof u.name === "string" ? `unions[${i}] "${u.name}"` : `unions[${i}]`;
+    if (!isPlainObject(u)) {
+      errors.push(`${at}: not an object`);
+      continue;
+    }
+    if (typeof u.name !== "string" || u.name === "") errors.push(`${at}: name is missing`);
+    else if (seen.has(u.name)) errors.push(`${at}: duplicate union name`);
+    else seen.add(u.name);
+    if (typeof u.file !== "string" || u.file === "") errors.push(`${at}: file is missing`);
+    if (!Array.isArray(u.members) || u.members.length < 2) {
+      errors.push(`${at}: members must list at least two, or it is not a state union`);
+    } else if (new Set(u.members).size !== u.members.length) {
+      errors.push(`${at}: members repeat`);
+    }
+    const kindOk = KINDS.includes(u.kind);
+    if (!kindOk) errors.push(`${at}: kind "${String(u.kind)}" is not one of ${KINDS.join(" ")}`);
+    for (const key of ["inputs", "outputs"]) {
+      if (!Array.isArray(u[key])) errors.push(`${at}: ${key} must be an array`);
+    }
+    if (Array.isArray(u.inputs) && Array.isArray(u.outputs) && kindOk) {
+      const expected = kindFor(u.inputs, u.outputs);
+      if (expected !== u.kind) errors.push(`${at}: kind is "${String(u.kind)}" but its sites say "${expected}"`);
+    }
+    for (const [j, o] of (Array.isArray(u.outputs) ? u.outputs : []).entries()) {
+      if (!isPlainObject(o)) {
+        errors.push(`${at}: outputs[${j}] is not an object`);
+        continue;
+      }
+      if (!Array.isArray(o.params)) errors.push(`${at}: outputs[${j}] (${String(o.fn)}) has no params list`);
+      if (o.exported !== true && o.exported !== false) errors.push(`${at}: outputs[${j}] must say whether it is exported`);
+    }
+  }
+  return errors;
+}
+function plannedCaptures(inv) {
+  const out = [];
+  for (const u of inv.unions) {
+    const mechanism = mechanismFor(u.kind);
+    for (const member of u.members) out.push({ id: `${u.name}.${member}`, union: u.name, member, kind: u.kind, mechanism });
+    if (u.outputs.some((o) => o.nullable)) out.push({ id: `${u.name}.null`, union: u.name, member: null, kind: u.kind, mechanism });
+  }
+  return out;
+}
+function solveSite(union) {
+  const exported = union.outputs.filter((site) => site.exported);
+  return exported.find((site) => site.params[0]?.shape) ?? exported[0] ?? null;
+}
+function statesDir(slug) {
+  return `assets/${slug}/states`;
+}
+function statePath(slug, captureId, which, ext = "png") {
+  return `${statesDir(slug)}/${captureId}.${which}.${ext}`;
+}
+function coverageFor(union, results) {
+  const mine = results.filter((r) => r.id.startsWith(`${union.name}.`));
+  const covered = mine.filter((r) => r.ok);
+  const missing = mine.filter((r) => !r.ok).map((r) => r.id.slice(union.name.length + 1));
+  return { covered: covered.length, planned: mine.length, missing };
+}
+function inferSeeds(inventory, unreachable2) {
+  const out = [];
+  for (const union of inventory.unions) {
+    if (!unreachable2.has(union.name)) continue;
+    const fields = union.inputs.map((site) => ({ interface: site.interface, field: site.field, file: site.file }));
+    const drivable = union.inputs.length > 0 || solveSite(union) !== null;
+    out.push({
+      union: union.name,
+      file: union.file,
+      members: [...union.members],
+      fields,
+      via: drivable ? "app-service" : "direct-write",
+      provenance: "forged",
+      reason: union.kind === "neither" ? "nothing takes it and nothing returns it" : union.why ?? "no route delivers it and no mount draws it"
+    });
+  }
+  return out;
+}
+var STATE_SUFFIXES, KINDS, IGNORE_TAG, PROVENANCE, FAIL_REASONS, isPlainObject;
+var init_inventory = __esm({
+  "src/states/services/inventory.mts"() {
+    "use strict";
+    init_cjs_shims();
+    STATE_SUFFIXES = ["State", "Mark", "Status", "Kind", "Phase", "Variant"];
+    KINDS = ["input", "output", "both", "neither"];
+    IGNORE_TAG = "qa-states";
+    PROVENANCE = ["live", "intercepted", "mounted", "forged"];
+    FAIL_REASONS = [
+      "unreachable",
+      "identical",
+      "state-mismatch",
+      "unmountable",
+      "no-mechanism",
+      "blocked",
+      "not-run",
+      "crashed"
+    ];
+    isPlainObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+  }
+});
+
+// src/services/paths.mts
+function routeMatcher(pattern) {
+  const [head = "", ...rest] = String(pattern).split("/");
+  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const tail = rest.map((segment) => {
+    if (!segment.startsWith(":")) return `/${escape(segment)}`;
+    return segment.endsWith("?") ? "(?:/[^/]*)?" : "/[^/]+";
+  }).join("");
+  return new RegExp(`^${escape(head)}${tail}/?$`);
+}
+function routeMatches(pattern, pathname) {
+  return routeMatcher(pattern).test(String(pathname).replace(/[?#].*$/, ""));
+}
+var init_paths = __esm({
+  "src/services/paths.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_kernel();
+    init_inventory();
+  }
+});
+
+// src/states/services/solve.mts
+function canonical(obj) {
+  return JSON.stringify(
+    Object.fromEntries(
+      Object.keys(obj).sort().map((k) => [k, obj[k]])
+    )
+  );
+}
+function validateShape(shape) {
+  const errors = [];
+  if (!isPlainObject2(shape)) return ["the shape is not an object"];
+  if (typeof shape.type !== "string" || shape.type === "") {
+    errors.push("type: missing, and it names the parameter type this shape describes");
+  }
+  if (!isPlainObject2(shape.fields)) {
+    errors.push("fields: must be an object of field descriptors");
+    return errors;
+  }
+  const fields = shape.fields;
+  const names = Object.keys(fields);
+  if (names.length === 0) errors.push("fields: empty, so nothing can be varied");
+  for (const name of names) errors.push(...validateField(fields[name], name));
+  if (names.length > 0 && names.every((n) => isPlainObject2(fields[n]) && fields[n].kind === "opaque")) {
+    errors.push("fields: every field is opaque, so no candidate can differ from the corpus");
+  }
+  return errors;
+}
+function validateField(field, at, insideNullable = false) {
+  const errors = [];
+  if (!isPlainObject2(field)) return [`${at}: not a field descriptor`];
+  if (!FIELD_KINDS.includes(field.kind)) {
+    return [`${at}: kind "${String(field.kind)}" is not one of ${FIELD_KINDS.join(" ")}`];
+  }
+  if (field.optional !== void 0 && typeof field.optional !== "boolean") errors.push(`${at}: optional must be a boolean`);
+  if (insideNullable && field.optional === true) errors.push(`${at}: optional inside nullable says nothing new`);
+  if (field.kind === "enum" && (!Array.isArray(field.values) || field.values.length < 2)) {
+    errors.push(`${at}: enum needs at least two values, or it is a constant`);
+  }
+  if (field.kind === "number" && field.pivots !== void 0) {
+    if (!Array.isArray(field.pivots) || field.pivots.some((p) => !Number.isFinite(p))) {
+      errors.push(`${at}: pivots must be an array of finite numbers`);
+    }
+  }
+  if (field.kind === "string" && field.sample !== void 0 && typeof field.sample !== "string") {
+    errors.push(`${at}: sample must be a string`);
+  }
+  if (field.kind === "nullable") {
+    if (!isPlainObject2(field.of)) errors.push(`${at}: nullable needs an "of" descriptor`);
+    else if (field.of.kind === "nullable") errors.push(`${at}: nullable inside nullable adds a second null`);
+    else errors.push(...validateField(field.of, `${at}.of`, true));
+  }
+  return errors;
+}
+function fieldValues(field, options = {}) {
+  const values = baseValues(field, options);
+  return field.optional === true ? [...values, ABSENT] : values;
+}
+function baseValues(field, options) {
+  switch (field.kind) {
+    case "boolean":
+      return [true, false];
+    case "number":
+      return numberValues(field, options);
+    case "string":
+      return [typeof field.sample === "string" ? field.sample : DEFAULT_STRING, ""];
+    case "enum":
+      return [...field.values ?? []];
+    case "nullable":
+      return field.of ? [null, ...baseValues(field.of, options)] : [null];
+    case "opaque":
+      return [];
+  }
+}
+function numberValues(field, options) {
+  const pivots = [...field.pivots ?? [], ...options.pivots ?? []];
+  const out = [0, 1];
+  for (const p of pivots) out.push(p, p + 1, p - 1);
+  return [...new Set(out)];
+}
+function mutate(base, edits) {
+  const next = { ...base };
+  for (const [field, value] of edits) {
+    if (value === ABSENT) delete next[field];
+    else next[field] = value;
+  }
+  return next;
+}
+function solveError(message, context = {}) {
+  return new LaunchwrightError("qa.states.solve", message, { context });
+}
+function candidatePlan(shape, corpus, options = {}) {
+  const errors = validateShape(shape);
+  if (errors.length > 0) throw solveError(`The shape is unusable: ${errors.join("; ")}`, { errors });
+  if (!Array.isArray(corpus) || corpus.length === 0) {
+    throw solveError("The corpus is empty. It holds real objects from the wire, and a search of none reports every state unreachable.");
+  }
+  for (const [i, entry] of corpus.entries()) {
+    if (!isPlainObject2(entry)) throw solveError(`corpus[${i}] is not an object`);
+  }
+  const limit = options.limit ?? MAX_CANDIDATES;
+  if (!Number.isInteger(limit) || limit < 1) throw solveError(`limit must be a positive integer, not ${String(options.limit)}`);
+  const values = /* @__PURE__ */ new Map();
+  for (const [name, field] of Object.entries(shape.fields)) {
+    const list3 = fieldValues(field, options);
+    if (list3.length > 0) values.set(name, list3);
+  }
+  const names = [...values.keys()];
+  const valuesOf = (name) => values.get(name) ?? [];
+  const plan2 = [];
+  const seen = /* @__PURE__ */ new Set();
+  const full = () => plan2.length >= limit;
+  const add = (candidate, base, baseIndex) => {
+    const key = canonical(candidate);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const { changes, text } = describeCandidate(candidate, base);
+    plan2.push({ candidate, base, baseIndex, changes, text });
+  };
+  for (const [i, base] of corpus.entries()) {
+    if (full()) break;
+    add({ ...base }, base, i);
+  }
+  for (const [i, base] of corpus.entries()) {
+    for (const name of names) {
+      for (const value of valuesOf(name)) {
+        if (full()) return plan2;
+        add(mutate(base, [[name, value]]), base, i);
+      }
+    }
+  }
+  for (const [i, base] of corpus.entries()) {
+    for (let a = 0; a < names.length; a += 1) {
+      for (let b = a + 1; b < names.length; b += 1) {
+        const first = names[a];
+        const second = names[b];
+        for (const x of valuesOf(first)) {
+          for (const y of valuesOf(second)) {
+            if (full()) return plan2;
+            add(mutate(base, [[first, x], [second, y]]), base, i);
+          }
+        }
+      }
+    }
+  }
+  return plan2;
+}
+function describeCandidate(candidate, corpusEntry) {
+  const names = [.../* @__PURE__ */ new Set([...Object.keys(corpusEntry), ...Object.keys(candidate)])];
+  const changes = [];
+  for (const field of names) {
+    const had = Object.hasOwn(corpusEntry, field) && corpusEntry[field] !== void 0;
+    const has = Object.hasOwn(candidate, field) && candidate[field] !== void 0;
+    if (!had && !has) continue;
+    if (had && has && same(corpusEntry[field], candidate[field])) continue;
+    changes.push({ field, from: had ? corpusEntry[field] : ABSENT, to: has ? candidate[field] : ABSENT });
+  }
+  const text = changes.length === 0 ? "unchanged from the corpus entry" : changes.map((c) => `${c.field}: ${show(c.from)} -> ${show(c.to)}`).join(", ");
+  return { changes, text };
+}
+function unreachable(union, tried) {
+  const covered = union.covered ?? [];
+  const missing = union.members.filter((m) => !covered.includes(m));
+  if (missing.length === 0) return null;
+  const varied = tried.fields.length > 0 ? tried.fields.join(", ") : "no field";
+  const produced = covered.length > 0 ? covered.map((m) => show(m)).join(", ") : "nothing";
+  return `${union.name}: ${missing.map((m) => show(m)).join(", ")} unreachable. ${tried.count} candidate${tried.count === 1 ? "" : "s"} varied ${varied}, and produced ${produced}. A state the type admits and the data cannot produce is a finding, not a gap in the search.`;
+}
+function normaliseState(raw) {
+  if (raw === null || raw === void 0) return NULL_STATE;
+  if (typeof raw !== "string") {
+    throw solveError(`The state function answered ${typeof raw}. A state function returns a union member or null, so the wrong function was evaluated.`);
+  }
+  return raw;
+}
+async function solve(args) {
+  const { shape, corpus, evaluate, members = null, union, limit, pivots } = args;
+  const plan2 = candidatePlan(shape, corpus, { ...limit === void 0 ? {} : { limit }, ...pivots === void 0 ? {} : { pivots } });
+  const wanted = members === null ? null : new Set(members);
+  const covered = {};
+  const order = [];
+  let tried = 0;
+  let hits = 0;
+  for (const step of plan2) {
+    tried += 1;
+    const state = normaliseState(await evaluate(step.candidate));
+    if (!Object.hasOwn(covered, state)) {
+      covered[state] = { ...step, state };
+      order.push(state);
+      if (wanted?.has(state)) hits += 1;
+    }
+    if (wanted !== null && hits === wanted.size) break;
+  }
+  const name = union ?? shape.type;
+  const missing = wanted === null ? [] : [...wanted].filter((m) => !Object.hasOwn(covered, m));
+  const extra = wanted === null ? [] : order.filter((s) => !wanted.has(s));
+  return {
+    covered,
+    order,
+    tried,
+    planned: plan2.length,
+    limit: limit ?? MAX_CANDIDATES,
+    missing,
+    extra,
+    sentence: missing.length === 0 || wanted === null ? null : unreachable({ name, members: [...wanted], covered: order }, { count: tried, fields: Object.keys(shape.fields) })
+  };
+}
+function graft(base, candidate, fields) {
+  const next = { ...base };
+  for (const field of fields) {
+    if (Object.hasOwn(candidate, field) && candidate[field] !== void 0) next[field] = candidate[field];
+    else delete next[field];
+  }
+  return next;
+}
+function sameField(a, b, field) {
+  const hasA = Object.hasOwn(a, field) && a[field] !== void 0;
+  const hasB = Object.hasOwn(b, field) && b[field] !== void 0;
+  if (!hasA && !hasB) return true;
+  if (hasA !== hasB) return false;
+  return same(a[field], b[field]);
+}
+async function anchorSubjects(args) {
+  const { shape, base, covered, members, evaluate } = args;
+  const errors = validateShape(shape);
+  if (errors.length > 0) throw solveError(`The shape is unusable: ${errors.join("; ")}`, { errors });
+  const shapeFields = Object.keys(shape.fields);
+  const subjects = {};
+  const fields = [];
+  const anchored = [];
+  const loose = [];
+  const notes = [];
+  let evaluations = 0;
+  const answers = async (candidate) => {
+    evaluations += 1;
+    return normaliseState(await evaluate(candidate));
+  };
+  for (const member of members) {
+    const hit = covered[member];
+    if (hit === void 0 || !isPlainObject2(hit.candidate)) continue;
+    const candidate = hit.candidate;
+    let keep = shapeFields.filter((f) => !sameField(base, candidate, f));
+    if (await answers(graft(base, candidate, keep)) !== member) {
+      subjects[member] = { ...candidate };
+      loose.push(member);
+      notes.push(
+        `${member} could not be anchored on the base row: grafting ${keep.length > 0 ? keep.join(", ") : "no field"} onto it does not produce the state, so the state depends on a field the shape does not declare. This member keeps the solver's own row, and its picture differs from the others in more than the state.`
+      );
+      continue;
+    }
+    for (const field of [...keep]) {
+      const without = keep.filter((f) => f !== field);
+      if (await answers(graft(base, candidate, without)) === member) keep = without;
+    }
+    subjects[member] = graft(base, candidate, keep);
+    anchored.push(member);
+    for (const f of keep) if (!fields.includes(f)) fields.push(f);
+  }
+  return { subjects, fields, anchored, loose, notes, evaluations };
+}
+var MAX_CANDIDATES, FIELD_KINDS, ABSENT, NULL_STATE, DEFAULT_STRING, isPlainObject2, same, show;
+var init_solve = __esm({
+  "src/states/services/solve.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_kernel();
+    MAX_CANDIDATES = 500;
+    FIELD_KINDS = ["boolean", "number", "string", "enum", "nullable", "opaque"];
+    ABSENT = /* @__PURE__ */ Symbol.for("lw.qa.solve.absent");
+    NULL_STATE = "null";
+    DEFAULT_STRING = "qa";
+    isPlainObject2 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+    same = (a, b) => Object.is(a, b) || JSON.stringify(a) === JSON.stringify(b);
+    show = (v) => v === ABSENT ? "(absent)" : typeof v === "string" ? JSON.stringify(v) : String(v);
+  }
+});
+
+// src/states/services/capture.mts
+function failureFields(e) {
+  if (e instanceof CaptureFailure) return { reason: e.reason, ...e.detail };
+  return { reason: "crashed" };
+}
+function errorText(e) {
+  return messageOf(e);
+}
+function getAtPath(root, path) {
+  let node = root;
+  for (const key of path.split(".")) {
+    if (Array.isArray(node)) {
+      const index = Number(key);
+      if (!Number.isInteger(index)) return void 0;
+      node = node[index];
+      continue;
+    }
+    if (!isPlainObject3(node)) return void 0;
+    node = node[key];
+  }
+  return node;
+}
+function setAtPath(root, path, value) {
+  const keys = path.split(".");
+  const last = keys.pop();
+  if (last === void 0) return false;
+  let node = root;
+  for (const key of keys) {
+    if (Array.isArray(node)) node = node[Number(key)];
+    else if (isPlainObject3(node)) node = node[key];
+    else return false;
+  }
+  if (Array.isArray(node)) {
+    const index = Number(last);
+    if (!Number.isInteger(index) || index < 0 || index >= node.length) return false;
+    node[index] = value;
+    return true;
+  }
+  if (!isPlainObject3(node) || !(last in node)) return false;
+  node[last] = value;
+  return true;
+}
+function freshHeaders(headers) {
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => !STALE_HEADERS.has(name.toLowerCase())));
+}
+async function installSubstitution(page, spec) {
+  const state = {
+    subjects: null,
+    hits: 0,
+    errors: [],
+    corpus: [],
+    bodies: []
+  };
+  const collect = (parsed, container) => {
+    if (state.bodies.length < MAX_BODIES) state.bodies.push(parsed);
+    for (const row of container) {
+      if (state.corpus.length >= MAX_CORPUS) break;
+      if (isPlainObject3(row)) state.corpus.push(row);
+    }
+  };
+  const handler = async (route) => {
+    try {
+      const response = await route.fetch();
+      const text = await response.text();
+      const status = response.status();
+      const headers = freshHeaders(response.headers());
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        state.errors.push(`${spec.url}: the response is not JSON, so no subject can be put into it`);
+        await route.fulfill({ status, headers, body: text });
+        return;
+      }
+      const container = getAtPath(parsed, spec.container);
+      if (!Array.isArray(container)) {
+        const what = container === void 0 ? "not in the response" : "not an array";
+        state.errors.push(`${spec.url}: "${spec.container}" is ${what}, so the descriptor assumes a shape the server does not send`);
+        await route.fulfill({ status, headers, body: text });
+        return;
+      }
+      collect(parsed, container);
+      if (state.subjects === null) {
+        state.hits += 1;
+        await route.fulfill({ status, headers, body: text });
+        return;
+      }
+      if (!setAtPath(parsed, spec.container, [...state.subjects])) {
+        state.errors.push(`${spec.url}: "${spec.container}" could not be written back`);
+        await route.fulfill({ status, headers, body: text });
+        return;
+      }
+      state.hits += 1;
+      await route.fulfill({ status, headers, body: JSON.stringify(parsed) });
+    } catch (e) {
+      state.errors.push(`${spec.url}: ${errorText(e)}`);
+      await route.continue();
+    }
+  };
+  await page.route(spec.url, handler);
+  return {
+    get hits() {
+      return state.hits;
+    },
+    get errors() {
+      return state.errors;
+    },
+    get corpus() {
+      return state.corpus;
+    },
+    get bodies() {
+      return state.bodies;
+    },
+    record() {
+      state.subjects = null;
+      state.hits = 0;
+      state.errors = [];
+    },
+    use(subjects) {
+      state.subjects = subjects;
+      state.hits = 0;
+      state.errors = [];
+    },
+    assertApplied() {
+      if (state.errors.length > 0) throw new CaptureFailure("blocked", `the interception failed: ${state.errors.join("; ")}`);
+      if (state.hits === 0) {
+        throw new CaptureFailure(
+          "blocked",
+          `the interception never fired: no request matched ${spec.url} during this rendering, so the page shows what the server really answered. A screenshot here would carry a state that nothing delivered`
+        );
+      }
+    },
+    async dispose() {
+      await page.unroute(spec.url, handler);
+    }
+  };
+}
+function rotate(subjects) {
+  if (subjects.length < 2) return [...subjects];
+  return [...subjects.slice(1), subjects[0]];
+}
+function snapshotExpression(root, ignoreAttributes = [], maxNodes = MAX_TREE_NODES) {
+  return `(() => {
+  const rootSelector = ${JSON.stringify(root)};
+  const skip = new Set(${JSON.stringify([...ignoreAttributes])});
+  const cap = ${JSON.stringify(maxNodes)};
+  const start = document.querySelector(rootSelector);
+  if (start === null) throw new Error('qa states: no element matches the diff root ' + rootSelector);
+  let seen = 0;
+  const walk = (el) => {
+    seen += 1;
+    if (seen > cap) throw new Error('qa states: the tree under ' + rootSelector + ' exceeds ' + cap + ' nodes');
+    const attrs = [];
+    for (const a of Array.from(el.attributes)) if (!skip.has(a.name)) attrs.push(a.name + '=' + a.value);
+    attrs.sort();
+    let own = '';
+    for (const n of Array.from(el.childNodes)) if (n.nodeType === 3) own += ' ' + (n.textContent || '');
+    const text = own.replace(/\\s+/g, ' ').trim();
+    return { tag: el.tagName, self: JSON.stringify([el.tagName, attrs, text]), children: Array.from(el.children).map(walk) };
+  };
+  return walk(start);
+})()`;
+}
+async function snapshotTree(page, options = {}) {
+  return await page.evaluate(snapshotExpression(options.root ?? DEFAULT_DIFF_ROOT, options.ignoreAttributes ?? [], options.maxNodes ?? MAX_TREE_NODES));
+}
+function diffNodes(a, b) {
+  const out = [];
+  const walk2 = (x, y, path) => {
+    if (x.self !== y.self || x.children.length !== y.children.length) {
+      out.push(path);
+      return;
+    }
+    for (let i = 0; i < x.children.length; i += 1) walk2(x.children[i], y.children[i], [...path, i]);
+  };
+  walk2(a, b, []);
+  return out;
+}
+function commonAncestor(paths) {
+  const [first] = paths;
+  if (first === void 0) return [];
+  let depth = first.length;
+  for (const p of paths.slice(1)) {
+    let i = 0;
+    while (i < depth && i < p.length && p[i] === first[i]) i += 1;
+    depth = i;
+  }
+  return first.slice(0, depth);
+}
+function nodeAt(tree, path) {
+  let node = tree;
+  for (const i of path) {
+    const next = node.children[i];
+    if (next === void 0) return null;
+    node = next;
+  }
+  return node;
+}
+function subtreeDigest(node) {
+  return `${node.self}(${node.children.map(subtreeDigest).join(",")})`;
+}
+function pathSelector(root, path) {
+  return [root, ...path.map((i) => `*:nth-child(${i + 1})`)].join(" > ");
+}
+function diffClusters(tree, diffs) {
+  const byPrefix = /* @__PURE__ */ new Map();
+  for (const d of diffs) {
+    for (let k = 0; k < d.length; k += 1) {
+      const key = d.slice(0, k).join(",");
+      let entry = byPrefix.get(key);
+      if (entry === void 0) {
+        entry = { prefix: d.slice(0, k), children: /* @__PURE__ */ new Set(), diffs: 0 };
+        byPrefix.set(key, entry);
+      }
+      entry.children.add(d[k]);
+      entry.diffs += 1;
+    }
+  }
+  const out = [];
+  for (const entry of byPrefix.values()) {
+    const children = [...entry.children].sort((x, y) => x - y);
+    const tags = children.map((i) => nodeAt(tree, [...entry.prefix, i])?.tag ?? null);
+    const firstTag = tags[0] ?? null;
+    const tag = firstTag !== null && tags.every((t) => t === firstTag) ? firstTag : null;
+    out.push({ prefix: entry.prefix, children, diffs: entry.diffs, tag });
+  }
+  out.sort((x, y) => y.prefix.length - x.prefix.length || y.diffs - x.diffs);
+  return out;
+}
+function locateSubjects(a, b, count) {
+  const diffs = diffNodes(a, b);
+  if (diffs.length === 0) {
+    throw new CaptureFailure("identical", "the two renderings are identical: no element differs. Either these states render the same, which is the finding, or the subjects never reached the page");
+  }
+  if (diffs.some((d) => d.length === 0)) {
+    throw new CaptureFailure("crashed", "the diff root itself differs between the two renderings, so the subject was not isolated");
+  }
+  const clusters = diffClusters(a, diffs).filter((c) => c.tag !== null);
+  const exact = clusters.filter((c) => c.children.length === count);
+  const [best, second] = exact;
+  if (best && second && best.prefix.length === second.prefix.length && best.diffs === second.diffs) {
+    throw new CaptureFailure(
+      "crashed",
+      `two elements each hold ${count} differing children of one tag (${pathSelector("root", best.prefix)} and ${pathSelector("root", second.prefix)}), so which one draws the subjects is a guess. The renderings differ in more than the state`
+    );
+  }
+  if (!best) throw noContainer(a, clusters, diffs, count);
+  return { ancestor: best.prefix, paths: best.children.map((slot) => [...best.prefix, slot]) };
+}
+function noContainer(tree, clusters, diffs, count) {
+  const best = [...clusters].sort((x, y) => y.children.length - x.children.length || y.prefix.length - x.prefix.length)[0];
+  const span = pathSelector("root", commonAncestor(diffs));
+  if (best === void 0) {
+    return new CaptureFailure(
+      "identical",
+      `the ${diffs.length} difference(s) sit under ${span} and no element holds ${count} differing children of one tag, so the ${count} subjects are not told apart. Something other than the subjects changed between the renderings`
+    );
+  }
+  const container = nodeAt(tree, best.prefix);
+  const collapsed = [];
+  if (best.children.length < count && container !== null && container.children.length === count) {
+    for (let slot = 0; slot < count; slot += 1) if (!best.children.includes(slot)) collapsed.push(`${slot} and ${(slot + 1) % count}`);
+  }
+  return new CaptureFailure(
+    "identical",
+    `${pathSelector("root", best.prefix)} holds ${best.children.length} differing <${best.tag}> child(ren) for ${count} subjects (${diffs.length} difference(s), spanning ${span}). ` + (collapsed.length > 0 ? `Subjects ${collapsed.join(", and ")} render an identical element, which is the finding` : "Either two consecutive members render identically, which is the finding, or something other than the subjects changed")
+  );
+}
+function identicalRenderings(nodes) {
+  const digests = nodes.map(subtreeDigest);
+  const pairs = [];
+  for (let i = 0; i < digests.length; i += 1) for (let j = i + 1; j < digests.length; j += 1) if (digests[i] === digests[j]) pairs.push([i, j]);
+  return pairs;
+}
+async function assertSubjectIsolated(subject, root, maxRatio) {
+  const [box, rootBox] = await Promise.all([subject.boundingBox(), root.boundingBox()]);
+  if (box === null || box.width === 0 || box.height === 0) {
+    throw new CaptureFailure("crashed", "the located subject has no box on screen, so there is nothing to photograph");
+  }
+  if (rootBox === null || rootBox.width === 0 || rootBox.height === 0) return;
+  const ratio = box.width * box.height / (rootBox.width * rootBox.height);
+  if (ratio > maxRatio) {
+    throw new CaptureFailure(
+      "crashed",
+      `the located subject covers ${(ratio * 100).toFixed(0)}% of the diff root, over the ${(maxRatio * 100).toFixed(0)}% bound: the diff is the whole page`
+    );
+  }
+}
+function moduleUrl(projectRoot2, relativePath) {
+  return `/@fs${import_node_path5.posix.join(projectRoot2.split("\\").join("/"), relativePath)}`;
+}
+function evaluateBatchExpression(moduleHref, exportName, items, extra = []) {
+  return `(async () => {
+  const href = ${JSON.stringify(moduleHref)};
+  const name = ${JSON.stringify(exportName)};
+  const mod = await import(/* @vite-ignore */ href);
+  const fn = mod[name];
+  if (typeof fn !== 'function') throw new Error('qa states: ' + href + ' exports no function named ' + name);
+  const items = ${JSON.stringify(items)};
+  const extra = ${JSON.stringify(extra)};
+  const out = [];
+  for (const item of items) {
+    try {
+      const answer = await fn(item, ...extra);
+      out.push({ state: answer === null || answer === undefined ? null : String(answer), error: null });
+    } catch (e) {
+      out.push({ state: null, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return out;
+})()`;
+}
+async function evaluateBatch(page, projectRoot2, spec, batch) {
+  const answers = await page.evaluate(evaluateBatchExpression(moduleUrl(projectRoot2, spec.module), spec.export, batch, spec.args ?? []));
+  if (!Array.isArray(answers) || answers.length !== batch.length) {
+    throw new CaptureFailure("crashed", `${spec.export}: the page answered ${Array.isArray(answers) ? answers.length : typeof answers} result(s) for ${batch.length} candidate(s)`);
+  }
+  return answers;
+}
+async function verifyInPage(page, projectRoot2, spec, subject) {
+  const [answer] = await evaluateBatch(page, projectRoot2, spec, [subject]);
+  if (!answer || answer.error !== null) throw new CaptureFailure("crashed", `${spec.export} threw on the injected subject: ${answer?.error ?? "no answer"}`);
+  return answer.state ?? "null";
+}
+async function solveWithPage(page, projectRoot2, args) {
+  const { verify, shape, members = null, union, limit, pivots } = args;
+  const corpus = [...args.corpus];
+  const batchSize = args.batchSize ?? DEFAULT_EVALUATE_BATCH;
+  const options = { ...limit === void 0 ? {} : { limit }, ...pivots === void 0 ? {} : { pivots } };
+  const plan2 = candidatePlan(shape, corpus, options);
+  const memo = /* @__PURE__ */ new Map();
+  let batches = 0;
+  for (let i = 0; i < plan2.length; i += batchSize) {
+    const slice = plan2.slice(i, i + batchSize);
+    const answers = await evaluateBatch(page, projectRoot2, verify, slice.map((step) => step.candidate));
+    batches += 1;
+    for (const [j, answer] of answers.entries()) {
+      const step = slice[j];
+      if (!step) continue;
+      if (answer.error !== null) throw new CaptureFailure("crashed", `${verify.export} threw on a candidate its type admits (${step.text}): ${answer.error}`);
+      memo.set(canonical(step.candidate), answer.state);
+    }
+  }
+  let memoMisses = 0;
+  const result = await solve({
+    shape,
+    corpus,
+    members,
+    ...union === void 0 ? {} : { union },
+    ...options,
+    evaluate: async (candidate) => {
+      const key = canonical(candidate);
+      if (memo.has(key)) return memo.get(key) ?? null;
+      memoMisses += 1;
+      const [answer] = await evaluateBatch(page, projectRoot2, verify, [candidate]);
+      if (!answer || answer.error !== null) throw new CaptureFailure("crashed", `${verify.export} threw on a candidate: ${answer?.error ?? "no answer"}`);
+      memo.set(key, answer.state);
+      return answer.state;
+    }
+  });
+  return { result, evaluated: plan2.length, batches, memoMisses };
+}
+function parameterNamesExpression(moduleHref, exportName) {
+  return `(async () => {
+  const mod = await import(/* @vite-ignore */ ${JSON.stringify(moduleHref)});
+  const fn = mod[${JSON.stringify(exportName)}];
+  if (typeof fn !== 'function') return [];
+  const src = Function.prototype.toString.call(fn);
+  const open = src.indexOf('(');
+  if (open < 0) return [];
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < src.length; i += 1) {
+    if (src[i] === '(') depth += 1;
+    else if (src[i] === ')') { depth -= 1; if (depth === 0) { close = i; break; } }
+  }
+  if (close < 0) return [];
+  return src.slice(open + 1, close).split(',').map((p) => p.trim()).map((p) => (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(p) ? p : ''));
+})()`;
+}
+function exportedNumberExpression(moduleHref, name) {
+  return `(async () => {
+  let mod;
+  try { mod = await import(/* @vite-ignore */ ${JSON.stringify(moduleHref)}); } catch (e) { return { error: e instanceof Error ? e.message : String(e) }; }
+  const found = mod[${JSON.stringify(name)}];
+  return { value: typeof found === 'number' && Number.isFinite(found) ? found : null };
+})()`;
+}
+function numbersUnderKey(body, key) {
+  const found = [];
+  const visit = (node) => {
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (!isPlainObject3(node)) return;
+    for (const [k, v] of Object.entries(node)) {
+      if (k === key && typeof v === "number" && Number.isFinite(v) && !found.includes(v)) found.push(v);
+      visit(v);
+    }
+  };
+  visit(body);
+  return found;
+}
+async function resolvePivots(page, projectRoot2, hints, options = {}) {
+  const resolved = {};
+  const unresolved = {};
+  const declaredArgs = options.verify?.args ?? [];
+  const modules = [.../* @__PURE__ */ new Set([...options.verify ? [options.verify.module] : [], ...options.modules ?? []])];
+  const bodies = options.bodies ?? [];
+  const params = options.verify !== void 0 && hints.names.length > 0 ? await page.evaluate(parameterNamesExpression(moduleUrl(projectRoot2, options.verify.module), options.verify.export)) : [];
+  for (const name of hints.names) {
+    const at = params.indexOf(name);
+    const fromArg = at > 0 ? declaredArgs[at - 1] : void 0;
+    if (typeof fromArg === "number" && Number.isFinite(fromArg)) {
+      resolved[name] = fromArg;
+      continue;
+    }
+    let fromModule = null;
+    const importErrors = [];
+    for (const rel of modules) {
+      const answer = await page.evaluate(exportedNumberExpression(moduleUrl(projectRoot2, rel), name));
+      if (answer.error !== void 0) importErrors.push(`${rel}: ${answer.error}`);
+      if (typeof answer.value === "number") {
+        fromModule = answer.value;
+        break;
+      }
+    }
+    if (fromModule !== null) {
+      resolved[name] = fromModule;
+      continue;
+    }
+    const seen = [];
+    for (const body of bodies) for (const n of numbersUnderKey(body, name)) if (!seen.includes(n)) seen.push(n);
+    if (seen.length === 1) {
+      resolved[name] = seen[0];
+      continue;
+    }
+    unresolved[name] = seen.length > 1 ? `"${name}" is ${seen.join(", ")} in the captured responses, and choosing one would be a guess` : `"${name}" is no argument of ${options.verify?.export ?? "(no function)"}(${params.join(", ")}), no exported number of ${modules.join(" or ") || "(no module)"}, and under no key of that name in ${bodies.length} captured response(s)` + (importErrors.length > 0 ? `. Import failures: ${importErrors.join("; ")}` : "");
+  }
+  const pivots = [.../* @__PURE__ */ new Set([...hints.literals, ...Object.values(resolved)])].filter(Number.isFinite);
+  return { pivots, resolved, unresolved };
+}
+async function solveGroupSubjects(page, projectRoot2, group, corpus, bodies) {
+  if (group.solve === void 0) throw new CaptureFailure("blocked", `${group.id}: the group has no solve block`);
+  const { verify } = group;
+  const pivots = await resolvePivots(page, projectRoot2, group.solve.pivots ?? { literals: [], names: [] }, {
+    verify,
+    ...group.solve.pivotModules ? { modules: group.solve.pivotModules } : {},
+    bodies
+  });
+  const members = group.members.map((m) => m.member ?? "null");
+  const report2 = await solveWithPage(page, projectRoot2, {
+    verify,
+    shape: group.solve.shape,
+    corpus,
+    members,
+    union: group.union,
+    ...group.solve.limit === void 0 ? {} : { limit: group.solve.limit },
+    pivots: pivots.pivots,
+    ...group.solve.batchSize === void 0 ? {} : { batchSize: group.solve.batchSize }
+  });
+  const base = corpus[0];
+  if (base === void 0) throw new CaptureFailure("unreachable", `${group.union}: the corpus is empty`, { fieldsTried: Object.keys(group.solve.shape.fields) });
+  const anchor = await anchorSubjects({
+    shape: group.solve.shape,
+    base,
+    covered: report2.result.covered,
+    members,
+    evaluate: async (candidate) => {
+      const [answer] = await evaluateBatch(page, projectRoot2, verify, [candidate]);
+      if (!answer || answer.error !== null) throw new CaptureFailure("crashed", `${verify.export} threw on an anchored candidate: ${answer?.error ?? "no answer"}`);
+      return answer.state;
+    }
+  });
+  const unresolvedNames = Object.values(pivots.unresolved);
+  const subjectFor = [];
+  const unreachable2 = /* @__PURE__ */ new Map();
+  for (const [i, name] of members.entries()) {
+    const hit = report2.result.covered[name];
+    if (hit === void 0) {
+      subjectFor.push(null);
+      const why = report2.result.sentence ?? `${group.union}: ${name} was not produced by any candidate`;
+      unreachable2.set(i, unresolvedNames.length > 0 ? `${why} Unresolved pivot: ${unresolvedNames.join("; ")}` : why);
+      continue;
+    }
+    subjectFor.push(anchor.subjects[name] ?? hit.candidate);
+  }
+  return {
+    subjectFor,
+    unreachable: unreachable2,
+    fieldsTried: Object.keys(group.solve.shape.fields),
+    fieldsUnderTest: anchor.fields,
+    anchor: { fields: anchor.fields, loose: anchor.loose, notes: anchor.notes, evaluations: anchor.evaluations },
+    pivots,
+    report: report2
+  };
+}
+async function renderOnce(session, group, substitution, subjects) {
+  if (subjects === null) substitution.record();
+  else substitution.use(subjects);
+  await session.navigate(group.route);
+  for (const step of group.act ?? []) await session.act(step);
+  await session.settle(group.settle);
+  const held = await session.currentRoute();
+  if (!routeMatches(group.route, held)) {
+    throw new CaptureFailure("blocked", `the page left ${group.route} for ${held}, so a picture would be of another screen`);
+  }
+  substitution.assertApplied();
+}
+async function prepare(session, page, group, ctx) {
+  const diffRoot = group.diffRoot ?? DEFAULT_DIFF_ROOT;
+  const snapshotOptions = { root: diffRoot, ignoreAttributes: group.ignoreAttributes ?? [] };
+  const notes = [];
+  const substitution = await installSubstitution(page, group.intercept);
+  try {
+    let subjectFor;
+    let unreachable2 = /* @__PURE__ */ new Map();
+    let fieldsTried = [];
+    if (group.solve === void 0) {
+      subjectFor = group.members.map((m) => isPlainObject3(m.subject) ? m.subject : null);
+    } else {
+      await renderOnce(session, group, substitution, null);
+      const solved = await solveGroupSubjects(page, ctx.projectRoot, group, substitution.corpus, substitution.bodies);
+      subjectFor = solved.subjectFor;
+      unreachable2 = solved.unreachable;
+      fieldsTried = solved.fieldsTried;
+      notes.push(
+        `corpus ${substitution.corpus.length} real ${group.solve.shape.type} row(s); ${solved.report.evaluated} candidates in ${solved.report.batches} evaluate(s), ${solved.report.memoMisses} memo miss(es); pivots ${JSON.stringify(solved.pivots.pivots)}`
+      );
+      for (const why of Object.values(solved.pivots.unresolved)) notes.push(`unresolved pivot: ${why}`);
+      notes.push(...solved.anchor.notes);
+    }
+    const slots = [];
+    const subjects = [];
+    for (const [i, subject] of subjectFor.entries()) {
+      if (subject === null) continue;
+      slots.push(i);
+      subjects.push(subject);
+    }
+    if (subjects.length === 0) {
+      throw new CaptureFailure("unreachable", `no member of ${group.union} has a subject to render: ${[...unreachable2.values()].join("; ")}`, { fieldsTried });
+    }
+    if (subjects.length === 1 && group.contrast === void 0) {
+      throw new CaptureFailure("blocked", `only one member of ${group.union} has a subject, and the group has no contrast, so there is no second rendering to diff against`);
+    }
+    const contrast = subjects.length === 1 ? [group.contrast] : rotate(subjects);
+    await renderOnce(session, group, substitution, contrast);
+    const before2 = await snapshotTree(page, snapshotOptions);
+    await renderOnce(session, group, substitution, subjects);
+    const tree = await snapshotTree(page, snapshotOptions);
+    const { paths } = locateSubjects(tree, before2, subjects.length);
+    return { tree, paths, diffRoot, slots, subjectFor, unreachable: unreachable2, fieldsTried, notes };
+  } finally {
+    await substitution.dispose();
+  }
+}
+function blankResult(group, index) {
+  const member = group.members[index];
+  return {
+    id: member?.id ?? `${group.union}.${index}`,
+    union: group.union,
+    member: member?.member ?? null,
+    ok: false,
+    subject: null,
+    context: null,
+    provenance: "intercepted",
+    verified: null,
+    answered: null,
+    error: null,
+    ms: 0
+  };
+}
+async function captureGroup(session, page, group, ctx) {
+  const started = ctx.now();
+  let prepared;
+  try {
+    prepared = await prepare(session, page, group, ctx);
+  } catch (e) {
+    const fields = failureFields(e);
+    const ms = ctx.now() - started;
+    return { results: group.members.map((_, i) => ({ ...blankResult(group, i), error: errorText(e), ...fields, ms })), notes: [] };
+  }
+  const { tree, paths, diffRoot, slots, subjectFor, unreachable: unreachable2, fieldsTried, notes } = prepared;
+  const nodes = paths.map((p) => nodeAt(tree, p)).filter((n) => n !== null);
+  const twins = /* @__PURE__ */ new Map();
+  if (nodes.length === paths.length) {
+    for (const [a, b] of identicalRenderings(nodes)) {
+      const first = group.members[slots[a]];
+      const second = group.members[slots[b]];
+      if (!first || !second) continue;
+      const why = `${first.id} and ${second.id} render an identical subtree`;
+      twins.set(slots[a], { why, sameAs: second.id });
+      twins.set(slots[b], { why, sameAs: first.id });
+    }
+  }
+  const root = page.locator(diffRoot).first();
+  const maxRatio = group.maxSubjectAreaRatio ?? DEFAULT_MAX_SUBJECT_AREA_RATIO;
+  const results = [];
+  for (const [i, member] of group.members.entries()) {
+    const at = ctx.now();
+    const result = blankResult(group, i);
+    try {
+      const missing = unreachable2.get(i);
+      if (missing !== void 0) throw new CaptureFailure("unreachable", missing, { fieldsTried });
+      const twin = twins.get(i);
+      if (twin !== void 0) throw new CaptureFailure("identical", twin.why, { sameAs: twin.sameAs });
+      const slot = slots.indexOf(i);
+      const path = paths[slot];
+      if (slot < 0 || path === void 0) throw new CaptureFailure("blocked", "this member was never rendered, so there is nothing to photograph");
+      const answered = await verifyInPage(page, ctx.projectRoot, group.verify, subjectFor[i]);
+      const expected = member.expect === void 0 ? member.member ?? "null" : member.expect ?? "null";
+      result.answered = answered;
+      result.verified = answered === expected;
+      if (!result.verified) {
+        throw new CaptureFailure(
+          "state-mismatch",
+          `${group.verify.export} answered "${answered}" for this subject, and the plan asked for "${expected}"`,
+          { intended: expected, actual: answered }
+        );
+      }
+      const subject = page.locator(pathSelector(diffRoot, path)).first();
+      await assertSubjectIsolated(subject, root, maxRatio);
+      await subject.scrollIntoViewIfNeeded();
+      const context = statePath(ctx.slug, member.id, "context");
+      const subjectFile = statePath(ctx.slug, member.id, "subject");
+      await session.screenshot(import_node_path5.posix.join(ctx.reportDir, context));
+      await subject.screenshot({ path: import_node_path5.posix.join(ctx.reportDir, subjectFile) });
+      await ctx.record({ file: import_node_path5.posix.join(ctx.reportDir, context), kind: "screenshot", row: member.id });
+      await ctx.record({ file: import_node_path5.posix.join(ctx.reportDir, subjectFile), kind: "screenshot", row: member.id });
+      result.subject = subjectFile;
+      result.context = context;
+      result.expect = `${group.verify.export} answers ${expected}`;
+      result.ok = true;
+    } catch (e) {
+      result.error = errorText(e);
+      Object.assign(result, failureFields(e));
+    }
+    result.ms = ctx.now() - at;
+    results.push(result);
+  }
+  return { results, notes };
+}
+var import_node_path5, MAX_TREE_NODES, DEFAULT_MAX_SUBJECT_AREA_RATIO, DEFAULT_DIFF_ROOT, MAX_CORPUS, MAX_BODIES, DEFAULT_EVALUATE_BATCH, CaptureFailure, isPlainObject3, STALE_HEADERS;
+var init_capture = __esm({
+  "src/states/services/capture.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_path5 = require("path");
+    init_kernel();
+    init_paths();
+    init_inventory();
+    init_solve();
+    MAX_TREE_NODES = 4e4;
+    DEFAULT_MAX_SUBJECT_AREA_RATIO = 0.9;
+    DEFAULT_DIFF_ROOT = "body";
+    MAX_CORPUS = 60;
+    MAX_BODIES = 10;
+    DEFAULT_EVALUATE_BATCH = 100;
+    CaptureFailure = class extends LaunchwrightError {
+      reason;
+      detail;
+      constructor(reason, message, detail = {}, cause) {
+        super(`qa.states.${reason}`, message, { ...cause === void 0 ? {} : { cause }, context: { reason, ...detail } });
+        this.reason = reason;
+        this.detail = detail;
+      }
+    };
+    isPlainObject3 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+    STALE_HEADERS = /* @__PURE__ */ new Set(["content-length", "content-encoding", "transfer-encoding"]);
+  }
+});
+
+// src/states/services/scan.mts
+function isProductSource(rel) {
+  if (!/\.(tsx?|mts)$/.test(rel) || /\.d\.m?ts$/.test(rel)) return false;
+  const segments = rel.split("/");
+  const base = segments[segments.length - 1] ?? "";
+  if (/\.(test|spec)\.(tsx?|mts)$/.test(base)) return false;
+  return !segments.some((s) => s === "__tests__" || s === "__mocks__" || s === "node_modules");
+}
+function parseSource(rel, text) {
+  return import_typescript.default.createSourceFile(rel, text, import_typescript.default.ScriptTarget.ES2022, true, rel.endsWith(".tsx") ? import_typescript.default.ScriptKind.TSX : import_typescript.default.ScriptKind.TS);
+}
+function walk(node, visit) {
+  visit(node);
+  import_typescript.default.forEachChild(node, (child) => walk(child, visit));
+}
+function isExported(node) {
+  return import_typescript.default.canHaveModifiers(node) && (import_typescript.default.getModifiers(node) ?? []).some((m) => m.kind === import_typescript.default.SyntaxKind.ExportKeyword);
+}
+function lineOf(sf, node) {
+  return sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+}
+function referencedName(typeNode) {
+  return typeNode && import_typescript.default.isTypeReferenceNode(typeNode) && import_typescript.default.isIdentifier(typeNode.typeName) ? typeNode.typeName.text : null;
+}
+function isNullish(typeNode) {
+  return import_typescript.default.isLiteralTypeNode(typeNode) && typeNode.literal.kind === import_typescript.default.SyntaxKind.NullKeyword || typeNode.kind === import_typescript.default.SyntaxKind.UndefinedKeyword;
+}
+function unionParts(typeNode) {
+  if (!typeNode || !import_typescript.default.isUnionTypeNode(typeNode)) return null;
+  const parts = [];
+  for (const member of typeNode.types) {
+    if (import_typescript.default.isLiteralTypeNode(member) && import_typescript.default.isStringLiteral(member.literal)) {
+      parts.push({ literal: member.literal.text });
+      continue;
+    }
+    const ref = referencedName(member);
+    if (!ref) return null;
+    parts.push({ ref });
+  }
+  return parts.length >= 2 ? parts : null;
+}
+function ignoreReason(node, file, sf) {
+  const tags = import_typescript.default.getJSDocTags(node).filter((t) => t.tagName.text === IGNORE_TAG);
+  if (tags.length === 0) return { reason: null, problem: null };
+  const name = import_typescript.default.isTypeAliasDeclaration(node) ? node.name.text : "<declaration>";
+  const line = lineOf(sf, node);
+  if (tags.length > 1) {
+    return {
+      reason: null,
+      problem: { code: "ignore-repeated", file, line, union: name, message: `${file}:${line} "${name}" carries ${tags.length} @${IGNORE_TAG} tags. It may carry one.` }
+    };
+  }
+  const [tag] = tags;
+  const text = (import_typescript.default.getTextOfJSDocComment(tag?.comment) ?? "").replace(/\s+/g, " ").trim();
+  const directive = /^ignore(?:\s+(.*))?$/.exec(text);
+  if (!directive) {
+    return {
+      reason: null,
+      problem: {
+        code: "ignore-directive",
+        file,
+        line,
+        union: name,
+        message: `${file}:${line} "${name}" has @${IGNORE_TAG} "${text}". The only directive is "ignore <reason>".`
+      }
+    };
+  }
+  const reason = (directive[1] ?? "").trim();
+  if (!reason) {
+    return {
+      reason: null,
+      problem: {
+        code: "ignore-without-reason",
+        file,
+        line,
+        union: name,
+        message: `${file}:${line} "${name}" is marked @${IGNORE_TAG} ignore with no reason. A reason is required (spec 2.14 rule C1).`
+      }
+    };
+  }
+  return { reason, problem: null };
+}
+function findUnions(sf, file) {
+  const unions = [];
+  const problems = [];
+  walk(sf, (node) => {
+    if (!import_typescript.default.isTypeAliasDeclaration(node) || !isExported(node) || !isStateUnionName(node.name.text)) return;
+    const { reason, problem } = ignoreReason(node, file, sf);
+    if (problem) problems.push(problem);
+    const parts = unionParts(node.type);
+    if (parts) unions.push({ name: node.name.text, file, line: lineOf(sf, node), parts, reason });
+  });
+  return { unions, problems };
+}
+function flattenUnions(declared) {
+  const resolved = /* @__PURE__ */ new Map();
+  for (let pass = 0; pass <= declared.size; pass += 1) {
+    let progress = false;
+    for (const [name, declaration] of declared) {
+      if (resolved.has(name)) continue;
+      const members = [];
+      let complete = true;
+      for (const part of declaration.parts) {
+        if ("literal" in part) {
+          members.push(part.literal);
+          continue;
+        }
+        const inner = resolved.get(part.ref);
+        if (!inner) {
+          complete = false;
+          break;
+        }
+        members.push(...inner);
+      }
+      if (!complete) continue;
+      resolved.set(name, [...new Set(members)]);
+      progress = true;
+    }
+    if (!progress) break;
+  }
+  return resolved;
+}
+function referencedUnions(name, declared, seen = /* @__PURE__ */ new Set()) {
+  for (const part of declared.get(name)?.parts ?? []) {
+    if (!("ref" in part) || seen.has(part.ref)) continue;
+    seen.add(part.ref);
+    referencedUnions(part.ref, declared, seen);
+  }
+  return seen;
+}
+function holderOf(prop) {
+  const parent = prop.parent;
+  if (import_typescript.default.isInterfaceDeclaration(parent)) return parent.name.text;
+  if (!import_typescript.default.isTypeLiteralNode(parent)) return null;
+  let node = parent;
+  while (node.parent && (import_typescript.default.isUnionTypeNode(node.parent) || import_typescript.default.isIntersectionTypeNode(node.parent) || import_typescript.default.isParenthesizedTypeNode(node.parent))) {
+    node = node.parent;
+  }
+  return node.parent && import_typescript.default.isTypeAliasDeclaration(node.parent) ? node.parent.name.text : null;
+}
+function propertyName(prop, sf) {
+  return import_typescript.default.isIdentifier(prop.name) ? prop.name.text : prop.name.getText(sf);
+}
+function findInputSites(sf, file, names) {
+  const found = [];
+  walk(sf, (node) => {
+    if (!import_typescript.default.isPropertySignature(node)) return;
+    const union = referencedName(node.type);
+    if (!union || !names.has(union)) return;
+    const holder = holderOf(node);
+    if (!holder) return;
+    found.push({ union, interface: holder, field: propertyName(node, sf), optional: Boolean(node.questionToken), file });
+  });
+  return found;
+}
+function returnsUnion(typeNode, names) {
+  if (typeNode && import_typescript.default.isTypeReferenceNode(typeNode) && referencedName(typeNode) === "Promise" && typeNode.typeArguments?.length === 1) {
+    const awaited = returnsUnion(typeNode.typeArguments[0], names);
+    return awaited ? { ...awaited, async: true } : null;
+  }
+  const direct = referencedName(typeNode);
+  if (direct && names.has(direct)) return { union: direct, nullable: false, async: false };
+  if (!typeNode || !import_typescript.default.isUnionTypeNode(typeNode)) return null;
+  let union = null;
+  let nullable = false;
+  for (const member of typeNode.types) {
+    const name = referencedName(member);
+    if (name && names.has(name)) {
+      if (union) return null;
+      union = name;
+    } else if (isNullish(member)) nullable = true;
+    else return null;
+  }
+  return union ? { union, nullable, async: false } : null;
+}
+function functionLike(node) {
+  if (import_typescript.default.isFunctionDeclaration(node) && node.name) {
+    return { name: node.name.text, fn: node, declaredType: void 0, exported: isExported(node) };
+  }
+  if (import_typescript.default.isVariableDeclaration(node) && import_typescript.default.isIdentifier(node.name) && node.initializer && (import_typescript.default.isArrowFunction(node.initializer) || import_typescript.default.isFunctionExpression(node.initializer))) {
+    const statement = node.parent?.parent;
+    return { name: node.name.text, fn: node.initializer, declaredType: node.type, exported: Boolean(statement && isExported(statement)) };
+  }
+  return null;
+}
+function reExportedNames(sf) {
+  const names = /* @__PURE__ */ new Set();
+  walk(sf, (node) => {
+    if (!import_typescript.default.isExportDeclaration(node) || !node.exportClause || !import_typescript.default.isNamedExports(node.exportClause) || node.moduleSpecifier) return;
+    for (const element of node.exportClause.elements) names.add((element.propertyName ?? element.name).text);
+  });
+  return names;
+}
+function paramSite(param, sf, file, resolver, problems) {
+  const name = import_typescript.default.isIdentifier(param.name) ? param.name.text : param.name.getText(sf);
+  const referenced = referencedName(param.type);
+  const type = referenced ?? (param.type ? param.type.getText(sf) : "unknown");
+  const declaration = referenced ? resolver.declOf(referenced) : param.type ?? null;
+  let shape = shapeFor(type, declaration, (n) => resolver.declOf(n));
+  const errors = shape ? validateShape(shape) : [];
+  if (errors.length > 0) {
+    problems.push({ code: "invalid-shape", file, line: lineOf(sf, param), union: type, message: `The shape derived for "${type}" is invalid: ${errors.join("; ")}` });
+    shape = null;
+  }
+  return { name, type, typeFile: referenced ? resolver.fileOf(referenced) : null, shape };
+}
+function findOutputSites(sf, file, names, resolver = NO_TYPES, problems = []) {
+  const found = [];
+  const reExported = reExportedNames(sf);
+  walk(sf, (node) => {
+    const candidate = functionLike(node);
+    if (!candidate) return;
+    const hit = returnsUnion(candidate.fn.type, names);
+    if (!hit) return;
+    const params = candidate.fn.parameters.map((p) => paramSite(p, sf, file, resolver, problems));
+    found.push({
+      union: hit.union,
+      fn: candidate.name,
+      file,
+      exported: candidate.exported || reExported.has(candidate.name),
+      nullable: hit.nullable,
+      async: hit.async,
+      // A function with no searchable parameter can be evaluated and never steered.
+      solvable: params.some((p) => p.shape !== null),
+      pivots: pivotsIn(candidate.fn),
+      params
+    });
+  });
+  return found;
+}
+function componentPropsType({ fn, declaredType }) {
+  if (declaredType && import_typescript.default.isTypeReferenceNode(declaredType) && declaredType.typeArguments?.length === 1) {
+    const argument = referencedName(declaredType.typeArguments[0]);
+    if (argument) return argument;
+  }
+  return fn.parameters.length === 1 ? referencedName(fn.parameters[0]?.type) : null;
+}
+function findComponentCandidates(sf, file) {
+  if (!file.endsWith(".tsx")) return [];
+  const found = [];
+  walk(sf, (node) => {
+    const candidate = functionLike(node);
+    if (!candidate || !/^[A-Z]/.test(candidate.name)) return;
+    const propsType = componentPropsType(candidate);
+    if (propsType) found.push({ component: candidate.name, componentFile: file, propsType });
+  });
+  return found;
+}
+function findTypeComposition(sf) {
+  const found = [];
+  const namesIn = (typeNode) => {
+    if (!typeNode) return [];
+    if (import_typescript.default.isParenthesizedTypeNode(typeNode)) return namesIn(typeNode.type);
+    if (import_typescript.default.isUnionTypeNode(typeNode) || import_typescript.default.isIntersectionTypeNode(typeNode)) return typeNode.types.flatMap(namesIn);
+    const name = referencedName(typeNode);
+    return name ? [name] : [];
+  };
+  walk(sf, (node) => {
+    if (import_typescript.default.isTypeAliasDeclaration(node)) {
+      const of2 = namesIn(node.type);
+      if (of2.length) found.push({ name: node.name.text, of: of2 });
+      return;
+    }
+    if (!import_typescript.default.isInterfaceDeclaration(node)) return;
+    const of = (node.heritageClauses ?? []).flatMap(
+      (clause) => clause.types.flatMap((t) => import_typescript.default.isIdentifier(t.expression) ? [t.expression.text] : [])
+    );
+    if (of.length) found.push({ name: node.name.text, of });
+  });
+  return found;
+}
+function findTypeDeclarations(sf, file) {
+  const found = [];
+  walk(sf, (node) => {
+    if ((import_typescript.default.isInterfaceDeclaration(node) || import_typescript.default.isTypeAliasDeclaration(node) || import_typescript.default.isEnumDeclaration(node) || import_typescript.default.isClassDeclaration(node)) && node.name) {
+      found.push({ name: node.name.text, file, node });
+    }
+  });
+  return found;
+}
+function literalValue(node) {
+  if (import_typescript.default.isStringLiteral(node)) return node.text;
+  if (import_typescript.default.isNumericLiteral(node)) return Number(node.text);
+  if (node.kind === import_typescript.default.SyntaxKind.TrueKeyword) return true;
+  if (node.kind === import_typescript.default.SyntaxKind.FalseKeyword) return false;
+  if (import_typescript.default.isPrefixUnaryExpression(node) && NEGATIVE2.has(node.operator) && import_typescript.default.isNumericLiteral(node.operand)) {
+    return -Number(node.operand.text);
+  }
+  return void 0;
+}
+function fieldFor(typeNode, resolve4, hops = 0) {
+  if (!typeNode) return { kind: "opaque" };
+  const keyword = KEYWORD_KINDS.get(typeNode.kind);
+  if (keyword) return { kind: keyword };
+  if (import_typescript.default.isUnionTypeNode(typeNode)) {
+    const present = typeNode.types.filter((t) => !isNullish(t));
+    const nullable = present.length !== typeNode.types.length;
+    const inner = unionField(present, resolve4, hops);
+    if (!inner) return { kind: "opaque" };
+    return nullable ? { kind: "nullable", of: inner } : inner;
+  }
+  if (import_typescript.default.isTypeReferenceNode(typeNode) && hops < MAX_TYPE_HOPS) {
+    const name = referencedName(typeNode);
+    const aliased = name ? resolve4(name) : null;
+    if (aliased) return fieldFor(aliased, resolve4, hops + 1);
+  }
+  return { kind: "opaque" };
+}
+function unionField(present, resolve4, hops) {
+  if (present.length === 0) return null;
+  if (present.length === 1) {
+    const only = fieldFor(present[0], resolve4, hops);
+    return only.kind === "nullable" ? { kind: "opaque" } : only;
+  }
+  const values = present.map((t) => import_typescript.default.isLiteralTypeNode(t) ? literalValue(t.literal) : void 0);
+  if (values.every((v) => v !== void 0)) return { kind: "enum", values };
+  return { kind: "opaque" };
+}
+function membersOf(node, resolveDecl, seen = /* @__PURE__ */ new Set()) {
+  if (!node) return [];
+  if (import_typescript.default.isInterfaceDeclaration(node)) {
+    if (seen.has(node)) return [];
+    seen.add(node);
+    const inherited = (node.heritageClauses ?? []).flatMap(
+      (clause) => clause.types.flatMap((t) => import_typescript.default.isIdentifier(t.expression) ? membersOf(resolveDecl(t.expression.text), resolveDecl, seen) : [])
+    );
+    return [...inherited, ...node.members];
+  }
+  if (import_typescript.default.isTypeAliasDeclaration(node)) {
+    if (seen.has(node)) return [];
+    seen.add(node);
+    return membersOf(node.type, resolveDecl, seen);
+  }
+  if (import_typescript.default.isTypeLiteralNode(node)) return [...node.members];
+  if (import_typescript.default.isParenthesizedTypeNode(node)) return membersOf(node.type, resolveDecl, seen);
+  if (import_typescript.default.isIntersectionTypeNode(node)) return node.types.flatMap((t) => membersOf(t, resolveDecl, seen));
+  if (import_typescript.default.isTypeReferenceNode(node)) {
+    const name = referencedName(node);
+    return name ? membersOf(resolveDecl(name), resolveDecl, seen) : [];
+  }
+  return [];
+}
+function shapeFor(typeName, declaration, resolveDecl) {
+  const members = membersOf(declaration, resolveDecl);
+  const resolveType = (name) => {
+    const found = resolveDecl(name);
+    return found && import_typescript.default.isTypeAliasDeclaration(found) ? found.type : null;
+  };
+  const fields = {};
+  for (const member of members) {
+    if (!import_typescript.default.isPropertySignature(member) || !import_typescript.default.isIdentifier(member.name)) continue;
+    const field = fieldFor(member.type, resolveType);
+    fields[member.name.text] = member.questionToken ? { ...field, optional: true } : field;
+  }
+  const names = Object.keys(fields);
+  if (names.length === 0 || names.every((n) => fields[n]?.kind === "opaque")) return null;
+  return { type: typeName, fields };
+}
+function pivotsIn(fn) {
+  const literals = /* @__PURE__ */ new Set();
+  const names = /* @__PURE__ */ new Set();
+  walk(fn, (node) => {
+    if (!import_typescript.default.isBinaryExpression(node)) return;
+    const relational = RELATIONAL.has(node.operatorToken.kind);
+    if (!relational && !EQUALITY.has(node.operatorToken.kind)) return;
+    for (const side of [node.left, node.right]) {
+      const value = literalValue(side);
+      if (typeof value === "number") literals.add(value);
+      else if (relational && import_typescript.default.isIdentifier(side)) names.add(side.text);
+    }
+  });
+  return { literals: [...literals].sort((a, b) => a - b), names: [...names].sort() };
+}
+function partsOf(name, composedOf) {
+  const seen = /* @__PURE__ */ new Set();
+  const queue = [...composedOf.get(name) ?? []];
+  while (queue.length) {
+    const next = queue.pop();
+    if (seen.has(next)) continue;
+    seen.add(next);
+    queue.push(...composedOf.get(next) ?? []);
+  }
+  return seen;
+}
+function analyzeSources(input) {
+  const { sources, extraTypes = [], roots, generated } = input;
+  const parsed = sources.map(({ file, text }) => ({ file, sf: parseSource(file, text) }));
+  const problems = [];
+  const declaredIn = /* @__PURE__ */ new Map();
+  for (const { file, sf } of [...parsed, ...extraTypes.map(({ file: file2, text }) => ({ file: file2, sf: parseSource(file2, text) }))]) {
+    for (const decl of findTypeDeclarations(sf, file)) {
+      const seen = declaredIn.get(decl.name);
+      if (seen === void 0) declaredIn.set(decl.name, decl);
+      else if (seen === null || seen.file !== file) declaredIn.set(decl.name, null);
+    }
+  }
+  const resolver = {
+    fileOf: (name) => declaredIn.get(name)?.file ?? null,
+    declOf: (name) => declaredIn.get(name)?.node ?? null
+  };
+  const unions = /* @__PURE__ */ new Map();
+  for (const { file, sf } of parsed) {
+    const found = findUnions(sf, file);
+    problems.push(...found.problems);
+    for (const union of found.unions) {
+      const clash = unions.get(union.name);
+      if (clash) {
+        problems.push({
+          code: "duplicate-union",
+          file,
+          line: union.line,
+          union: union.name,
+          message: `Two state unions are named "${union.name}": ${clash.file}:${clash.line} and ${file}:${union.line}. Rename one.`
+        });
+        continue;
+      }
+      unions.set(union.name, union);
+    }
+  }
+  const members = flattenUnions(unions);
+  const names = new Set(members.keys());
+  const composedOf = /* @__PURE__ */ new Map();
+  const candidates = [];
+  const inputs = [];
+  const outputs = [];
+  for (const { file, sf } of parsed) {
+    for (const { name, of } of findTypeComposition(sf)) composedOf.set(name, [...composedOf.get(name) ?? [], ...of]);
+    candidates.push(...findComponentCandidates(sf, file));
+    inputs.push(...findInputSites(sf, file, names));
+    outputs.push(...findOutputSites(sf, file, names, resolver, problems));
+  }
+  candidates.sort((a, b) => a.componentFile.localeCompare(b.componentFile) || a.component.localeCompare(b.component));
+  const componentFor = (holder) => candidates.find((c) => c.propsType === holder || partsOf(c.propsType, composedOf).has(holder)) ?? null;
+  const sitesFor = (name) => ({
+    inputs: inputs.filter((i) => i.union === name).sort((a, b) => a.file.localeCompare(b.file) || a.field.localeCompare(b.field)).map(({ union: _u, ...site }) => {
+      const component = componentFor(site.interface);
+      return { ...site, component: component?.component ?? null, componentFile: component?.componentFile ?? null };
+    }),
+    outputs: outputs.filter((o) => o.union === name).sort((a, b) => a.file.localeCompare(b.file) || a.fn.localeCompare(b.fn)).map(({ union: _u, ...site }) => site)
+  });
+  const absorbed = /* @__PURE__ */ new Set();
+  for (const name of names) {
+    for (const ref of referencedUnions(name, unions)) {
+      if (ref === name || !names.has(ref)) continue;
+      const site = sitesFor(ref);
+      if (site.inputs.length === 0 && site.outputs.length === 0) absorbed.add(ref);
+    }
+  }
+  const declaration = (name) => unions.get(name);
+  const membersOfUnion = (name) => members.get(name) ?? [];
+  const ignored = [...names].filter((name) => declaration(name).reason !== null).sort((a, b) => a.localeCompare(b)).map((name) => ({
+    name,
+    file: declaration(name).file,
+    line: declaration(name).line,
+    members: membersOfUnion(name),
+    reason: declaration(name).reason
+  }));
+  const isIgnored = new Set(ignored.map((u) => u.name));
+  const entries = [...names].filter((name) => !absorbed.has(name) && !isIgnored.has(name)).sort((a, b) => a.localeCompare(b)).map((name) => {
+    const mine = sitesFor(name);
+    const flattens = [...referencedUnions(name, unions)].filter((ref) => absorbed.has(ref)).sort().map((ref) => ({ name: ref, file: declaration(ref).file, line: declaration(ref).line, members: membersOfUnion(ref) }));
+    return {
+      name,
+      file: declaration(name).file,
+      line: declaration(name).line,
+      members: membersOfUnion(name),
+      kind: kindFor(mine.inputs, mine.outputs),
+      flattens,
+      inputs: mine.inputs,
+      outputs: mine.outputs,
+      components: [...new Set(mine.inputs.flatMap((i) => i.component ? [i.component] : []))]
+    };
+  });
+  const inventory = { generated, roots, unions: entries, ignored };
+  const errors = validateInventory(inventory);
+  if (errors.length > 0) {
+    throw new LaunchwrightError("qa.states.inventory", `The scan produced an invalid inventory:
+  ${errors.join("\n  ")}`, { context: { errors } });
+  }
+  return { inventory, problems };
+}
+function readTree(projectRoot2, dir) {
+  const absolute = (0, import_node_path6.join)(projectRoot2, dir);
+  if (!(0, import_node_fs5.statSync)(absolute, { throwIfNoEntry: false })?.isDirectory()) {
+    throw new LaunchwrightError("qa.states.root", `${dir} is not a folder under ${projectRoot2}. Check qa.clientRoots and qa.typeRoots.`, { context: { dir } });
+  }
+  const files = [];
+  const visit = (at) => {
+    for (const entry of (0, import_node_fs5.readdirSync)(at, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const child = (0, import_node_path6.join)(at, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "node_modules") visit(child);
+        continue;
+      }
+      const rel = (0, import_node_path6.relative)(projectRoot2, child).split(/[\\/]/).join("/");
+      if (isProductSource(rel)) files.push({ file: rel, text: (0, import_node_fs5.readFileSync)(child, "utf8") });
+    }
+  };
+  visit(absolute);
+  return files;
+}
+function scanProject(projectRoot2, options) {
+  const sources = options.clientRoots.flatMap((dir) => readTree(projectRoot2, dir));
+  const extraTypes = (options.typeRoots ?? []).flatMap((dir) => readTree(projectRoot2, dir));
+  return { ...analyzeSources({ sources, extraTypes, roots: options.clientRoots, generated: options.generated }), sources };
+}
+var import_node_fs5, import_node_path6, import_typescript, NO_TYPES, KEYWORD_KINDS, MAX_TYPE_HOPS, NEGATIVE2, RELATIONAL, EQUALITY;
+var init_scan = __esm({
+  "src/states/services/scan.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_fs5 = require("fs");
+    import_node_path6 = require("path");
+    init_kernel();
+    import_typescript = __toESM(require("typescript"), 1);
+    init_inventory();
+    init_solve();
+    NO_TYPES = { fileOf: () => null, declOf: () => null };
+    KEYWORD_KINDS = /* @__PURE__ */ new Map([
+      [import_typescript.default.SyntaxKind.BooleanKeyword, "boolean"],
+      [import_typescript.default.SyntaxKind.NumberKeyword, "number"],
+      [import_typescript.default.SyntaxKind.StringKeyword, "string"]
+    ]);
+    MAX_TYPE_HOPS = 6;
+    NEGATIVE2 = /* @__PURE__ */ new Set([import_typescript.default.SyntaxKind.MinusToken]);
+    RELATIONAL = /* @__PURE__ */ new Set([
+      import_typescript.default.SyntaxKind.LessThanToken,
+      import_typescript.default.SyntaxKind.LessThanEqualsToken,
+      import_typescript.default.SyntaxKind.GreaterThanToken,
+      import_typescript.default.SyntaxKind.GreaterThanEqualsToken
+    ]);
+    EQUALITY = /* @__PURE__ */ new Set([
+      import_typescript.default.SyntaxKind.EqualsEqualsEqualsToken,
+      import_typescript.default.SyntaxKind.ExclamationEqualsEqualsToken,
+      import_typescript.default.SyntaxKind.EqualsEqualsToken,
+      import_typescript.default.SyntaxKind.ExclamationEqualsToken
+    ]);
+  }
+});
+
+// src/states/services/delivery.mts
+function normaliseTables(entries) {
+  return entries.map((entry) => typeof entry === "string" ? { file: entry, surface: "web" } : entry);
+}
+function importSpecifiers(sf) {
+  const found = [];
+  const visit = (node) => {
+    if ((import_typescript2.default.isImportDeclaration(node) || import_typescript2.default.isExportDeclaration(node)) && node.moduleSpecifier) {
+      if (import_typescript2.default.isStringLiteral(node.moduleSpecifier)) found.push(node.moduleSpecifier.text);
+    } else if (import_typescript2.default.isCallExpression(node) && node.expression.kind === import_typescript2.default.SyntaxKind.ImportKeyword) {
+      const [first] = node.arguments;
+      if (first && import_typescript2.default.isStringLiteral(first)) found.push(first.text);
+    }
+    import_typescript2.default.forEachChild(node, visit);
+  };
+  visit(sf);
+  return [...new Set(found)];
+}
+function resolveSpecifier(fromFile, specifier, files, aliases = {}) {
+  let base = null;
+  if (specifier.startsWith(".")) base = import_node_path7.posix.normalize(import_node_path7.posix.join(import_node_path7.posix.dirname(fromFile), specifier));
+  else {
+    for (const alias of Object.keys(aliases).sort((a, b) => b.length - a.length)) {
+      const dir = aliases[alias];
+      if (specifier === alias) base = dir;
+      else if (specifier.startsWith(`${alias}/`)) base = import_node_path7.posix.normalize(`${dir}${specifier.slice(alias.length)}`);
+      if (base !== null) break;
+    }
+  }
+  if (base === null) return null;
+  const stems = /\.[mc]?js$/.test(base) ? [base.replace(/\.([mc]?)js$/, ".$1ts"), base.replace(/\.[mc]?js$/, ""), base] : [base];
+  for (const stem of stems) {
+    for (const suffix of CANDIDATES) {
+      const candidate = `${stem}${suffix}`;
+      if (files.has(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+function buildGraph(sources, aliases = {}) {
+  const parsed = new Map(sources.map(({ file, text }) => [file, parseSource(file, text)]));
+  const files = new Set(parsed.keys());
+  const edges = /* @__PURE__ */ new Map();
+  for (const [file, sf] of parsed) {
+    const out = [];
+    for (const specifier of importSpecifiers(sf)) {
+      const target = resolveSpecifier(file, specifier, files, aliases);
+      if (target !== null && target !== file) out.push(target);
+    }
+    edges.set(file, [...new Set(out)]);
+  }
+  return { edges, parsed };
+}
+function reachFrom(edges, root) {
+  const distance = /* @__PURE__ */ new Map([[root, 0]]);
+  const queue = [root];
+  while (queue.length > 0) {
+    const at = queue.shift();
+    const next = (distance.get(at) ?? 0) + 1;
+    for (const to of edges.get(at) ?? []) {
+      if (distance.has(to)) continue;
+      distance.set(to, next);
+      queue.push(to);
+    }
+  }
+  return distance;
+}
+function objectVocabulary(sf) {
+  const found = /* @__PURE__ */ new Map();
+  const visit = (node) => {
+    if (import_typescript2.default.isVariableDeclaration(node) && import_typescript2.default.isIdentifier(node.name)) {
+      let initializer = node.initializer;
+      while (initializer && (import_typescript2.default.isAsExpression(initializer) || import_typescript2.default.isParenthesizedExpression(initializer) || import_typescript2.default.isSatisfiesExpression(initializer))) {
+        initializer = initializer.expression;
+      }
+      if (initializer && import_typescript2.default.isObjectLiteralExpression(initializer)) {
+        const paths = /* @__PURE__ */ new Map();
+        for (const member of initializer.properties) {
+          if (import_typescript2.default.isPropertyAssignment(member) && import_typescript2.default.isIdentifier(member.name) && import_typescript2.default.isStringLiteral(member.initializer)) {
+            paths.set(member.name.text, member.initializer.text);
+          }
+        }
+        if (paths.size > 0) found.set(node.name.text, paths);
+      }
+    }
+    import_typescript2.default.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found;
+}
+function localConstants(sf) {
+  const found = /* @__PURE__ */ new Map();
+  const visit = (node) => {
+    if (import_typescript2.default.isVariableDeclaration(node) && import_typescript2.default.isIdentifier(node.name) && node.initializer && !found.has(node.name.text)) {
+      found.set(node.name.text, node.initializer);
+    }
+    import_typescript2.default.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found;
+}
+function evaluatePath(node, vocabulary, constants, depth = 0) {
+  if (!node || depth > MAX_HOPS) return null;
+  if (import_typescript2.default.isStringLiteral(node) || import_typescript2.default.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  if (import_typescript2.default.isParenthesizedExpression(node) || import_typescript2.default.isAsExpression(node)) return evaluatePath(node.expression, vocabulary, constants, depth + 1);
+  if (import_typescript2.default.isPropertyAccessExpression(node) && import_typescript2.default.isIdentifier(node.expression)) {
+    return vocabulary.get(node.expression.text)?.get(node.name.text) ?? null;
+  }
+  if (import_typescript2.default.isIdentifier(node)) {
+    const declared = constants.get(node.text);
+    return declared ? evaluatePath(declared, vocabulary, constants, depth + 1) : null;
+  }
+  if (import_typescript2.default.isTemplateExpression(node)) {
+    let out = node.head.text;
+    for (const span of node.templateSpans) {
+      const part = evaluatePath(span.expression, vocabulary, constants, depth + 1);
+      if (part === null) return null;
+      out += part + span.literal.text;
+    }
+    return out;
+  }
+  if (import_typescript2.default.isCallExpression(node) && node.arguments.length === 1) {
+    const inner = evaluatePath(node.arguments[0], vocabulary, constants, depth + 1);
+    return inner !== null && inner.startsWith("/") ? inner : null;
+  }
+  return null;
+}
+function isDynamicPath(path) {
+  return path.split("/").some((segment) => segment.startsWith(":"));
+}
+function groupPrefix(node, vocabulary, constants) {
+  const prefixes = [];
+  let at = node.parent;
+  while (at) {
+    if (import_typescript2.default.isCallExpression(at) && import_typescript2.default.isPropertyAccessExpression(at.expression) && at.expression.name.text === "group") {
+      const [options] = at.arguments;
+      if (options && import_typescript2.default.isObjectLiteralExpression(options)) {
+        for (const property of options.properties) {
+          if (import_typescript2.default.isPropertyAssignment(property) && import_typescript2.default.isIdentifier(property.name) && property.name.text === "prefix") {
+            const value = evaluatePath(property.initializer, vocabulary, constants);
+            if (value) prefixes.unshift(value.replace(/\/+$/, ""));
+          }
+        }
+      }
+    }
+    at = at.parent;
+  }
+  return prefixes.join("");
+}
+function joinPath(prefix, path) {
+  if (prefix === "") return path;
+  return path === "/" ? prefix : `${prefix}${path}`;
+}
+function routeRows(sf, vocabulary = objectVocabulary(sf)) {
+  const constants = localConstants(sf);
+  const rows = [];
+  const push = (pathNode, component, pageName, prefix) => {
+    const raw = evaluatePath(pathNode, vocabulary, constants);
+    if (raw === "*") return;
+    const path = raw === null ? null : joinPath(prefix, raw);
+    rows.push({ path, component, pageName, source: pathNode ? pathNode.getText(sf) : "<no path>", dynamic: path === null ? false : isDynamicPath(path) });
+  };
+  const visit = (node) => {
+    if (import_typescript2.default.isCallExpression(node) && import_typescript2.default.isPropertyAccessExpression(node.expression) && node.expression.name.text === "page" && node.arguments.length >= 2) {
+      const [pathNode, nameNode] = node.arguments;
+      const pageName = nameNode && (import_typescript2.default.isStringLiteral(nameNode) || import_typescript2.default.isNoSubstitutionTemplateLiteral(nameNode)) ? nameNode.text : null;
+      push(pathNode ?? null, null, pageName, groupPrefix(node, vocabulary, constants));
+    }
+    const opening = import_typescript2.default.isJsxSelfClosingElement(node) ? node : import_typescript2.default.isJsxElement(node) ? node.openingElement : null;
+    if (opening && import_typescript2.default.isIdentifier(opening.tagName) && opening.tagName.text === "Route") {
+      const attributes = /* @__PURE__ */ new Map();
+      for (const attribute of opening.attributes.properties) {
+        if (!import_typescript2.default.isJsxAttribute(attribute) || !import_typescript2.default.isIdentifier(attribute.name) || !attribute.initializer) continue;
+        const value = attribute.initializer;
+        attributes.set(attribute.name.text, import_typescript2.default.isJsxExpression(value) ? value.expression ?? null : import_typescript2.default.isStringLiteral(value) ? value : null);
+      }
+      const componentNode = attributes.get("component") ?? null;
+      const component = componentNode && import_typescript2.default.isIdentifier(componentNode) ? componentNode.text : null;
+      const pathNode = attributes.get("path") ?? null;
+      const declared = pathNode && import_typescript2.default.isIdentifier(pathNode) ? constants.get(pathNode.text) : void 0;
+      const list3 = declared && import_typescript2.default.isArrayLiteralExpression(declared) ? declared : pathNode;
+      const nodes = list3 && import_typescript2.default.isArrayLiteralExpression(list3) ? [...list3.elements] : [pathNode];
+      for (const one of nodes) push(one, component, null, "");
+    }
+    import_typescript2.default.forEachChild(node, visit);
+  };
+  visit(sf);
+  return rows;
+}
+function importedNames(sf) {
+  const found = /* @__PURE__ */ new Map();
+  const visit = (node) => {
+    if (import_typescript2.default.isImportDeclaration(node) && node.importClause && import_typescript2.default.isStringLiteral(node.moduleSpecifier)) {
+      const specifier = node.moduleSpecifier.text;
+      const clause = node.importClause;
+      if (clause.name) found.set(clause.name.text, specifier);
+      const bindings = clause.namedBindings;
+      if (bindings && import_typescript2.default.isNamespaceImport(bindings)) found.set(bindings.name.text, specifier);
+      if (bindings && import_typescript2.default.isNamedImports(bindings)) for (const element of bindings.elements) found.set(element.name.text, specifier);
+    }
+    import_typescript2.default.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found;
+}
+function jsxTagsIn(node) {
+  const found = /* @__PURE__ */ new Set();
+  const visit = (child) => {
+    const opening = import_typescript2.default.isJsxSelfClosingElement(child) ? child : import_typescript2.default.isJsxElement(child) ? child.openingElement : null;
+    if (opening && import_typescript2.default.isIdentifier(opening.tagName)) found.add(opening.tagName.text);
+    import_typescript2.default.forEachChild(child, visit);
+  };
+  visit(node);
+  return found;
+}
+function componentPages(component, sf, resolve4, seen = /* @__PURE__ */ new Set(), depth = 0) {
+  if (component === null || seen.has(component) || depth > MAX_HOPS) return [];
+  seen.add(component);
+  const imports = importedNames(sf);
+  const specifier = imports.get(component);
+  if (specifier !== void 0) {
+    const file = resolve4(specifier);
+    return file === null ? [] : [file];
+  }
+  const declaration = localConstants(sf).get(component);
+  if (!declaration) return [];
+  const pages = [];
+  for (const tag of jsxTagsIn(declaration)) {
+    if (tag === component) continue;
+    pages.push(...componentPages(tag, sf, resolve4, seen, depth + 1));
+  }
+  return [...new Set(pages)];
+}
+function pageFileFor(pageName, pageRoots, files) {
+  for (const root of pageRoots) {
+    for (const suffix of PAGE_SUFFIXES) {
+      const candidate = import_node_path7.posix.join(root, "pages", `${pageName}${suffix}`);
+      if (files.has(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+function anchorFor(union) {
+  const site = solveSite(union) ?? union.outputs[0] ?? null;
+  return site?.file ?? union.file;
+}
+function noRouteReason(anchor, tables) {
+  if (tables.every((t) => !t.found)) {
+    return `no route table could be read (${tables.map((t) => t.file).join(", ") || "none configured"}), so no route was derived. Check qa.routeTables`;
+  }
+  if (tables.every((t) => t.rows === 0)) return "the route tables hold no page row, so no route was derived for anything";
+  return `no page in the route tables reaches ${anchor} through the import graph. Either nothing mounts this code, or a component draws it that the tables reach in another way`;
+}
+function buildRouteMap(input) {
+  const aliases = input.aliases ?? {};
+  const { edges, parsed } = buildGraph(input.sources, aliases);
+  const files = new Set(parsed.keys());
+  const tables = input.tables.map((table) => {
+    const sf = parsed.get(table.file);
+    if (!sf) return { table, found: false, routes: [] };
+    const resolve4 = (specifier) => resolveSpecifier(table.file, specifier, files, aliases);
+    const routes = routeRows(sf).map((row) => ({
+      path: row.path,
+      dynamic: row.dynamic,
+      source: row.source,
+      pages: row.pageName !== null ? [pageFileFor(row.pageName, input.pageRoots, files)].filter((f) => f !== null) : componentPages(row.component, sf, resolve4)
+    }));
+    return { table, found: true, routes };
+  });
+  const summaries = tables.map(({ table, found, routes }) => ({
+    file: table.file,
+    surface: table.surface,
+    found,
+    rows: routes.length,
+    resolved: routes.filter((r) => r.path !== null).length,
+    unresolved: routes.filter((r) => r.path === null).map((r) => r.source),
+    pageless: routes.filter((r) => r.path !== null && r.pages.length === 0).map((r) => r.path)
+  }));
+  const reach = /* @__PURE__ */ new Map();
+  for (const { routes } of tables) for (const route of routes) for (const page of route.pages) if (!reach.has(page)) reach.set(page, reachFrom(edges, page));
+  const unions = input.inventory.unions.map((union) => {
+    const anchor = anchorFor(union);
+    const found = [];
+    for (const { table, routes } of tables) {
+      for (const route of routes) {
+        if (route.path === null) continue;
+        let best = null;
+        let page = null;
+        for (const candidate of route.pages) {
+          const distance = reach.get(candidate)?.get(anchor);
+          if (distance === void 0) continue;
+          if (best === null || distance < best) {
+            best = distance;
+            page = candidate;
+          }
+        }
+        if (best === null || page === null) continue;
+        found.push({ surface: table.surface, route: route.path, page, distance: best, dynamic: route.dynamic, reaches: reach.get(page)?.size ?? 0 });
+      }
+    }
+    found.sort((a, b) => a.distance - b.distance || a.reaches - b.reaches || a.surface.localeCompare(b.surface) || a.route.localeCompare(b.route));
+    return {
+      union: union.name,
+      kind: union.kind,
+      mechanism: mechanismFor(union.kind),
+      anchor,
+      members: union.members,
+      routes: found,
+      ...found.length === 0 ? { why: noRouteReason(anchor, summaries) } : {}
+    };
+  });
+  return { generated: input.generated, tables: summaries, unions };
+}
+function attachRoutes(inventory, map) {
+  const byName = new Map(map.unions.map((u) => [u.union, u]));
+  return {
+    ...inventory,
+    unions: inventory.unions.map((union) => {
+      const mine = byName.get(union.name);
+      if (!mine) return union;
+      const next = { ...union, routes: mine.routes };
+      if (mine.why === void 0) delete next.why;
+      else next.why = mine.why;
+      return next;
+    })
+  };
+}
+function aliasesFromTsconfig(text, dir) {
+  const parsed = import_typescript2.default.parseConfigFileTextToJson("tsconfig.json", text);
+  const options = parsed.config?.compilerOptions;
+  const base = import_node_path7.posix.join(dir, options?.baseUrl ?? ".");
+  const out = {};
+  for (const [key, targets] of Object.entries(options?.paths ?? {})) {
+    const [target] = targets;
+    if (target === void 0) continue;
+    const alias = key.replace(/\/\*$/, "");
+    out[alias] = import_node_path7.posix.normalize(import_node_path7.posix.join(base, target.replace(/\/\*$/, "")));
+  }
+  return out;
+}
+function renderRouteSummary(map) {
+  const out = [];
+  for (const table of map.tables) {
+    if (!table.found) {
+      out.push(`${table.file}  ${table.surface}  not found`);
+      continue;
+    }
+    const extra = [
+      table.unresolved.length > 0 ? `unresolved: ${table.unresolved.join(", ")}` : "",
+      table.pageless.length > 0 ? `no page module: ${table.pageless.join(", ")}` : ""
+    ].filter(Boolean);
+    out.push(`${table.file}  ${table.surface}  ${table.resolved} of ${table.rows} route(s) resolved${extra.length > 0 ? `; ${extra.join("; ")}` : ""}`);
+  }
+  out.push("");
+  for (const union of map.unions) {
+    out.push(`${union.union}  (${union.kind}, ${union.mechanism ?? "no mechanism"})  ${union.anchor}`);
+    if (union.routes.length === 0) out.push(`    no route: ${union.why ?? "none"}`);
+    for (const route of union.routes.slice(0, 8)) {
+      out.push(`    ${route.surface.padEnd(8)} ${route.route.padEnd(28)} ${route.dynamic ? "dynamic " : "        "}d=${route.distance}  ${route.page ?? ""}`);
+    }
+    if (union.routes.length > 8) out.push(`    and ${union.routes.length - 8} more`);
+  }
+  return out.join("\n");
+}
+var import_node_path7, import_typescript2, MAX_HOPS, CANDIDATES, PAGE_SUFFIXES;
+var init_delivery = __esm({
+  "src/states/services/delivery.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_path7 = require("path");
+    import_typescript2 = __toESM(require("typescript"), 1);
+    init_inventory();
+    init_scan();
+    MAX_HOPS = 4;
+    CANDIDATES = ["", ".ts", ".tsx", ".mts", "/index.ts", "/index.tsx", "/index.mts"];
+    PAGE_SUFFIXES = [".page.tsx", ".page.ts", ".page.mts", ".page.jsx"];
+  }
+});
+
+// src/states/services/project.mts
+function readAliases(projectRoot2, clientRoots) {
+  const aliases = {};
+  for (const root of clientRoots) {
+    for (const dir of [root, import_node_path8.posix.dirname(root)]) {
+      for (const name of TSCONFIG_NAMES) {
+        const path = (0, import_node_path8.join)(projectRoot2, dir, name);
+        if (!(0, import_node_fs6.existsSync)(path)) continue;
+        for (const [alias, target] of Object.entries(aliasesFromTsconfig((0, import_node_fs6.readFileSync)(path, "utf8"), dir))) aliases[alias] ??= target;
+      }
+    }
+  }
+  return aliases;
+}
+function scanStates(projectRoot2, config, generated) {
+  const scanned = scanProject(projectRoot2, { clientRoots: config.clientRoots, typeRoots: config.typeRoots, generated });
+  const tables = normaliseTables(config.routeTables);
+  const known = new Set(scanned.sources.map((s) => s.file));
+  const tableSources = tables.filter((t) => !known.has(t.file) && (0, import_node_fs6.existsSync)((0, import_node_path8.join)(projectRoot2, t.file))).map((t) => ({ file: t.file, text: (0, import_node_fs6.readFileSync)((0, import_node_path8.join)(projectRoot2, t.file), "utf8") }));
+  const map = buildRouteMap({
+    inventory: scanned.inventory,
+    sources: [...scanned.sources, ...tableSources],
+    tables,
+    pageRoots: config.clientRoots,
+    aliases: readAliases(projectRoot2, config.clientRoots),
+    generated
+  });
+  return { inventory: attachRoutes(scanned.inventory, map), problems: scanned.problems, map };
+}
+var import_node_fs6, import_node_path8, STATES_FILE, TSCONFIG_NAMES;
+var init_project2 = __esm({
+  "src/states/services/project.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_fs6 = require("fs");
+    import_node_path8 = require("path");
+    init_delivery();
+    init_scan();
+    STATES_FILE = ".lw/qa/states.json";
+    TSCONFIG_NAMES = ["tsconfig.json", "tsconfig.app.json"];
+  }
+});
+
+// src/states/services/check.mts
+function c1Findings(inventory, problems) {
+  const findings = [];
+  for (const union of inventory.unions) {
+    if (union.kind !== "neither") continue;
+    findings.push({
+      rule: "C1",
+      union: union.name,
+      file: union.file,
+      line: union.line,
+      message: `${union.file}:${union.line} ${union.name} is neither an input nor an output, so no trigger reaches its ${union.members.length} state(s). Give a component a prop of this type, return it from an exported function, or mark it @qa-states ignore <reason>.`
+    });
+  }
+  for (const problem of problems) {
+    if (problem.code === "invalid-shape") continue;
+    findings.push({ rule: "C1", union: problem.union, file: problem.file, line: problem.line, message: problem.message });
+  }
+  return findings;
+}
+function c4Findings(inventory) {
+  const findings = [];
+  for (const union of inventory.unions) {
+    if (union.kind === "neither") continue;
+    if ((union.routes ?? []).length > 0) continue;
+    if (union.inputs.some((site) => site.component !== null)) continue;
+    findings.push({
+      rule: "C4",
+      union: union.name,
+      file: union.file,
+      line: union.line,
+      message: `${union.file}:${union.line} ${union.name} has no route and no mount: ${union.why ?? "no route table row reaches it"}. Add its page to the route table, or give a component a prop of this type so /__states can mount it.`
+    });
+  }
+  return findings;
+}
+var init_check = __esm({
+  "src/states/services/check.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_project2();
+  }
+});
+
+// src/states/services/forge.mts
+async function captureForged(seed, member, ctx) {
+  const started = ctx.now();
+  const id = `${seed.union}.${member}`;
+  const rel = statePath(ctx.slug, id, "forged", "json");
+  const file = import_node_path9.posix.join(ctx.reportDir, rel);
+  const artifact = {
+    union: seed.union,
+    member,
+    via: seed.via,
+    provenance: "forged",
+    fields: seed.fields,
+    reason: seed.reason,
+    note: FORGE_CAVEAT
+  };
+  (0, import_node_fs7.mkdirSync)((0, import_node_path9.dirname)(file), { recursive: true });
+  (0, import_node_fs7.writeFileSync)(file, `${JSON.stringify(artifact, null, 2)}
+`);
+  await ctx.record({ file, kind: "log", row: id });
+  return {
+    id,
+    union: seed.union,
+    member,
+    ok: true,
+    subject: null,
+    context: null,
+    provenance: "forged",
+    // No feature function runs over a forged seed. Null is "not checked", never "it agreed".
+    verified: null,
+    error: null,
+    expect: `forged seed via ${seed.via}: a live apply renders ${seed.union}=${member}. Not proven here.`,
+    ms: ctx.now() - started
+  };
+}
+var import_node_fs7, import_node_path9, FORGE_CAVEAT;
+var init_forge = __esm({
+  "src/states/services/forge.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_fs7 = require("fs");
+    import_node_path9 = require("path");
+    init_inventory();
+    FORGE_CAVEAT = "A forged capture records the inferred seed only. A live apply needs a running app on the real route to render and photograph the state.";
+  }
+});
+
+// src/states/services/loop.mts
+function reasonOf(row) {
+  return FAIL_REASONS.includes(row?.reason) ? row?.reason : "crashed";
+}
+function parseInventory(text, source) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (cause) {
+    throw new LaunchwrightError("qa.states.inventory", `${source} is not JSON. Run "lw qa states scan" again.`, { cause, context: { source } });
+  }
+  const errors = validateInventory(parsed);
+  if (errors.length > 0) {
+    throw new LaunchwrightError("qa.states.inventory", `The inventory in ${source} is invalid, ${errors.length} problem(s):
+${errors.map((e) => `  ${e}`).join("\n")}`, {
+      context: { source, errors }
+    });
+  }
+  return parsed;
+}
+function unionFiles(union) {
+  const files = /* @__PURE__ */ new Set([union.file]);
+  for (const site of union.inputs) {
+    files.add(site.file);
+    if (site.componentFile) files.add(site.componentFile);
+  }
+  for (const site of union.outputs) files.add(site.file);
+  return [...files].filter(Boolean).sort();
+}
+function narrowInventory(inv, paths) {
+  const files = new Set(paths.files ?? []);
+  const dirs = (paths.dirs ?? []).filter(Boolean).map((d) => d.replace(/\/+$/, ""));
+  const touches = (path) => files.has(path) || dirs.some((dir) => path.startsWith(`${dir}/`));
+  const kept = [];
+  const dropped = [];
+  for (const union of inv.unions) {
+    if (unionFiles(union).some(touches)) kept.push(union);
+    else dropped.push(union.name);
+  }
+  return { inventory: { ...inv, unions: kept }, kept: kept.map((u) => u.name), dropped };
+}
+function neitherUnions(inv) {
+  return inv.unions.filter((union) => union.kind === "neither");
+}
+function subjectLabel(union) {
+  for (const site of union.inputs) if (site.component) return site.component;
+  for (const site of union.outputs) if (site.fn) return site.fn;
+  for (const site of union.inputs) if (site.interface) return site.interface;
+  return union.file.split("/").pop() ?? union.name;
+}
+function issueFor(union) {
+  const members = union.members.map((m) => `\`${m}\``).join(" ");
+  const title = `qa states: \`${union.name}\` is neither an input nor an output`;
+  const body = [
+    `File: \`${union.file}:${union.line}\``,
+    `Members (${union.members.length}): ${members}`,
+    "",
+    `\`${union.name}\` is an exported closed union, so the QA state run counts its ${union.members.length} members.`,
+    "It can reach none of them. No field of a props type holds the type, so a mount cannot set it.",
+    "No function returns it, so the solver has nothing to run. The state exists only inside a conditional.",
+    "",
+    "Declare it in one of two ways:",
+    "",
+    `- give the component that branches on it a prop of type \`${union.name}\`, which makes it an input; or`,
+    `- move the conditional into an exported function that returns \`${union.name}\`, which makes it an output.`,
+    "",
+    "Or mark it `@qa-states ignore <reason>` when nothing can ever render it.",
+    "",
+    "Found by `lw qa states scan`."
+  ].join("\n");
+  return { title, body };
+}
+function refusalLines(inventory, rows) {
+  const lines = [];
+  for (const union of neitherUnions(inventory)) {
+    lines.push(
+      `${union.name} (${union.file}) is neither an input nor an output: nothing takes it and nothing returns it, so no mechanism can reach its ${union.members.length} member(s). The state exists only inside a conditional, and the fix is to declare it.`
+    );
+  }
+  for (const row of rows) {
+    if (row.ok) continue;
+    const reason = reasonOf(row);
+    if (reason === "no-mechanism") continue;
+    lines.push(`${row.id}: ${refusalFor(row)}.`);
+  }
+  return lines;
+}
+function parseResults(text) {
+  const attempts = [];
+  const malformed = [];
+  for (const line of text.split("\n")) {
+    if (line.trim() === "") continue;
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      malformed.push(line.slice(0, 200));
+      continue;
+    }
+    if (parsed && typeof parsed === "object" && typeof parsed.id === "string") attempts.push(parsed);
+    else malformed.push(line.slice(0, 200));
+  }
+  return { attempts, malformed };
+}
+function mergeRows(captures, attempts, options = {}) {
+  const notRun = options.notRun ?? {};
+  const blocked = options.blocked ?? {};
+  const byId2 = /* @__PURE__ */ new Map();
+  for (const attempt of attempts) byId2.set(attempt.id, attempt);
+  const rows = [];
+  const claimed = /* @__PURE__ */ new Set();
+  for (const capture of captures) {
+    const attempt = byId2.get(capture.id);
+    if (attempt) {
+      claimed.add(capture.id);
+      rows.push({ ...capture, ...attempt, ok: attempt.ok === true, reported: true });
+      continue;
+    }
+    const blockedWhy = blocked[capture.union];
+    const notRunWhy = capture.mechanism === null ? void 0 : notRun[capture.mechanism];
+    if (capture.mechanism === null) rows.push({ ...capture, ok: false, reported: false, reason: "no-mechanism" });
+    else if (blockedWhy !== void 0) rows.push({ ...capture, ok: false, reported: false, reason: "blocked", why: blockedWhy });
+    else if (notRunWhy !== void 0) rows.push({ ...capture, ok: false, reported: false, reason: "not-run", why: notRunWhy });
+    else rows.push({ ...capture, ok: false, reported: false, reason: "crashed", error: UNREPORTED });
+  }
+  for (const attempt of attempts) {
+    if (claimed.has(attempt.id)) continue;
+    rows.push({ ...attempt, ok: attempt.ok === true, reported: true, extra: true });
+  }
+  return rows;
+}
+function cell(text) {
+  return String(text ?? "").replace(/\r?\n/g, " ").replace(/\|/g, "\\|").trim();
+}
+function provenanceLabel(provenance) {
+  if (provenance === "live") return null;
+  if (provenance && PROVENANCE.includes(provenance)) return `(${provenance})`;
+  return "(provenance not reported)";
+}
+function verifiedCell(row) {
+  if (row.verified === true) return row.answered ? `yes (${cell(row.answered)})` : "yes";
+  if (row.verified === false) return "no";
+  return "not verified";
+}
+function stateCell(union, row) {
+  if (row.member === null) return "`null` (the function returned nothing)";
+  if (row.member !== void 0) return cell(row.member);
+  const key = row.id.startsWith(`${union.name}.`) ? row.id.slice(union.name.length + 1) : row.id;
+  return cell(key.replace(/#/g, ", ").replace(/-/g, " "));
+}
+function orderRows(union, rows) {
+  const planned = rows.filter((row) => !row.extra);
+  const extras = rows.filter((row) => row.extra);
+  const taken = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const row of planned) {
+    out.push(row);
+    if (row.member === null || row.member === void 0) continue;
+    for (const extra of extras) {
+      if (taken.has(extra) || !extra.id.startsWith(`${union.name}.${row.member}#`)) continue;
+      taken.add(extra);
+      out.push(extra);
+    }
+  }
+  for (const extra of extras) if (!taken.has(extra)) out.push(extra);
+  return out;
+}
+function refusalFor(row) {
+  const reason = reasonOf(row);
+  if (reason === "unreachable") return `no candidate produced it (tried ${(row.fieldsTried ?? []).join(", ") || "nothing"})`;
+  if (reason === "identical") return `identical to ${row.sameAs ?? "another member"}: the DOM diff is empty`;
+  if (reason === "state-mismatch") return `intended ${row.intended ?? row.member ?? "?"}, the function answered ${row.actual ?? "?"}`;
+  if (reason === "unmountable") return `cannot mount ${row.component ?? "the component"}: ${row.missingProp ?? "missing prop not reported"}`;
+  if (reason === "blocked" || reason === "not-run") return row.why ?? row.error ?? SENTENCES[reason];
+  return row.error ?? SENTENCES[reason];
+}
+function unionOf(inventory, id) {
+  let best = null;
+  for (const union of inventory.unions) {
+    if (!id.startsWith(`${union.name}.`)) continue;
+    if (!best || union.name.length > best.name.length) best = union;
+  }
+  return best;
+}
+function renderReport(args) {
+  const { inventory, rows, slug, narrowedBy = null, notRun = {} } = args;
+  const out = [];
+  const totals = { covered: 0, planned: 0 };
+  out.push(`## State coverage${slug ? `: ${slug}` : ""}`);
+  out.push("");
+  if (narrowedBy) out.push(`Narrowed to ${narrowedBy}: ${inventory.unions.length} union(s) its files declare or consume.`);
+  out.push(
+    "A shot marked `(intercepted)` comes through a rewritten API response: the component is real and the data is synthetic. `(mounted)` is the harness drawing the component directly. A shot with no label comes from live data."
+  );
+  for (const [mechanism, why] of Object.entries(notRun)) {
+    out.push("");
+    out.push(`Mechanism \`${mechanism}\` did not run: ${why}. Every capture it owns is uncovered below.`);
+  }
+  out.push("");
+  for (const union of inventory.unions) {
+    const mine = rows.filter((row) => row.id.startsWith(`${union.name}.`));
+    const { covered, planned } = coverageFor(union, mine);
+    totals.covered += covered;
+    totals.planned += planned;
+    out.push(`### ${subjectLabel(union)}: ${union.name}, ${covered} of ${planned} renderings`);
+    out.push("");
+    out.push("| State | Shot | Expect | Verified |");
+    out.push("|---|---|---|---|");
+    for (const row of orderRows(union, mine)) {
+      const label = provenanceLabel(row.provenance);
+      const shot = row.ok ? [row.subject ? `![${cell(row.id)}](${row.subject})` : "shot, but no path reported", label].filter(Boolean).join(" ") : "not shot";
+      const expect = row.ok ? cell(row.expect ?? "-") : cell(refusalFor(row));
+      out.push(`| ${stateCell(union, row)} | ${shot} | ${expect || "-"} | ${verifiedCell(row)} |`);
+    }
+    out.push("");
+  }
+  const orphans = rows.filter((row) => row.extra && !unionOf(inventory, row.id));
+  if (orphans.length > 0) {
+    out.push("### Reported by the runner, and in no union of the inventory");
+    out.push("");
+    for (const row of orphans) out.push(`- \`${cell(row.id)}\` (${row.ok ? "ok" : "failed"})`);
+    out.push("");
+  }
+  out.push(`${inventory.unions.length} union(s), ${totals.covered} of ${totals.planned} renderings.`);
+  return out.join("\n");
+}
+function groupFor(union, captures, defaultLeg) {
+  const delivery = union.delivery ?? null;
+  const missing = [];
+  const route = typeof delivery?.route === "string" && delivery.route !== "" ? delivery.route : null;
+  if (!route) missing.push("route");
+  const intercept = delivery?.intercept;
+  if (typeof intercept?.url !== "string" || intercept.url === "") missing.push("intercept.url");
+  if (typeof intercept?.container !== "string" || intercept.container === "") missing.push("intercept.container");
+  const settle = delivery?.settle ?? null;
+  if (!settle || !settle.selector && !settle.artwork && !settle.video && !settle.busy) missing.push("settle");
+  const site = solveSite(union);
+  const shape = site?.params[0]?.shape ?? null;
+  if (!site) missing.push("verify");
+  else if (!shape) missing.push("solve.shape");
+  if (captures.length === 1 && delivery?.contrast === void 0) missing.push("contrast");
+  if (missing.length > 0 || !delivery || !route || !intercept || !settle || !site || !shape) return { group: null, missing };
+  const group = {
+    id: union.name,
+    union: union.name,
+    leg: delivery.leg ?? defaultLeg,
+    route,
+    provenance: "intercepted",
+    intercept: { url: intercept.url, container: intercept.container },
+    settle,
+    ...delivery.act ? { act: delivery.act } : {},
+    verify: { module: site.file, export: site.fn, async: site.async, ...delivery.verifyArgs ? { args: delivery.verifyArgs } : {} },
+    solve: {
+      shape,
+      pivots: { literals: site.pivots.literals, names: site.pivots.names },
+      ...delivery.pivotModules ? { pivotModules: delivery.pivotModules } : {},
+      ...typeof delivery.limit === "number" ? { limit: delivery.limit } : {},
+      ...typeof delivery.batchSize === "number" ? { batchSize: delivery.batchSize } : {}
+    },
+    members: captures.map((capture) => ({ id: capture.id, member: capture.member, expect: capture.member })),
+    ...delivery.contrast === void 0 ? {} : { contrast: delivery.contrast },
+    ...delivery.diffRoot ? { diffRoot: delivery.diffRoot } : {},
+    ...delivery.ignoreAttributes ? { ignoreAttributes: delivery.ignoreAttributes } : {},
+    ...typeof delivery.maxSubjectAreaRatio === "number" ? { maxSubjectAreaRatio: delivery.maxSubjectAreaRatio } : {}
+  };
+  return { group, missing: null };
+}
+function groupsFor(inventory, captures, defaultLeg) {
+  const groups = [];
+  const blocked = {};
+  for (const union of inventory.unions) {
+    const mine = captures.filter((capture) => capture.union === union.name && capture.mechanism === "solve");
+    if (mine.length === 0) continue;
+    const built = groupFor(union, mine, defaultLeg);
+    if (built.group) groups.push(built.group);
+    else {
+      blocked[union.name] = `no capture group could be built. Missing: ${built.missing.join(", ")}. A delivery descriptor beside the union in the inventory gives the route, the intercept and the settle. The shape and the pivots come from the scan`;
+    }
+  }
+  return { groups, blocked };
+}
+function mergeDelivery(inventory, delivery) {
+  return { ...inventory, unions: inventory.unions.map((union) => delivery[union.name] ? { ...union, delivery: delivery[union.name] } : union) };
+}
+function buildPlan(args) {
+  const { inventory: scanned, narrow } = args;
+  const inventory = narrow ? narrowInventory(scanned, narrow).inventory : scanned;
+  return {
+    generated: args.generated,
+    slug: args.slug,
+    source: args.source,
+    scanned: scanned.unions.length,
+    narrowedBy: narrow?.label ?? null,
+    inventory,
+    captures: plannedCaptures(inventory)
+  };
+}
+function renderPlan(plan2) {
+  const out = [];
+  const byMechanism = /* @__PURE__ */ new Map();
+  for (const capture of plan2.captures) {
+    const key = capture.mechanism ?? "none";
+    byMechanism.set(key, (byMechanism.get(key) ?? 0) + 1);
+  }
+  out.push(`inventory  ${plan2.source}, ${plan2.scanned} union(s)`);
+  if (plan2.narrowedBy) out.push(`narrowed   ${plan2.inventory.unions.length} of ${plan2.scanned} union(s) kept by ${plan2.narrowedBy}`);
+  const parts = ["mount", "solve", "none"].filter((key) => byMechanism.has(key)).map((key) => `${key} ${byMechanism.get(key)}`).join(", ");
+  out.push(`captures   ${plan2.captures.length}${parts ? ` (${parts})` : ""}`);
+  out.push("");
+  for (const union of plan2.inventory.unions) {
+    const mine = plan2.captures.filter((capture) => capture.union === union.name);
+    out.push(
+      `  ${union.name.padEnd(24)} ${union.kind.padEnd(8)} ${String(mechanismFor(union.kind) ?? "none").padEnd(6)} ${String(mine.length).padStart(3)} capture(s)  ${union.file}`
+    );
+  }
+  return out;
+}
+function renderNeither(inventory) {
+  const neither = neitherUnions(inventory);
+  if (neither.length === 0) return [];
+  const out = ["", `REFUSED   ${neither.length} union(s) are neither an input nor an output (spec 2.14 rule C1). Each one earns an issue:`];
+  for (const union of neither) {
+    const issue = issueFor(union);
+    out.push("", `-- issue ${"-".repeat(60)}`, issue.title, "", issue.body, "-".repeat(69));
+  }
+  return out;
+}
+function finishRun(args) {
+  const { plan: plan2, attempts, malformed = [], notRun = {}, blocked = {} } = args;
+  const rows = mergeRows(plan2.captures, attempts, { notRun, blocked });
+  const lines = [renderReport({ inventory: plan2.inventory, rows, slug: plan2.slug, narrowedBy: plan2.narrowedBy, notRun })];
+  for (const line of malformed) lines.push(`malformed result line, not read: ${line}`);
+  const refusals = refusalLines(plan2.inventory, rows);
+  if (refusals.length > 0) {
+    lines.push("", `REFUSED   ${refusals.length}, and each one is a failure:`);
+    for (const line of refusals) lines.push(`  ${line}`);
+  }
+  const neither = renderNeither(plan2.inventory);
+  lines.push(...neither);
+  const notRunCount = Object.keys(notRun).length;
+  const failed = rows.filter((row) => !row.ok).length;
+  const refused = neitherUnions(plan2.inventory).length;
+  lines.push("");
+  if (failed === 0 && refused === 0 && notRunCount === 0) lines.push("every planned rendering was captured.");
+  else lines.push(`${failed} rendering(s) uncovered, ${refused} union(s) refused, ${notRunCount} mechanism(s) not run.`);
+  return { lines, code: failed > 0 || refused > 0 || notRunCount > 0 ? 1 : 0, rows };
+}
+var SENTENCES, UNREPORTED;
+var init_loop = __esm({
+  "src/states/services/loop.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_kernel();
+    init_inventory();
+    SENTENCES = {
+      unreachable: "no candidate input produced this member",
+      identical: "the DOM diff between two members is empty",
+      "state-mismatch": "the feature's own function disagreed after injection",
+      unmountable: "the harness could not mount the component",
+      "no-mechanism": "the union is neither an input nor an output, so nothing can reach it",
+      blocked: "the run could not build a capture group the runner would accept",
+      "not-run": "the mechanism was not run",
+      crashed: "the capture failed, and the runner reported only a sentence"
+    };
+    UNREPORTED = "the runner exited without reporting this capture";
+  }
+});
+
+// src/states-host/names.mts
+var QA_STATES_PATH, QA_STATES_ATTRIBUTE;
+var init_names = __esm({
+  "src/states-host/names.mts"() {
+    "use strict";
+    init_cjs_shims();
+    QA_STATES_PATH = "/__states";
+    QA_STATES_ATTRIBUTE = "data-qa-states";
+  }
+});
+
+// src/states/services/mount.mts
+function mountUrl(options) {
+  const query = new URLSearchParams({ c: options.component, props: JSON.stringify(options.props ?? {}) });
+  if (options.width !== null && options.width !== void 0) query.set("w", String(options.width));
+  return `${STATES_HARNESS_PATH}?${query.toString()}`;
+}
+function siteFor(union, hints) {
+  if (typeof hints.component === "string") return union.inputs.find((s) => s.component === hints.component) ?? union.inputs[0] ?? null;
+  return union.inputs.find((s) => s.component !== null) ?? union.inputs[0] ?? null;
+}
+function resolveMount(inventory, capture, defaultLeg) {
+  const union = inventory.unions.find((u) => u.name === capture.union);
+  const hints = union?.mount ?? {};
+  const base = {
+    capture,
+    leg: hints.leg ?? defaultLeg,
+    component: null,
+    field: null,
+    props: {},
+    width: hints.width ?? null,
+    settle: hints.settle ?? DEFAULT_MOUNT_SETTLE,
+    refusal: null
+  };
+  const refuse = (refusal) => ({ ...base, refusal });
+  if (union === void 0) return refuse(new CaptureFailure("blocked", `the inventory has no union named ${capture.union}`));
+  if (union.kind !== "input" && union.kind !== "both") {
+    return refuse(new CaptureFailure("blocked", `${union.name} is "${union.kind}", and a mount reaches an input`));
+  }
+  const site = siteFor(union, hints);
+  if (site === null) return refuse(new CaptureFailure("blocked", `${union.name} says it is an input and the scan found no field that holds it`));
+  const component = hints.component ?? site.component;
+  if (component === null) {
+    const where = union.inputs.map((s) => `${s.interface}.${s.field} (${s.file})`).join(", ");
+    return refuse(
+      new CaptureFailure(
+        "unmountable",
+        `no component takes ${union.name}: it is a field of ${where}, and none of those is the props type of a component. Give the component that branches on it a prop of type ${union.name}`,
+        { missingProp: `${site.interface}.${site.field} (no component takes this union)` }
+      )
+    );
+  }
+  if (capture.member === null) {
+    return refuse(
+      new CaptureFailure("unmountable", `${union.name} asks for the rendering of an absent ${site.field}, and the harness always sets it. The null rendering belongs to the solver`, {
+        missingProp: `${site.field} (cannot be made absent through the harness)`
+      })
+    );
+  }
+  const props = { ...hints.props, ...hints.members?.[memberKey(capture.member)], [site.field]: capture.member };
+  return { ...base, component, field: site.field, props };
+}
+function harnessStateExpression() {
+  return `(() => {
+  const harness = document.querySelector(${JSON.stringify(`[${HARNESS_ATTRIBUTE}]`)}) !== null;
+  const panel = document.querySelector(${JSON.stringify(HARNESS_ERROR)});
+  const reason = panel === null ? null : panel.querySelector('p') || panel;
+  const error = reason === null ? null : (reason.textContent || '').replace(/\\s+/g, ' ').trim();
+  const roots = document.querySelectorAll(${JSON.stringify(SUBJECT_CHILD)}).length;
+  return { harness, error, roots };
+})()`;
+}
+async function harnessState(session) {
+  if (!session.evaluate) return null;
+  return await session.evaluate(harnessStateExpression());
+}
+function expectation(r) {
+  const extra = Object.keys(r.props).filter((key) => key !== r.field);
+  return `${r.component} drawn with ${r.field}="${r.capture.member}"${extra.length === 0 ? "" : ` (plus ${extra.join(", ")})`}`;
+}
+async function captureMounted(session, r, ctx) {
+  const started = ctx.now();
+  const result = {
+    id: r.capture.id,
+    union: r.capture.union,
+    member: r.capture.member,
+    ok: false,
+    subject: null,
+    context: null,
+    provenance: "mounted",
+    // No feature function runs under a mount. Null is "not checked", never "it agreed".
+    verified: null,
+    error: null,
+    ms: 0,
+    ...r.component === null ? {} : { component: r.component }
+  };
+  try {
+    if (r.refusal !== null) throw r.refusal;
+    if (!session.evaluate) {
+      throw new CaptureFailure("blocked", "the target cannot evaluate in the page, so it cannot prove that the page is the state harness");
+    }
+    const url = mountUrl({ component: r.component, props: r.props, width: r.width });
+    await session.navigate(url);
+    try {
+      await session.settle(r.settle);
+    } catch (e) {
+      const late = await harnessState(session);
+      if (late?.error) throw new CaptureFailure("unmountable", `${r.component} did not mount: ${late.error}`, { missingProp: condense(late.error) }, e);
+      if (late && !late.harness) throw new CaptureFailure("blocked", `${url} drew no state harness: no element carries ${HARNESS_ATTRIBUTE}. The harness is on the client dev server only`, {}, e);
+      throw e;
+    }
+    const state = await harnessState(session);
+    if (!state?.harness) {
+      throw new CaptureFailure("blocked", `${url} drew no state harness: no element carries ${HARNESS_ATTRIBUTE}. The harness is on the client dev server only`);
+    }
+    if (state.error) throw new CaptureFailure("unmountable", `the harness refused ${url}: ${state.error}`, { missingProp: condense(state.error) });
+    if (state.roots === 0) throw new CaptureFailure("crashed", `${r.component} mounted and drew no element`);
+    const held = await session.currentRoute();
+    if (!held.startsWith(STATES_HARNESS_PATH)) throw new CaptureFailure("blocked", `the page left the harness for ${held}`);
+    const subject = statePath(ctx.slug, r.capture.id, "subject");
+    await session.screenshot(import_node_path10.posix.join(ctx.reportDir, subject));
+    await ctx.record({ file: import_node_path10.posix.join(ctx.reportDir, subject), kind: "screenshot", row: r.capture.id });
+    result.subject = subject;
+    result.expect = expectation(r);
+    result.ok = true;
+  } catch (e) {
+    result.error = errorText(e);
+    Object.assign(result, failureFields(e));
+  }
+  result.ms = ctx.now() - started;
+  return result;
+}
+var import_node_path10, STATES_HARNESS_PATH, HARNESS_ATTRIBUTE, SUBJECT_CHILD, HARNESS_ERROR, DEFAULT_MOUNT_SETTLE, memberKey, condense;
+var init_mount = __esm({
+  "src/states/services/mount.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_path10 = require("path");
+    init_names();
+    init_capture();
+    init_inventory();
+    STATES_HARNESS_PATH = QA_STATES_PATH;
+    HARNESS_ATTRIBUTE = QA_STATES_ATTRIBUTE;
+    SUBJECT_CHILD = "[data-qa-subject] > *";
+    HARNESS_ERROR = "[data-qa-states-error]";
+    DEFAULT_MOUNT_SETTLE = { selector: SUBJECT_CHILD, timeout: 1e4 };
+    memberKey = (member) => member === null ? "null" : member;
+    condense = (reason) => reason.length <= 120 ? reason : `${reason.slice(0, 117)}...`;
+  }
+});
+
+// src/services/changes.mts
+function git(repo, args, opts = {}) {
+  const res = (0, import_node_child_process.spawnSync)("git", args, { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: GIT_TIMEOUT_MS, killSignal: "SIGKILL" });
+  if (res.error) throw new LaunchwrightError("qa.git", `Cannot run git ${args.join(" ")}: ${res.error.message}`, { cause: res.error, context: { repo } });
+  if (res.status !== 0) {
+    if (opts.allowFail) return null;
+    throw new LaunchwrightError("qa.git", `git ${args.join(" ")} failed: ${(res.stderr ?? "").trim()}`, { context: { repo, args } });
+  }
+  return res.stdout;
+}
+var import_node_child_process, import_node_fs8, import_node_path11, RECORD, FIELD, LOG_FORMAT, GIT_TIMEOUT_MS;
+var init_changes = __esm({
+  "src/services/changes.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_child_process = require("child_process");
+    import_node_fs8 = require("fs");
+    import_node_path11 = require("path");
+    init_kernel();
+    RECORD = "";
+    FIELD = "";
+    LOG_FORMAT = `${RECORD}%H${FIELD}%h${FIELD}%cI${FIELD}%an${FIELD}%s`;
+    GIT_TIMEOUT_MS = 12e4;
+  }
+});
+
+// src/services/legs.mts
+function legDefinitions(config) {
+  const merged = new Map(Object.entries(DEFAULT_LEGS));
+  for (const [name, def] of Object.entries(config.legs ?? {})) {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+      throw new LaunchwrightError("qa.legs.name", `qa.legs.${name}: a leg name is kebab case, for example "tablet-web"`, {
+        context: { leg: name }
+      });
+    }
+    if (def === false) merged.delete(name);
+    else merged.set(name, def);
+  }
+  return [...merged].map(([name, def]) => ({ name, ...def }));
+}
+var CHROME_MAJOR, DESKTOP_USER_AGENT, DEFAULT_LEGS;
+var init_legs = __esm({
+  "src/services/legs.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_kernel();
+    CHROME_MAJOR = 145;
+    DESKTOP_USER_AGENT = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`;
+    DEFAULT_LEGS = Object.freeze({
+      desktop: {
+        surface: "web",
+        target: "playwright",
+        browser: "chromium",
+        viewport: { width: 1440, height: 900 },
+        deviceScaleFactor: 1,
+        userAgent: DESKTOP_USER_AGENT
+      },
+      "mobile-web": { surface: "web", target: "playwright", browser: "chromium", descriptor: "Pixel 7", userAgent: DESKTOP_USER_AGENT },
+      miniapp: { surface: "miniapp", target: "playwright", browser: "chromium", descriptor: "Pixel 7" },
+      "telegram-fake": { surface: "bot", target: "playwright", browser: "chromium", viewport: { width: 1280, height: 800 } },
+      "telegram-android": { surface: "miniapp", target: "android-adb" },
+      "safari-ios": { surface: "web", target: "ios-webkit" }
+    });
+  }
+});
+
+// src/services/manifest.mts
+var import_promises4;
+var init_manifest2 = __esm({
+  "src/services/manifest.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_promises4 = require("fs/promises");
+    init_kernel();
+    init_legs();
+    init_types();
   }
 });
 
@@ -854,6 +3944,59 @@ var init_png = __esm({
   }
 });
 
+// src/services/video.mts
+var import_node_child_process2, MIN_VIDEO_S;
+var init_video = __esm({
+  "src/services/video.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_child_process2 = require("child_process");
+    init_kernel();
+    MIN_VIDEO_S = 1;
+  }
+});
+
+// src/services/evidence.mts
+var init_evidence = __esm({
+  "src/services/evidence.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_ledger();
+    init_manifest2();
+    init_png();
+    init_video();
+  }
+});
+
+// src/services/runner.mts
+var import_node_fs9, import_promises5, import_node_path12;
+var init_runner = __esm({
+  "src/services/runner.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_fs9 = require("fs");
+    import_promises5 = require("fs/promises");
+    import_node_path12 = require("path");
+    init_kernel();
+    init_evidence();
+    init_ledger();
+    init_legs();
+    init_manifest2();
+    init_video();
+    init_mount();
+  }
+});
+
+// src/drivers/target/contract.mts
+var QA_TARGET_SPEC_VERSION;
+var init_contract2 = __esm({
+  "src/drivers/target/contract.mts"() {
+    "use strict";
+    init_cjs_shims();
+    QA_TARGET_SPEC_VERSION = "1";
+  }
+});
+
 // src/drivers/target/fake.mts
 function fakePng(width, height, flat = false) {
   const rgba = new Uint8Array(width * height * 4);
@@ -867,8 +4010,8 @@ function fakePng(width, height, flat = false) {
   return Buffer.from(encodePng(width, height, rgba));
 }
 function write(path, bytes2) {
-  (0, import_node_fs4.mkdirSync)((0, import_node_path4.dirname)(path), { recursive: true });
-  (0, import_node_fs4.writeFileSync)(path, bytes2);
+  (0, import_node_fs10.mkdirSync)((0, import_node_path13.dirname)(path), { recursive: true });
+  (0, import_node_fs10.writeFileSync)(path, bytes2);
 }
 function capabilityError(target, capability, what) {
   return new LaunchwrightError("qa.target.capability", `The ${target} target has no ${capability} capability, so it cannot ${what}.`, {
@@ -878,13 +4021,13 @@ function capabilityError(target, capability, what) {
 function createFakeTarget(opts = {}) {
   return new FakeTargetImpl(opts);
 }
-var import_node_fs4, import_node_path4, FAKE_SHOT_SIZE, FAKE_CLIP_MS, DEFAULT_CAPABILITIES, CLIP_BASE64, FAKE_CLIP, FakeSession, FakeTargetImpl;
+var import_node_fs10, import_node_path13, FAKE_SHOT_SIZE, FAKE_CLIP_MS, DEFAULT_CAPABILITIES, CLIP_BASE64, FAKE_CLIP, FakeSession, FakeTargetImpl;
 var init_fake2 = __esm({
   "src/drivers/target/fake.mts"() {
     "use strict";
     init_cjs_shims();
-    import_node_fs4 = require("fs");
-    import_node_path4 = require("path");
+    import_node_fs10 = require("fs");
+    import_node_path13 = require("path");
     init_kernel();
     init_png();
     init_contract2();
@@ -1047,18 +4190,6 @@ var init_fake2 = __esm({
   }
 });
 
-// src/services/video.mts
-var import_node_child_process, MIN_VIDEO_S;
-var init_video = __esm({
-  "src/services/video.mts"() {
-    "use strict";
-    init_cjs_shims();
-    import_node_child_process = require("child_process");
-    init_kernel();
-    MIN_VIDEO_S = 1;
-  }
-});
-
 // src/drivers/target/playwright.mts
 async function loadPlaywright() {
   try {
@@ -1123,13 +4254,13 @@ async function signIn(context, opts) {
 function createPlaywrightTarget(opts = {}) {
   return new PlaywrightTarget(opts);
 }
-var import_node_fs5, import_node_path5, PERSONA_SESSION_ROUTE, CAPABILITIES, MIN_CLIP_MS, importPlaywright, SETTLE_SCRIPTS, PlaywrightSession, PlaywrightTarget;
+var import_node_fs11, import_node_path14, PERSONA_SESSION_ROUTE, CAPABILITIES, MIN_CLIP_MS, importPlaywright, SETTLE_SCRIPTS, PlaywrightSession, PlaywrightTarget;
 var init_playwright = __esm({
   "src/drivers/target/playwright.mts"() {
     "use strict";
     init_cjs_shims();
-    import_node_fs5 = require("fs");
-    import_node_path5 = require("path");
+    import_node_fs11 = require("fs");
+    import_node_path14 = require("path");
     init_kernel();
     init_png();
     init_video();
@@ -1223,7 +4354,7 @@ var init_playwright = __esm({
               return;
           }
         } catch (err) {
-          if (err instanceof LaunchwrightError && err.code === "qa.target.act") throw err;
+          if (isCodedError(err) && err.code === "qa.target.act") throw err;
           throw this.fail("qa.target.act", `Leg ${this.opts.leg.name} could not run the act ${what}.`, err, { act: step });
         }
       }
@@ -1260,7 +4391,7 @@ var init_playwright = __esm({
         return relativeRoute(this.opts.baseUrl, this.page.url());
       }
       async screenshot(path) {
-        (0, import_node_fs5.mkdirSync)((0, import_node_path5.dirname)(path), { recursive: true });
+        (0, import_node_fs11.mkdirSync)((0, import_node_path14.dirname)(path), { recursive: true });
         const png = await this.page.screenshot({ path, animations: "disabled", fullPage: false });
         const size = pngSize(png);
         if (size === null) throw new LaunchwrightError("qa.target.screenshot", `Leg ${this.opts.leg.name} wrote a screenshot that is not a PNG: ${path}.`);
@@ -1268,7 +4399,7 @@ var init_playwright = __esm({
       }
       async startVideo(path) {
         if (this.videoPath !== null) throw new LaunchwrightError("qa.target.video", `Leg ${this.opts.leg.name} already records ${this.videoPath}.`);
-        (0, import_node_fs5.mkdirSync)((0, import_node_path5.dirname)(path), { recursive: true });
+        (0, import_node_fs11.mkdirSync)((0, import_node_path14.dirname)(path), { recursive: true });
         const size = this.page.viewportSize() ?? void 0;
         await this.page.screencast.start({ path, ...size ? { size } : {} });
         this.videoPath = path;
@@ -1286,7 +4417,7 @@ var init_playwright = __esm({
       async trace(path) {
         if (!this.tracing) return null;
         this.tracing = false;
-        (0, import_node_fs5.mkdirSync)((0, import_node_path5.dirname)(path), { recursive: true });
+        (0, import_node_fs11.mkdirSync)((0, import_node_path14.dirname)(path), { recursive: true });
         await this.context.tracing.stop({ path });
         return path;
       }
@@ -1422,6 +4553,331 @@ var init_tokens2 = __esm({
   }
 });
 
+// src/states/services/run.mts
+function gitRevision(cwd) {
+  const commit = git(cwd, ["rev-parse", "HEAD"], { allowFail: true })?.trim() || "none";
+  const status = git(cwd, ["status", "--porcelain"], { allowFail: true });
+  return { commit, dirty: (status ?? "").trim() !== "" };
+}
+function runClock(app, overrides = {}) {
+  return overrides.clock ?? (app ? app.get(CLOCK) : systemClock);
+}
+function runDeps(config, app, overrides = {}, extra = {}) {
+  const clock = runClock(app, overrides);
+  return {
+    clock,
+    targets: overrides.targets ?? (app ? app.get(QA_TARGETS) : createTargetRegistry(config, extra, clock)),
+    revision: overrides.revision ?? gitRevision
+  };
+}
+function legByName(config, name) {
+  const legs = legDefinitions(config);
+  const leg = legs.find((l) => l.name === name);
+  if (!leg) {
+    throw new LaunchwrightError("qa.legs.unknown", `No leg is named ${name}. Legs: ${legs.map((l) => l.name).join(", ")}.`, { context: { leg: name } });
+  }
+  return leg;
+}
+function ledgerRecorder(args) {
+  const entries = [];
+  const device = args.leg.device;
+  return {
+    async record({ file, kind, row }) {
+      entries.push(
+        await ledgerEntry(args.reportDir, {
+          path: (0, import_node_path15.relative)(args.reportDir, file).split("\\").join("/"),
+          kind,
+          capturedAt: args.clock.date().toISOString(),
+          commit: args.revision.commit,
+          dirty: args.revision.dirty,
+          leg: args.leg.name,
+          target: args.leg.target,
+          ...device === void 0 ? {} : { device },
+          provenance: args.provenance,
+          row,
+          attempt: 1
+        })
+      );
+    },
+    async flush() {
+      const batch = entries.splice(0);
+      if (batch.length > 0) await appendLedger(args.reportDir, args.slug, batch);
+      return batch.length;
+    }
+  };
+}
+var import_node_path15;
+var init_run = __esm({
+  "src/states/services/run.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_path15 = require("path");
+    init_kernel();
+    init_changes();
+    init_ledger();
+    init_legs();
+    init_runner();
+    init_targets();
+    init_tokens2();
+  }
+});
+
+// src/commands/qa-states.mts
+function flag(args, name) {
+  return args.values[name] ?? null;
+}
+function list(value) {
+  return value === null ? void 0 : value.split(",").map((s) => s.trim()).filter(Boolean);
+}
+function writeJson(path, value) {
+  (0, import_node_fs12.mkdirSync)((0, import_node_path16.dirname)(path), { recursive: true });
+  (0, import_node_fs12.writeFileSync)(path, `${JSON.stringify(value, null, 2)}
+`);
+}
+function runFiles(cwd, slug) {
+  return { plan: (0, import_node_path16.join)(cwd, ".lw/qa/states", `${slug}.plan.json`), results: (0, import_node_path16.join)(cwd, ".lw/qa/states", `${slug}.results.jsonl`) };
+}
+function narrowOf(args) {
+  const files = list(flag(args, "files"));
+  const dirs = list(flag(args, "dirs"));
+  if (!files && !dirs) return void 0;
+  return { ...files ? { files } : {}, ...dirs ? { dirs } : {}, label: [...files ?? [], ...dirs ?? []].join(", ") };
+}
+function freshInventory(cwd, config, generated) {
+  const { inventory } = scanStates(cwd, config, generated);
+  const deliveryPath = (0, import_node_path16.join)(cwd, DELIVERY_FILE);
+  if (!(0, import_node_fs12.existsSync)(deliveryPath)) return inventory;
+  let delivery;
+  try {
+    delivery = JSON.parse((0, import_node_fs12.readFileSync)(deliveryPath, "utf8"));
+  } catch (cause) {
+    throw new LaunchwrightError("qa.states.delivery", `${DELIVERY_FILE} is not JSON`, { cause, context: { path: deliveryPath } });
+  }
+  return mergeDelivery(inventory, delivery);
+}
+function scan(args, opts, config, generated) {
+  const result = scanStates(opts.cwd, config, generated);
+  const findings = [...c1Findings(result.inventory, result.problems), ...c4Findings(result.inventory)];
+  writeJson((0, import_node_path16.join)(opts.cwd, STATES_FILE), { ...result.inventory, tables: result.map.tables, problems: result.problems });
+  if (args.switches.has("json")) {
+    opts.out(JSON.stringify(result.inventory, null, 2));
+  } else {
+    const states = result.inventory.unions.reduce((n, u) => n + u.members.length, 0);
+    const kinds = /* @__PURE__ */ new Map();
+    for (const u of result.inventory.unions) kinds.set(u.kind, (kinds.get(u.kind) ?? 0) + 1);
+    const tally = [...kinds].sort().map(([k, n]) => `${n} ${k}`).join(", ");
+    opts.out(`${result.inventory.unions.length} unions, ${states} states (${tally || "none"}), ${result.inventory.ignored.length} ignored -> ${STATES_FILE}`);
+    for (const line of renderRouteSummary(result.map).split("\n")) opts.out(line);
+    for (const g of result.inventory.ignored) opts.out(`ignored ${g.name} (${g.file}:${g.line}): ${g.reason}`);
+  }
+  for (const p of result.problems.filter((p2) => p2.code === "invalid-shape")) opts.err(`warning ${p.file}:${p.line}: ${p.message}`);
+  for (const f of findings) opts.err(`${f.rule} ${f.message}`);
+  for (const line of renderNeither(result.inventory)) opts.err(line);
+  return findings.length > 0 ? 1 : 0;
+}
+function plan(args, opts, config, generated) {
+  const narrow = narrowOf(args);
+  const built = buildPlan({ inventory: freshInventory(opts.cwd, config, generated), source: "lw qa states scan", slug: DEFAULT_SLUG, generated, ...narrow ? { narrow } : {} });
+  if (args.switches.has("json")) opts.out(JSON.stringify(built, null, 2));
+  else for (const line of renderPlan(built)) opts.out(line);
+  for (const line of renderNeither(built.inventory)) opts.err(line);
+  return built.inventory.unions.some((u) => u.kind === "neither") ? 1 : 0;
+}
+async function infer(args, opts, config, generated, app, overrides) {
+  const result = scanStates(opts.cwd, config, generated);
+  const findings = [...c1Findings(result.inventory, result.problems), ...c4Findings(result.inventory)];
+  const names = new Set(result.inventory.unions.map((u) => u.name));
+  const unreachable2 = new Set(findings.map((f) => f.union).filter((name) => names.has(name)));
+  const proposals = inferSeeds(result.inventory, unreachable2);
+  if (args.switches.has("apply")) return await applyForged(args, opts, config, proposals, app, overrides);
+  if (args.switches.has("json")) {
+    opts.out(JSON.stringify(proposals, null, 2));
+    return 0;
+  }
+  if (proposals.length === 0) {
+    opts.out("no declared state needs a forged seed: every state has a seed or a route.");
+    return 0;
+  }
+  opts.out(`${proposals.length} state(s) no seed and no route reaches. Each one earns a forged seed:`);
+  opts.out("A seed runs through the app services where they exist. A direct row write is the last resort, and records provenance forged.");
+  for (const p of proposals) {
+    opts.out(`  ${p.union} (${p.file}): members ${p.members.join(", ")}.`);
+    opts.out(`    seed via ${p.via}, provenance ${p.provenance}: ${p.reason}.`);
+    if (p.fields.length > 0) opts.out(`    fields: ${p.fields.map((f) => `${f.interface}.${f.field}`).join(", ")}.`);
+  }
+  return 0;
+}
+async function applyForged(args, opts, config, proposals, app, overrides) {
+  if (proposals.length === 0) {
+    opts.out("no declared state needs a forged seed: every state has a seed or a route.");
+    return 0;
+  }
+  const slug = flag(args, "slug") ?? DEFAULT_FORGE_SLUG;
+  const leg = legByName(config, flag(args, "leg") ?? DEFAULT_LEG);
+  const reportDir = (0, import_node_path16.resolve)(opts.cwd, config.reportDir);
+  const clock = runClock(app, overrides);
+  const revision = (overrides.revision ?? gitRevision)(opts.cwd);
+  const recorder = ledgerRecorder({ reportDir, slug, leg, provenance: "forged", clock, revision });
+  const now = () => clock.now();
+  for (const seed of proposals) {
+    for (const member of seed.members) await captureForged(seed, member, { reportDir, slug, record: recorder.record, now });
+  }
+  const recorded = await recorder.flush();
+  opts.out(`applied ${proposals.length} forged seed(s): ${recorded} forged capture(s) -> ${(0, import_node_path16.relative)(opts.cwd, reportPaths(reportDir, slug).ledger)}`);
+  opts.out(FORGE_CAVEAT);
+  for (const seed of proposals) opts.out(`  forged ${seed.union} via ${seed.via}: members ${seed.members.join(", ")}.`);
+  return 0;
+}
+async function run(args, opts, config, deps) {
+  const slug = flag(args, "slug") ?? DEFAULT_SLUG;
+  const leg = legByName(config, flag(args, "leg") ?? DEFAULT_LEG);
+  const base = flag(args, "base") ?? config.baseUrls[leg.surface];
+  if (!base) {
+    throw new LaunchwrightError("qa.states.usage", `run needs --base <url> or qa.baseUrls.${leg.surface}: the origin of the client dev server that serves /__states`);
+  }
+  const generated = deps.clock.date().toISOString();
+  const narrow = narrowOf(args);
+  const built = buildPlan({ inventory: freshInventory(opts.cwd, config, generated), source: "lw qa states scan", slug, generated, ...narrow ? { narrow } : {} });
+  for (const line of renderPlan(built)) opts.out(line);
+  const reportDir = (0, import_node_path16.resolve)(opts.cwd, config.reportDir);
+  const files = runFiles(opts.cwd, slug);
+  const notRun = {};
+  const target = deps.targets.get(leg.target);
+  const ready = await target.ready(leg);
+  const { groups, blocked } = groupsFor(built.inventory, built.captures, leg.name);
+  const attempts = [];
+  const revision = deps.revision(opts.cwd);
+  const now = () => deps.clock.now();
+  if (!ready.ready) {
+    const why = `the target ${leg.target} of leg ${leg.name} is not ready: ${ready.reason ?? "no reason given"}`;
+    notRun.mount = why;
+    notRun.solve = why;
+  } else {
+    let session = null;
+    try {
+      session = await target.open({ leg, baseUrl: base, outDir: (0, import_node_path16.join)(reportPaths(reportDir, slug).assets, "states") });
+      const mounted = ledgerRecorder({ reportDir, slug, leg, provenance: "mounted", clock: deps.clock, revision });
+      for (const capture of built.captures.filter((c) => c.mechanism === "mount")) {
+        attempts.push(await captureMounted(session, resolveMount(built.inventory, capture, leg.name), { reportDir, slug, record: mounted.record, now }));
+      }
+      await mounted.flush();
+      if (groups.length > 0) {
+        const page = session.routable?.();
+        if (!page) notRun.solve = `the target ${leg.target} gives no routable page, so no response can be intercepted`;
+        else {
+          const intercepted = ledgerRecorder({ reportDir, slug, leg, provenance: "intercepted", clock: deps.clock, revision });
+          for (const group of groups) {
+            const { results, notes } = await captureGroup(session, page, group, { projectRoot: opts.cwd, reportDir, slug, record: intercepted.record, now });
+            for (const note of notes) opts.out(`${group.union}: ${note}`);
+            attempts.push(...results);
+          }
+          await intercepted.flush();
+        }
+      }
+    } finally {
+      await session?.close();
+    }
+  }
+  writeJson(files.plan, { ...built, notRun, blocked });
+  (0, import_node_fs12.mkdirSync)((0, import_node_path16.dirname)(files.results), { recursive: true });
+  (0, import_node_fs12.writeFileSync)(files.results, attempts.map((a) => `${JSON.stringify(a)}
+`).join(""));
+  opts.out("");
+  opts.out(`plan       ${files.plan}`);
+  opts.out(`results    ${files.results}`);
+  const finished = finishRun({ plan: built, attempts, notRun, blocked });
+  for (const line of finished.lines) opts.out(line);
+  return finished.code;
+}
+function report(args, opts) {
+  const slug = flag(args, "slug") ?? DEFAULT_SLUG;
+  const files = runFiles(opts.cwd, slug);
+  if (!(0, import_node_fs12.existsSync)(files.plan)) throw new LaunchwrightError("qa.states.no-run", `No state run of slug ${slug}: ${files.plan} does not exist. Run "lw qa states run" first.`);
+  const saved = JSON.parse((0, import_node_fs12.readFileSync)(files.plan, "utf8"));
+  const inventory = parseInventory(JSON.stringify(saved.inventory), files.plan);
+  const { attempts, malformed } = parseResults((0, import_node_fs12.existsSync)(files.results) ? (0, import_node_fs12.readFileSync)(files.results, "utf8") : "");
+  const finished = finishRun({ plan: { ...saved, inventory }, attempts, malformed, notRun: saved.notRun ?? {}, blocked: saved.blocked ?? {} });
+  for (const line of finished.lines) opts.out(line);
+  return finished.code;
+}
+function createStatesCommand(overrides = {}) {
+  return {
+    name: "states",
+    summary: "Scan the state unions, plan, capture mounted and intercepted states, report coverage",
+    async run(args, opts) {
+      const [action, ...rest] = args;
+      if (!action || !["scan", "plan", "infer", "run", "report"].includes(action)) {
+        for (const line of USAGE) opts.err(line);
+        return 2;
+      }
+      const config = qaConfigOf(opts.config);
+      const cwd = (0, import_node_path16.isAbsolute)(opts.cwd) ? opts.cwd : (0, import_node_path16.resolve)(opts.cwd);
+      const inner = { ...opts, cwd };
+      try {
+        const flags = parseCommandArgs(FLAGS[action], rest);
+        const app = opts.app;
+        if (action === "run") return await run(flags, inner, config, runDeps(config, app, overrides, opts.targets));
+        if (action === "report") return report(flags, inner);
+        const generated = runClock(app, overrides).date().toISOString();
+        if (action === "scan") return scan(flags, inner, config, generated);
+        if (action === "infer") return await infer(flags, inner, config, generated, app, overrides);
+        return plan(flags, inner, config, generated);
+      } catch (cause) {
+        if (!isCodedError(cause)) throw cause;
+        opts.err(`lw qa states ${action}: ${cause.code}: ${cause.message}`);
+        return cause instanceof UsageError || cause.code === "qa.states.usage" ? 2 : 1;
+      }
+    }
+  };
+}
+var import_node_fs12, import_node_path16, USAGE, DEFAULT_SLUG, DEFAULT_FORGE_SLUG, DEFAULT_LEG, DELIVERY_FILE, FLAGS, qa_states_default;
+var init_qa_states = __esm({
+  "src/commands/qa-states.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_fs12 = require("fs");
+    import_node_path16 = require("path");
+    init_kernel();
+    init_args();
+    init_config3();
+    init_ledger();
+    init_capture();
+    init_check();
+    init_delivery();
+    init_forge();
+    init_inventory();
+    init_loop();
+    init_mount();
+    init_project2();
+    init_run();
+    USAGE = [
+      "usage: lw qa states <scan|plan|infer|run|report> [options]",
+      "  scan   [--json]                       read the client roots, derive each route, write .lw/qa/states.json.",
+      "                                        Exit 1 on a union no trigger reaches (rules C1, C4) or a bad ignore tag",
+      "  plan   [--json] [--files a,b] [--dirs d,e]   print every planned capture. Exit 1 on a neither union",
+      "  infer  [--json] [--apply] [--slug <slug>] [--leg <name>]   propose a forged seed for each state no seed and no",
+      "                                        route reaches, or with --apply record each as a forged capture (spec 2.5)",
+      "  run    [--base <url>] [--leg <name>] [--slug <slug>] [--files a,b] [--dirs d,e]   (--base defaults to qa.baseUrls of the leg surface)",
+      "                                        mount each input member at /__states and intercept each output member.",
+      "                                        Images go to <reportDir>/assets/<slug>/states/ and into the ledger",
+      "  report [--slug <slug>]                the coverage matrix of the last run of the slug",
+      "A delivery descriptor file .lw/qa/delivery.json (union name to { route, intercept, settle }) feeds intercepted capture."
+    ];
+    DEFAULT_SLUG = "states";
+    DEFAULT_FORGE_SLUG = "forged";
+    DEFAULT_LEG = "desktop";
+    DELIVERY_FILE = ".lw/qa/delivery.json";
+    FLAGS = {
+      scan: { values: [], switches: ["json"] },
+      plan: { values: ["files", "dirs"], switches: ["json"] },
+      infer: { values: ["slug", "leg"], switches: ["json", "apply"] },
+      run: { values: ["base", "leg", "slug", "files", "dirs"], switches: [] },
+      report: { values: ["slug"], switches: [] }
+    };
+    qa_states_default = createStatesCommand();
+  }
+});
+
 // src/world/services/clock.mts
 var ShiftClock;
 var init_clock2 = __esm({
@@ -1522,64 +4978,13 @@ var init_mime = __esm({
   }
 });
 
-// src/kernel/services/fs.mts
-function isMissing(err) {
-  return MISSING.has(String(err?.code));
-}
-function readError(path, cause) {
-  return new LaunchwrightError("kernel.fs.read", `Cannot read ${path}`, { cause, context: { path } });
-}
-async function readTextOrNull(path) {
-  try {
-    return await (0, import_promises2.readFile)(path, "utf8");
-  } catch (cause) {
-    if (isMissing(cause)) return null;
-    throw readError(path, cause);
-  }
-}
-async function readJsonOrNull(path) {
-  const text = await readTextOrNull(path);
-  if (text === null) return null;
-  try {
-    return JSON.parse(text);
-  } catch (cause) {
-    throw new LaunchwrightError("kernel.fs.json", `${path} is not valid JSON`, { cause, context: { path } });
-  }
-}
-function sha256(data) {
-  return (0, import_node_crypto2.createHash)("sha256").update(data).digest("hex");
-}
-var import_node_crypto2, import_node_fs6, import_promises2, import_smol_toml2, MISSING;
-var init_fs = __esm({
-  "src/kernel/services/fs.mts"() {
-    "use strict";
-    init_cjs_shims();
-    import_node_crypto2 = require("crypto");
-    import_node_fs6 = require("fs");
-    import_promises2 = require("fs/promises");
-    import_smol_toml2 = require("smol-toml");
-    init_errors();
-    MISSING = /* @__PURE__ */ new Set(["ENOENT", "ENOTDIR"]);
-  }
-});
-
-// src/services/types.mts
-var INTAKE_DIR;
-var init_types = __esm({
-  "src/services/types.mts"() {
-    "use strict";
-    init_cjs_shims();
-    INTAKE_DIR = ".lw/qa/intake";
-  }
-});
-
 // src/services/records.mts
 function recordId(...parts) {
   return parts.map((p) => String(p).replace(/^@/, "").replace(/[^A-Za-z0-9_.-]+/g, "-")).join("-");
 }
 function recordDir(root, id) {
   if (!ID.test(id) || id.includes("..")) throw new LaunchwrightError("qa.intake.id", `The intake id "${id}" has a character outside A-Z, a-z, 0-9, _, . and -.`, { context: { id } });
-  return (0, import_node_path6.join)(root, INTAKE_DIR, id);
+  return (0, import_node_path17.join)(root, INTAKE_DIR, id);
 }
 function fileName(index, m) {
   const ext = extensionOf(m.mime);
@@ -1621,8 +5026,8 @@ function issueMarkdown(issue) {
 }
 async function writeIssue(root, draft) {
   const dir = recordDir(root, draft.id);
-  await (0, import_promises3.rm)(dir, { recursive: true, force: true });
-  await (0, import_promises3.mkdir)((0, import_node_path6.join)(dir, "assets"), { recursive: true });
+  await (0, import_promises6.rm)(dir, { recursive: true, force: true });
+  await (0, import_promises6.mkdir)((0, import_node_path17.join)(dir, "assets"), { recursive: true });
   const { media, ...rest } = draft;
   const issue = { ...rest, attachments: [], skipped: [] };
   let index = 0;
@@ -1633,7 +5038,7 @@ async function writeIssue(root, draft) {
     }
     index += 1;
     const path = `assets/${fileName(index, m)}`;
-    await (0, import_promises3.writeFile)((0, import_node_path6.join)(dir, path), m.data);
+    await (0, import_promises6.writeFile)((0, import_node_path17.join)(dir, path), m.data);
     issue.attachments.push({
       kind: m.kind,
       path,
@@ -1643,26 +5048,26 @@ async function writeIssue(root, draft) {
       from: m.from
     });
   }
-  await (0, import_promises3.writeFile)((0, import_node_path6.join)(dir, "issue.json"), `${JSON.stringify(issue, null, 2)}
+  await (0, import_promises6.writeFile)((0, import_node_path17.join)(dir, "issue.json"), `${JSON.stringify(issue, null, 2)}
 `);
-  await (0, import_promises3.writeFile)((0, import_node_path6.join)(dir, "issue.md"), issueMarkdown(issue));
+  await (0, import_promises6.writeFile)((0, import_node_path17.join)(dir, "issue.md"), issueMarkdown(issue));
   return issue;
 }
 async function readIssue(root, id) {
-  const file = (0, import_node_path6.join)(recordDir(root, id), "issue.json");
+  const file = (0, import_node_path17.join)(recordDir(root, id), "issue.json");
   let text;
   try {
-    text = await (0, import_promises3.readFile)(file, "utf8");
+    text = await (0, import_promises6.readFile)(file, "utf8");
   } catch (cause) {
     throw new LaunchwrightError("qa.intake.missing", `No intake record ${id}. Run lw qa intake list.`, { cause, context: { id } });
   }
   return JSON.parse(text);
 }
 async function listIssues(root) {
-  const base = (0, import_node_path6.join)(root, INTAKE_DIR);
+  const base = (0, import_node_path17.join)(root, INTAKE_DIR);
   let names;
   try {
-    names = (await (0, import_promises3.readdir)(base, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name);
+    names = (await (0, import_promises6.readdir)(base, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name);
   } catch (cause) {
     if (cause.code === "ENOENT") return [];
     throw new LaunchwrightError("qa.intake.read", `Cannot read ${INTAKE_DIR}.`, { cause });
@@ -1671,7 +5076,7 @@ async function listIssues(root) {
   for (const name of names.sort()) {
     let text;
     try {
-      text = await (0, import_promises3.readFile)((0, import_node_path6.join)(base, name, "issue.json"), "utf8");
+      text = await (0, import_promises6.readFile)((0, import_node_path17.join)(base, name, "issue.json"), "utf8");
     } catch (cause) {
       if (cause.code === "ENOENT") continue;
       throw new LaunchwrightError("qa.intake.read", `Cannot read the intake record ${name}.`, { cause });
@@ -1680,13 +5085,13 @@ async function listIssues(root) {
   }
   return out;
 }
-var import_promises3, import_node_path6, ID;
+var import_promises6, import_node_path17, ID;
 var init_records = __esm({
   "src/services/records.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises3 = require("fs/promises");
-    import_node_path6 = require("path");
+    import_promises6 = require("fs/promises");
+    import_node_path17 = require("path");
     init_kernel();
     init_fs();
     init_mime();
@@ -1696,13 +5101,13 @@ var init_records = __esm({
 });
 
 // src/services/contract.mts
-var import_promises4, import_node_path7;
+var import_promises7, import_node_path18;
 var init_contract3 = __esm({
   "src/services/contract.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises4 = require("fs/promises");
-    import_node_path7 = require("path");
+    import_promises7 = require("fs/promises");
+    import_node_path18 = require("path");
     init_kernel();
     init_fs();
   }
@@ -1718,80 +5123,40 @@ var init_botfather = __esm({
 });
 
 // src/services/bot-store.mts
-var import_promises5, import_node_path8;
+var import_promises8, import_node_path19;
 var init_bot_store = __esm({
   "src/services/bot-store.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises5 = require("fs/promises");
-    import_node_path8 = require("path");
+    import_promises8 = require("fs/promises");
+    import_node_path19 = require("path");
     init_kernel();
     init_fs();
   }
 });
 
 // src/services/comments.mts
-var import_node_crypto3, import_promises6, import_node_path9;
+var import_node_crypto3, import_promises9, import_node_path20;
 var init_comments = __esm({
   "src/services/comments.mts"() {
     "use strict";
     init_cjs_shims();
     import_node_crypto3 = require("crypto");
-    import_promises6 = require("fs/promises");
-    import_node_path9 = require("path");
+    import_promises9 = require("fs/promises");
+    import_node_path20 = require("path");
     init_kernel();
     init_fs();
   }
 });
 
-// src/services/legs.mts
-var CHROME_MAJOR, DESKTOP_USER_AGENT, DEFAULT_LEGS;
-var init_legs = __esm({
-  "src/services/legs.mts"() {
-    "use strict";
-    init_cjs_shims();
-    init_kernel();
-    CHROME_MAJOR = 145;
-    DESKTOP_USER_AGENT = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`;
-    DEFAULT_LEGS = Object.freeze({
-      desktop: {
-        surface: "web",
-        target: "playwright",
-        browser: "chromium",
-        viewport: { width: 1440, height: 900 },
-        deviceScaleFactor: 1,
-        userAgent: DESKTOP_USER_AGENT
-      },
-      "mobile-web": { surface: "web", target: "playwright", browser: "chromium", descriptor: "Pixel 7", userAgent: DESKTOP_USER_AGENT },
-      miniapp: { surface: "miniapp", target: "playwright", browser: "chromium", descriptor: "Pixel 7" },
-      "telegram-fake": { surface: "bot", target: "playwright", browser: "chromium", viewport: { width: 1280, height: 800 } },
-      "telegram-android": { surface: "miniapp", target: "android-adb" },
-      "safari-ios": { surface: "web", target: "ios-webkit" }
-    });
-  }
-});
-
-// src/services/manifest.mts
-var import_promises7;
-var init_manifest2 = __esm({
-  "src/services/manifest.mts"() {
-    "use strict";
-    init_cjs_shims();
-    import_promises7 = require("fs/promises");
-    init_kernel();
-    init_legs();
-    init_types();
-  }
-});
-
 // src/services/comment-export.mts
-var import_promises8, import_node_path10;
+var import_promises10, import_node_path21;
 var init_comment_export = __esm({
   "src/services/comment-export.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises8 = require("fs/promises");
-    import_node_path10 = require("path");
+    import_promises10 = require("fs/promises");
+    import_node_path21 = require("path");
     init_kernel();
     init_manifest2();
     init_png();
@@ -1799,14 +5164,14 @@ var init_comment_export = __esm({
 });
 
 // src/services/comment-server.mts
-var import_node_http, import_promises9, import_node_path11, MAX_BODY;
+var import_node_http, import_promises11, import_node_path22, MAX_BODY;
 var init_comment_server = __esm({
   "src/services/comment-server.mts"() {
     "use strict";
     init_cjs_shims();
     import_node_http = require("http");
-    import_promises9 = require("fs/promises");
-    import_node_path11 = require("path");
+    import_promises11 = require("fs/promises");
+    import_node_path22 = require("path");
     init_kernel();
     init_comments();
     init_mime();
@@ -1828,8 +5193,12 @@ var init_src = __esm({
     "use strict";
     init_cjs_shims();
     init_extensions();
+    init_qa_command();
+    init_qa_states();
     init_config3();
     init_contract2();
+    init_playwright();
+    init_errors();
     init_provider2();
     init_mime();
     init_png();
@@ -1841,6 +5210,7 @@ var init_src = __esm({
     init_comment_export();
     init_comment_server();
     init_score();
+    init_targets();
     init_types();
     init_video();
     init_tokens2();
@@ -1951,80 +5321,12 @@ var init_media = __esm({
   }
 });
 
-// src/kernel/services/args.mts
-function optionsOf(spec) {
-  const options = {};
-  for (const name of spec.values ?? []) options[name] = { type: "string" };
-  for (const name of spec.switches ?? []) options[name] = { type: "boolean" };
-  for (const name of spec.repeated ?? []) options[name] = { type: "string", multiple: true };
-  return options;
-}
-function asUsage(cause) {
-  const code = cause?.code;
-  if (typeof code !== "string" || !code.startsWith("ERR_PARSE_ARGS_")) return cause;
-  return new UsageError(String(cause.message), { cause, context: { code } });
-}
-function markNegatives(argv, valueFlags) {
-  const out = [];
-  for (let i = 0; i < argv.length; i++) {
-    const word = argv[i];
-    if (word === "--") return [...out, ...argv.slice(i)];
-    const next = argv[i + 1];
-    if (word.startsWith("--") && valueFlags.has(word.slice(2)) && next !== void 0) {
-      out.push(...NEGATIVE.test(next) ? [`${word}=${next}`] : [word, next]);
-      i++;
-    } else out.push(NEGATIVE.test(word) ? NEGATIVE_MARK + word : word);
-  }
-  return out;
-}
-function unmark(word) {
-  return word.startsWith(NEGATIVE_MARK) ? word.slice(NEGATIVE_MARK.length) : word;
-}
-function parseCommandArgs(spec, argv) {
-  const valueFlags = /* @__PURE__ */ new Set([...spec.values ?? [], ...spec.repeated ?? []]);
-  let parsed;
-  try {
-    parsed = (0, import_node_util.parseArgs)({ args: markNegatives(argv, valueFlags), options: optionsOf(spec), strict: true, allowPositionals: true });
-  } catch (cause) {
-    throw asUsage(cause);
-  }
-  const found = parsed.values;
-  const values = {};
-  for (const name of spec.values ?? []) {
-    const value = found[name];
-    if (typeof value === "string") values[name] = value;
-  }
-  const switches = new Set((spec.switches ?? []).filter((name) => found[name] === true));
-  const lists = {};
-  for (const name of spec.repeated ?? []) {
-    const value = found[name];
-    lists[name] = Array.isArray(value) ? value : [];
-  }
-  return { positionals: parsed.positionals.map(unmark), values, switches, lists };
-}
-var import_node_util, UsageError, NEGATIVE, NEGATIVE_MARK;
-var init_args = __esm({
-  "src/kernel/services/args.mts"() {
-    "use strict";
-    init_cjs_shims();
-    import_node_util = require("util");
-    init_errors();
-    UsageError = class extends LaunchwrightError {
-      constructor(message, opts) {
-        super("kernel.usage", message, opts);
-      }
-    };
-    NEGATIVE = /^-\d+(\.\d+)?$/;
-    NEGATIVE_MARK = "\0";
-  }
-});
-
 // src/intake/services/gh.mts
 function ghRunner(opts = {}) {
   const bin = opts.bin ?? "gh";
   const timeoutMs = opts.timeoutMs ?? GH_TIMEOUT_MS;
-  return (args) => new Promise((resolve3, reject) => {
-    const child = (0, import_node_child_process2.spawn)(bin, args, { stdio: ["ignore", "pipe", "pipe"], timeout: timeoutMs, killSignal: "SIGKILL" });
+  return (args) => new Promise((resolve4, reject) => {
+    const child = (0, import_node_child_process3.spawn)(bin, args, { stdio: ["ignore", "pipe", "pipe"], timeout: timeoutMs, killSignal: "SIGKILL" });
     const out = [];
     const err = [];
     child.stdout.on("data", (b) => out.push(b));
@@ -2038,16 +5340,16 @@ function ghRunner(opts = {}) {
         reject(new LaunchwrightError("qa.intake.github.timeout", `gh ${command} ran past ${timeoutMs} ms and was stopped.`, { context: { command, timeoutMs } }));
         return;
       }
-      resolve3({ code: code ?? 1, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") });
+      resolve4({ code: code ?? 1, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") });
     });
   });
 }
-var import_node_child_process2, GH_TIMEOUT_MS, spawnGh;
+var import_node_child_process3, GH_TIMEOUT_MS, spawnGh;
 var init_gh = __esm({
   "src/intake/services/gh.mts"() {
     "use strict";
     init_cjs_shims();
-    import_node_child_process2 = require("child_process");
+    import_node_child_process3 = require("child_process");
     init_kernel();
     GH_TIMEOUT_MS = 6e4;
     spawnGh = ghRunner();
@@ -2397,7 +5699,7 @@ var init_telegram_mtproto = __esm({
                 ...first && sinceDate ? { offsetDate: Math.floor(sinceDate.getTime() / 1e3) } : {}
               });
             } catch (cause) {
-              if (cause instanceof LaunchwrightError) throw cause;
+              if (isCodedError(cause)) throw cause;
               throw new LaunchwrightError("qa.intake.telegram.read", `Cannot read the history of chat ${chat}. The session must be a member of the chat.`, { cause, context: { chat } });
             }
             for (const m of page) {
@@ -2450,7 +5752,7 @@ var init_telegram_mtproto = __esm({
         try {
           data = await tg.call("downloadMedia", m);
         } catch (cause) {
-          if (cause instanceof LaunchwrightError && cause.code === "telegram.mtproto.download") {
+          if (isCodedError(cause) && cause.code === "telegram.mtproto.download") {
             return { from, kind: kindOf(declared, voice), mime: declared, ...name ? { name } : {}, skipped: "unreachable" };
           }
           throw cause;
@@ -2468,7 +5770,7 @@ function redactToken(text, token2) {
   const stripped = token2 ? text.split(token2).join("[redacted]") : text;
   return stripped.replace(TOKEN_SHAPE, "[redacted]");
 }
-function reasonOf(status, errorCode) {
+function reasonOf2(status, errorCode) {
   const code = errorCode ?? status;
   if (status === 0) return "network";
   if (code === 429) return "rate_limited";
@@ -2501,7 +5803,7 @@ var init_bot_api = __esm({
       /** Telegram's own description, with any token removed. */
       description;
       constructor(method, failure, cause) {
-        const reason = reasonOf(failure.status, failure.error_code);
+        const reason = reasonOf2(failure.status, failure.error_code);
         const raw = failure.description ?? (failure.status === 0 ? "no answer from the Bot API" : `HTTP ${failure.status}`);
         super(`telegram.api.${reason}`, redactToken(`Bot API ${method} failed (${failure.error_code ?? failure.status}): ${raw}`), {
           cause,
@@ -2764,10 +6066,10 @@ function chatName(chat) {
   return recordId(chat);
 }
 function chatDir(root, chat) {
-  return (0, import_node_path12.join)(root, INTAKE_DIR, "telegram", chatName(chat));
+  return (0, import_node_path23.join)(root, INTAKE_DIR, "telegram", chatName(chat));
 }
 function cursorFile(root, chat) {
-  return (0, import_node_path12.join)(root, INTAKE_DIR, "telegram", `${chatName(chat)}.cursor`);
+  return (0, import_node_path23.join)(root, INTAKE_DIR, "telegram", `${chatName(chat)}.cursor`);
 }
 async function jsonOr(file, fallback) {
   return await readJsonOrNull(file) ?? fallback;
@@ -2780,16 +6082,16 @@ async function writeCursor(root, chat, driver, cursor) {
   const file = cursorFile(root, chat);
   const all = await jsonOr(file, {});
   all[driver] = cursor;
-  await (0, import_promises10.mkdir)((0, import_node_path12.join)(root, INTAKE_DIR, "telegram"), { recursive: true });
-  await (0, import_promises10.writeFile)(file, `${JSON.stringify(all, null, 2)}
+  await (0, import_promises12.mkdir)((0, import_node_path23.join)(root, INTAKE_DIR, "telegram"), { recursive: true });
+  await (0, import_promises12.writeFile)(file, `${JSON.stringify(all, null, 2)}
 `);
 }
 function readMessages(root, chat) {
-  return jsonOr((0, import_node_path12.join)(chatDir(root, chat), "messages.json"), []);
+  return jsonOr((0, import_node_path23.join)(chatDir(root, chat), "messages.json"), []);
 }
 async function stageBatch(root, chat, batch) {
   const dir = chatDir(root, chat);
-  await (0, import_promises10.mkdir)((0, import_node_path12.join)(dir, "media"), { recursive: true });
+  await (0, import_promises12.mkdir)((0, import_node_path23.join)(dir, "media"), { recursive: true });
   const all = new Map((await readMessages(root, chat)).map((m) => [m.id, m]));
   for (const item of batch.items) {
     const media = [];
@@ -2800,13 +6102,13 @@ async function stageBatch(root, chat, batch) {
         continue;
       }
       const file = `media/${recordId(item.id)}-${i + 1}.${extensionOf(m.mime)}`;
-      await (0, import_promises10.writeFile)((0, import_node_path12.join)(dir, file), data);
+      await (0, import_promises12.writeFile)((0, import_node_path23.join)(dir, file), data);
       media.push({ ...rest, file });
     }
     all.set(item.id, { ...item, media });
   }
   const messages = [...all.values()].sort(byId);
-  await (0, import_promises10.writeFile)((0, import_node_path12.join)(dir, "messages.json"), `${JSON.stringify(messages, null, 2)}
+  await (0, import_promises12.writeFile)((0, import_node_path23.join)(dir, "messages.json"), `${JSON.stringify(messages, null, 2)}
 `);
   return messages;
 }
@@ -2819,17 +6121,17 @@ function proposeGroups(chat, messages) {
     parent.set(id, at);
     return at;
   };
-  const join10 = (a, b) => {
+  const join16 = (a, b) => {
     const ra = find(a);
     const rb = find(b);
     if (ra !== rb) parent.set(rb, ra);
   };
   const lastOf = /* @__PURE__ */ new Map();
   for (const m of sorted) {
-    if (m.replyTo !== void 0 && parent.has(m.replyTo)) join10(m.replyTo, m.id);
+    if (m.replyTo !== void 0 && parent.has(m.replyTo)) join16(m.replyTo, m.id);
     const at = Date.parse(m.at);
     const prev = lastOf.get(m.author);
-    if (prev && at - prev.at < JOIN_GAP_MS) join10(prev.id, m.id);
+    if (prev && at - prev.at < JOIN_GAP_MS) join16(prev.id, m.id);
     lastOf.set(m.author, { id: m.id, at });
   }
   const groups = /* @__PURE__ */ new Map();
@@ -2840,14 +6142,14 @@ function proposeGroups(chat, messages) {
   return [...groups.values()].map((ids) => ({ title: `Telegram report ${chat}/${ids[0]} (${ids.length} ${ids.length === 1 ? "message" : "messages"})`, messages: ids }));
 }
 async function writeProposal(root, chat, groups) {
-  const file = (0, import_node_path12.join)(chatDir(root, chat), "groups.proposed.json");
-  await (0, import_promises10.mkdir)(chatDir(root, chat), { recursive: true });
-  await (0, import_promises10.writeFile)(file, `${JSON.stringify({ chat, groups }, null, 2)}
+  const file = (0, import_node_path23.join)(chatDir(root, chat), "groups.proposed.json");
+  await (0, import_promises12.mkdir)(chatDir(root, chat), { recursive: true });
+  await (0, import_promises12.writeFile)(file, `${JSON.stringify({ chat, groups }, null, 2)}
 `);
   return file;
 }
 async function readGroups(root, chat) {
-  const file = (0, import_node_path12.join)(chatDir(root, chat), "groups.json");
+  const file = (0, import_node_path23.join)(chatDir(root, chat), "groups.json");
   const raw = await jsonOr(file, null);
   if (raw === null) {
     throw new LaunchwrightError("qa.intake.telegram.groups", `No groups.json for chat ${chat}. Review groups.proposed.json and write groups.json beside it.`, { context: { chat } });
@@ -2869,20 +6171,20 @@ async function applyGroups(root, chat) {
     if (missing.length > 0) {
       throw new LaunchwrightError("qa.intake.telegram.groups", `groups.json of chat ${chat} names messages that are not staged: ${missing.join(", ")}.`, { context: { chat, missing } });
     }
-    const list2 = g.messages.map((id) => messages.get(id)).sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || byId(a, b));
-    const [first, ...rest] = list2;
+    const list3 = g.messages.map((id) => messages.get(id)).sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || byId(a, b));
+    const [first, ...rest] = list3;
     const media = [];
-    for (const m of list2) {
+    for (const m of list3) {
       for (const s of m.media) {
         const { file, ...meta } = s;
-        media.push(file === void 0 ? meta : { ...meta, data: new Uint8Array(await (0, import_promises10.readFile)((0, import_node_path12.join)(dir, file))) });
+        media.push(file === void 0 ? meta : { ...meta, data: new Uint8Array(await (0, import_promises12.readFile)((0, import_node_path23.join)(dir, file))) });
       }
     }
     out.push(
       await writeIssue(root, {
         id: recordId("tg", chat, first.id),
         source: "telegram",
-        ref: `${chat}#${list2.map((m) => m.id).join(",")}`,
+        ref: `${chat}#${list3.map((m) => m.id).join(",")}`,
         title: g.title,
         reportedAt: first.at,
         reporter: first.author,
@@ -2894,13 +6196,13 @@ async function applyGroups(root, chat) {
   }
   return out;
 }
-var import_promises10, import_node_path12, JOIN_GAP_MS, groupsFile, byId;
+var import_promises12, import_node_path23, JOIN_GAP_MS, groupsFile, byId;
 var init_telegram = __esm({
   "src/intake/services/telegram.mts"() {
     "use strict";
     init_cjs_shims();
-    import_promises10 = require("fs/promises");
-    import_node_path12 = require("path");
+    import_promises12 = require("fs/promises");
+    import_node_path23 = require("path");
     init_kernel();
     init_fs();
     init_src();
@@ -2920,7 +6222,7 @@ __export(qa_intake_exports, {
 });
 function usage(opts, problem) {
   if (problem) opts.err(`lw qa intake: ${problem}`);
-  for (const line of USAGE) opts.err(line);
+  for (const line of USAGE2) opts.err(line);
   return 2;
 }
 function intakeConfig(opts) {
@@ -2933,10 +6235,10 @@ function intakeConfig(opts) {
   }
   return parsed.data;
 }
-function boundOf(flag, value) {
+function boundOf(flag2, value) {
   if (/^\d+$/.test(value)) return Number(value);
   const at = Date.parse(value);
-  if (Number.isNaN(at)) throw new LaunchwrightError("qa.intake.window", `${flag} takes a date (2026-11-01 or an ISO time) or a message id, not "${value}".`);
+  if (Number.isNaN(at)) throw new LaunchwrightError("qa.intake.window", `${flag2} takes a date (2026-11-01 or an ISO time) or a message id, not "${value}".`);
   return new Date(at);
 }
 function parseTelegram(args) {
@@ -2971,7 +6273,7 @@ async function github(args, opts, deps) {
     media: batch.items.flatMap((i) => i.media)
   });
   opts.out(`wrote ${issue.id}: ${issue.attachments.length} attachments, ${issue.skipped.length} skipped`);
-  opts.out(`  ${(0, import_node_path13.relative)(opts.cwd, recordDir(opts.cwd, issue.id))}/issue.md`);
+  opts.out(`  ${(0, import_node_path24.relative)(opts.cwd, recordDir(opts.cwd, issue.id))}/issue.md`);
   return 0;
 }
 function followSignal(opts) {
@@ -3022,11 +6324,11 @@ async function telegram(args, opts, deps) {
   const groups = proposeGroups(chat, staged);
   const file = await writeProposal(opts.cwd, chat, groups);
   opts.out(`read ${batch.items.length} messages from chat ${chat} with ${name}; ${staged.length} staged`);
-  opts.out(`proposed ${groups.length} groups: ${(0, import_node_path13.relative)(opts.cwd, file)}`);
+  opts.out(`proposed ${groups.length} groups: ${(0, import_node_path24.relative)(opts.cwd, file)}`);
   opts.out(`review it, write groups.json beside it, then run: lw qa intake telegram --chat ${chat} --apply`);
   return 0;
 }
-async function list(args, opts) {
+async function list2(args, opts) {
   if (args.length > 0) return usage(opts, "list takes no arguments");
   const issues = await listIssues(opts.cwd);
   if (issues.length === 0) {
@@ -3046,9 +6348,9 @@ function createIntakeCommand(deps = {}) {
       try {
         if (sub === "github") return await github(rest, opts, deps);
         if (sub === "telegram") return await telegram(rest, opts, deps);
-        if (sub === "list") return await list(rest, opts);
+        if (sub === "list") return await list2(rest, opts);
       } catch (error) {
-        if (!(error instanceof LaunchwrightError)) throw error;
+        if (!isCodedError(error)) throw error;
         opts.err(`lw qa intake: ${error.message} (${error.code})`);
         return 1;
       }
@@ -3056,19 +6358,19 @@ function createIntakeCommand(deps = {}) {
     }
   };
 }
-var import_node_path13, USAGE, TELEGRAM_DRIVERS, TELEGRAM_VALUES, qa_intake_default;
+var import_node_path24, USAGE2, TELEGRAM_DRIVERS, TELEGRAM_VALUES, qa_intake_default;
 var init_qa_intake = __esm({
   "src/intake/commands/qa-intake.mts"() {
     "use strict";
     init_cjs_shims();
-    import_node_path13 = require("path");
+    import_node_path24 = require("path");
     init_kernel();
     init_args();
     init_src();
     init_config2();
     init_registry();
     init_telegram();
-    USAGE = [
+    USAGE2 = [
       "usage: lw qa intake github <issue-url>",
       "       lw qa intake telegram --chat <id> [--since <date|message-id>] [--until <date|message-id>] [--driver <d>] [--follow]",
       "       lw qa intake telegram --chat <id> --apply",
