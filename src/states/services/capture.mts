@@ -13,7 +13,7 @@
 import { posix } from 'node:path';
 import { LaunchwrightError, messageOf } from '../../kernel/index.mts';
 import type { QaSession, RoutableLocator, RoutablePage, RoutedRoute } from '../../drivers/target/contract.mts';
-import { routeMatches } from '../../services/paths.mts';
+import { openRoute, routeMatches } from '../../services/paths.mts';
 import type { Act, EvidenceKind, Settle } from '../../services/types.mts';
 import { type FailReason, type StateResult, statePath } from './inventory.mts';
 import type { CaptureGroup } from './loop.mts';
@@ -771,7 +771,8 @@ export interface CaptureContext {
 export async function renderOnce(session: QaSession, group: CaptureGroup, substitution: Substitution, subjects: readonly unknown[] | null): Promise<void> {
   if (subjects === null) substitution.record();
   else substitution.use(subjects);
-  await session.navigate(group.route);
+  // A pattern route opens without its optional segments: `/:lang?/hot` opens `/hot`.
+  await session.navigate(openRoute(group.route) ?? group.route);
   for (const step of group.act ?? []) await session.act(step as Act);
   await session.settle(group.settle as Settle);
   const held = await session.currentRoute();

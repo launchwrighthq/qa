@@ -70,7 +70,8 @@ const SHOT_FIELDS = ['id', 'screen', 'state', 'source', 'legs', 'route', 'fixtur
 const ACT_FIELDS = new Set(['kind', 'target', 'text', 'key', 'dx', 'dy', 'ms', 'why']);
 const SETTLE_RULES = ['selector', 'artwork', 'video', 'busy'] as const;
 const SOURCE_RE = /^(?:spec:[^\s#]+#[A-Za-z0-9._-]+|commit:[0-9a-f]{7,40}|issue:[A-Za-z0-9._-]+)$/;
-const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** A persona id or a state name: kebab case. */
+export const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const FACT_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);

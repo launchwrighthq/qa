@@ -54,6 +54,18 @@ export const qaConfig = z.object({
   routeTables: z
     .array(z.union([z.string(), z.object({ file: z.string(), surface: z.enum(['web', 'miniapp', 'bot']) })]))
     .default(['{app:api}/src/routes.mts']),
+  /**
+   * Path wrappers of the route tables, by function name, to the prefix each one adds, for example
+   * `{ localized = "/:lang?" }`. The delivery scan reads a wrapper body it can follow by itself;
+   * this key is for a wrapper it cannot, such as one imported from a package.
+   */
+  routeWrappers: z.record(z.string(), z.string().startsWith('/')).default({}),
+  /**
+   * The tracked files of a state run (spec 2.7). `delivery`: union name to its delivery descriptor.
+   * `mounts`: union name to its mount hints. A path is project-relative. When a key is not set,
+   * the run reads `.lw/qa/delivery.json` and `.lw/qa/mounts.json` if they exist.
+   */
+  states: z.object({ delivery: z.string().min(1).optional(), mounts: z.string().min(1).optional() }).prefault({}),
   /** Folders that only declare types, so the state scan can derive the shape of a parameter type. */
   typeRoots: z.array(z.string()).default([]),
   /** Overrides and additions to the default legs (spec 2.3). `false` removes a default leg. */
@@ -81,13 +93,17 @@ export type LegConfig = z.infer<typeof legConfig>;
 
 /**
  * `cfg` with each `{app:<name>}` of its path keys (`app`, `clientRoots`, `buildDirs`,
- * `routeTables`, `typeRoots`) replaced by the folder of that app in config section `apps`.
+ * `routeTables`, `typeRoots`, `states`) replaced by the folder of that app in config section `apps`.
  */
 export function withAppPaths(cfg: QaConfig, sections: Record<string, unknown> = {}): QaConfig {
   const apps = sectionApps(sections);
   const dir = (p: string): string => appDir(p, apps);
   const routeTables = cfg.routeTables.map((t) => (typeof t === 'string' ? dir(t) : { ...t, file: dir(t.file) }));
-  return { ...cfg, app: dir(cfg.app), clientRoots: cfg.clientRoots.map(dir), buildDirs: cfg.buildDirs.map(dir), routeTables, typeRoots: cfg.typeRoots.map(dir) };
+  const states = {
+    ...(cfg.states.delivery === undefined ? {} : { delivery: dir(cfg.states.delivery) }),
+    ...(cfg.states.mounts === undefined ? {} : { mounts: dir(cfg.states.mounts) }),
+  };
+  return { ...cfg, app: dir(cfg.app), clientRoots: cfg.clientRoots.map(dir), buildDirs: cfg.buildDirs.map(dir), routeTables, typeRoots: cfg.typeRoots.map(dir), states };
 }
 
 /** Config section `qa` of `sections`, parsed, with the app folders of `withAppPaths`. */

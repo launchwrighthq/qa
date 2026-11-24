@@ -7,7 +7,7 @@
 //
 // The crawl is bounded and deterministic: the bounds are constants here, not flags, so two runs of
 // one tree give the same paths.
-import { LaunchwrightError } from '../kernel/index.mts';
+import { isCodedError, LaunchwrightError } from '../kernel/index.mts';
 import type { QaSession } from '../drivers/target/contract.mts';
 import { type Inventory, PROVENANCE } from '../states/services/inventory.mts';
 import type { Provenance, Settle, Surface } from './types.mts';
@@ -81,6 +81,63 @@ export function routeMatcher(pattern: string): RegExp {
 /** True when a concrete pathname satisfies a route pattern. The query and the hash are ignored. */
 export function routeMatches(pattern: string, pathname: string): boolean {
   return routeMatcher(pattern).test(String(pathname).replace(/[?#].*$/, ''));
+}
+
+/** True when a route holds a `:param` segment, so it is a pattern and not an address. */
+export function isRoutePattern(route: string): boolean {
+  return String(route).split('/').some((segment) => segment.startsWith(':'));
+}
+
+/**
+ * The specificity of a pattern: more static segments first, then more required params, then fewer
+ * optional params. A router ranks the same way, so `/:lang?/hot` wins over `/:lang?` for `/hot`.
+ */
+function specificity(pattern: string): [number, number, number] {
+  const segments = pattern.split('/').filter((s) => s !== '');
+  const optional = segments.filter((s) => s.startsWith(':') && s.endsWith('?')).length;
+  const required = segments.filter((s) => s.startsWith(':') && !s.endsWith('?')).length;
+  return [segments.length - optional - required, required, -optional];
+}
+
+/** The most specific of the routes that match a pathname, or null when none does. */
+export function bestRoute(routes: readonly string[], pathname: string): string | null {
+  let best: string | null = null;
+  let rank: [number, number, number] | null = null;
+  for (const route of routes) {
+    if (!routeMatches(route, pathname)) continue;
+    const own = specificity(route);
+    const wins = rank === null || own[0] > rank[0] || (own[0] === rank[0] && (own[1] > rank[1] || (own[1] === rank[1] && own[2] > rank[2])));
+    if (wins) {
+      best = route;
+      rank = own;
+    }
+  }
+  return best;
+}
+
+/**
+ * The address that opens a pattern: each optional `:param?` segment is left out. Null when a
+ * required `:param` remains, because no value for it is known.
+ */
+export function openRoute(pattern: string): string | null {
+  const kept: string[] = [];
+  for (const segment of pattern.split('/')) {
+    if (segment.startsWith(':') && segment.endsWith('?')) continue;
+    if (segment.startsWith(':')) return null;
+    kept.push(segment);
+  }
+  const route = kept.join('/');
+  return route === '' ? '/' : route;
+}
+
+/**
+ * The target a path reached on its surface. A path route that is a target pattern is that target;
+ * a concrete route takes the most specific matching target.
+ */
+function reachedTarget(targets: readonly Target[], surface: Surface, route: string): string | null {
+  const mine = targets.filter((t) => t.surface === surface).map((t) => t.route);
+  if (mine.includes(route)) return route;
+  return isRoutePattern(route) ? null : bestRoute(mine, route);
 }
 
 /** A crawl target: one route of the route map, with the unions it renders. */
@@ -167,7 +224,7 @@ export function crossReach(targets: readonly Target[], paths: readonly { surface
   unreachable: string[];
 } {
   const rows = targets.map((target) => {
-    const reached = paths.filter((p) => p.surface === target.surface && p.route !== undefined && routeMatches(target.route, p.route));
+    const reached = paths.filter((p) => p.surface === target.surface && p.route !== undefined && reachedTarget(targets, p.surface, p.route) === target.route);
     return { ...target, reached: reached.length > 0, by: reached.map((e) => e.id) };
   });
   const unionState = new Map<string, boolean>();
@@ -188,7 +245,7 @@ export function crossReach(targets: readonly Target[], paths: readonly { surface
  */
 export function routeDrift(targets: readonly Target[], paths: readonly { id: string; surface: Surface; route?: string }[]): { id: string; route: string }[] {
   return paths
-    .filter((p) => p.route !== undefined && !targets.some((t) => t.surface === p.surface && routeMatches(t.route, p.route as string)))
+    .filter((p) => p.route !== undefined && reachedTarget(targets, p.surface, p.route) === null)
     .map((p) => ({ id: p.id, route: p.route as string }));
 }
 
@@ -337,15 +394,20 @@ export interface CrawlPlan {
   maxDepth: number;
   maxEdges: number;
   targets: Target[];
-  /** The settle after each click. A click that has not changed the pathname by then did not navigate. */
+  /** The settle after each navigation and each click. A click that has not changed the pathname by then did not navigate. */
   settle: Settle;
+  /** The bound of one step: a navigation with its control list, or one press. A longer step is marked and skipped. */
+  stepTimeoutMs: number;
 }
 
 /** The settle after a click: no element is busy, bounded at four seconds. */
 export const CLICK_SETTLE: Settle = { busy: true, timeout: 4_000 };
 
+/** The bound of one crawl step. A target navigation is bounded too, so this bound catches a call that never returns. */
+export const STEP_TIMEOUT_MS = 30_000;
+
 /** Builds the crawl plan of one leg from the delivery targets of its surface. */
-export function buildCrawlPlan(args: { slug: string; leg: string; surface: Surface; targets: readonly Target[]; root?: string }): CrawlPlan {
+export function buildCrawlPlan(args: { slug: string; leg: string; surface: Surface; targets: readonly Target[]; root?: string; settle?: Settle; stepTimeoutMs?: number }): CrawlPlan {
   return {
     slug: args.slug,
     leg: args.leg,
@@ -354,14 +416,83 @@ export function buildCrawlPlan(args: { slug: string; leg: string; surface: Surfa
     maxDepth: MAX_DEPTH,
     maxEdges: MAX_EDGES_PER_NODE,
     targets: args.targets.filter((t) => t.surface === args.surface),
-    settle: CLICK_SETTLE,
+    settle: args.settle ?? CLICK_SETTLE,
+    stepTimeoutMs: args.stepTimeoutMs ?? STEP_TIMEOUT_MS,
   };
 }
 
 const pathnameOf = (route: string): string => route.replace(/[?#].*$/, '') || '/';
 
 function resolveRoute(landed: string, targets: readonly Target[]): string | null {
-  return targets.find((t) => routeMatches(t.route, landed))?.route ?? null;
+  return bestRoute(
+    targets.map((t) => t.route),
+    landed,
+  );
+}
+
+/** One crawl step that did not finish: where it was, what it pressed, and why. */
+export interface CrawlFailure {
+  route: string;
+  label?: string;
+  /** `settle`: the page stayed busy and the crawl went on with it. The other kinds skip the step. */
+  kind: 'navigate' | 'settle' | 'press' | 'timeout' | 'closed';
+  error: string;
+}
+
+/** The crawl answer for one target route. */
+export interface TargetResult {
+  route: string;
+  unions: string[];
+  reached: boolean;
+  by: string[];
+  /** Why the crawl could not finish, when it did not. Every unreached target of that crawl carries it. */
+  error?: string;
+}
+
+/** The result of a crawl: the paths, the routes visited, each failed step and one row per target. */
+export interface CrawlResult {
+  paths: CrawlPath[];
+  visited: string[];
+  failures: CrawlFailure[];
+  targets: TargetResult[];
+}
+
+/** One row per target from the paths of a crawl. `error` marks each unreached row of a crawl that stopped. */
+export function targetResults(plan: Pick<CrawlPlan, 'surface' | 'targets'>, paths: readonly Pick<CrawlPath, 'id' | 'route'>[], error?: string): TargetResult[] {
+  const cross = crossReach(
+    plan.targets,
+    paths.map((p) => ({ id: p.id, route: p.route, surface: plan.surface })),
+  );
+  return cross.routes.map((row) => ({
+    route: row.route,
+    unions: row.unions,
+    reached: row.reached,
+    by: row.by,
+    ...(error !== undefined && !row.reached ? { error } : {}),
+  }));
+}
+
+class StepTimeout extends LaunchwrightError {}
+
+const firstLine = (err: unknown): string => (err instanceof Error ? err.message : String(err)).split('\n')[0] ?? '';
+
+/**
+ * Runs one step within `ms`. A late settle of the step after its timeout is recorded through
+ * `late`, never dropped: the step already counts as failed.
+ */
+async function withinStep<T>(ms: number, what: string, work: Promise<T>, late: (err: unknown) => void): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new StepTimeout('qa.paths.step-timeout', `${what} took longer than ${ms} ms`)), ms);
+  });
+  try {
+    return await Promise.race([work, bound]);
+  } catch (err) {
+    if (err instanceof StepTimeout) work.then(undefined, late);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function requireEvaluate(session: QaSession): (expression: string) => Promise<unknown> {
@@ -371,49 +502,111 @@ function requireEvaluate(session: QaSession): (expression: string) => Promise<un
   return session.evaluate.bind(session);
 }
 
+/**
+ * Waits for a settle rule. A settle timeout comes back as its sentence, because a page that stays
+ * busy can still be read and pressed. Any other failure goes up.
+ */
+async function settleSoft(session: QaSession, rule: Settle): Promise<string | null> {
+  try {
+    await session.settle(rule);
+    return null;
+  } catch (err) {
+    if (isCodedError(err) && err.code === 'qa.target.settle') return firstLine(err);
+    throw err;
+  }
+}
+
 /** Presses one control and reports where the app went. A navigation is a pathname change only. */
-async function followEdge(session: QaSession, control: { label: string; role: string }, before: string, settle: Settle): Promise<{ moved: boolean; landed: string; error?: string }> {
+async function followEdge(
+  session: QaSession,
+  control: { label: string; role: string },
+  before: string,
+  settle: Settle,
+): Promise<{ moved: boolean; landed: string; error?: string; settled: string | null }> {
   const evaluate = requireEvaluate(session);
   const pressed = (await evaluate(clickByNameExpression(control.label, control.role))) as { ok: boolean; error?: string };
-  if (!pressed.ok) return { moved: false, landed: before, ...(pressed.error === undefined ? {} : { error: pressed.error }) };
-  await session.settle(settle);
+  if (!pressed.ok) return { moved: false, landed: before, settled: null, ...(pressed.error === undefined ? {} : { error: pressed.error }) };
+  const settled = await settleSoft(session, settle);
   const landed = pathnameOf(await session.currentRoute());
-  return { moved: landed !== before, landed };
+  return { moved: landed !== before, landed, settled };
+}
+
+/** A screen to expand: the address that opens it, and the steps that reached it. */
+interface CrawlNode {
+  open: string;
+  steps: PathStep[];
 }
 
 /**
  * Discovers paths breadth first, so a two-tap path is found before a three-tap path to the same
  * screen. Each edge starts from a fresh navigation to its parent, because going back lands where
  * the previous edge left the navigation stack, and two runs would then disagree.
+ *
+ * Each step is bounded by `plan.stepTimeoutMs`. A step that fails or runs out is recorded in
+ * `failures` and skipped, so the crawl always ends with a row per target. A closed browser stops
+ * the crawl, and each unreached target then carries the reason.
  */
-export async function crawl(session: QaSession, plan: CrawlPlan): Promise<{ paths: CrawlPath[]; visited: string[] }> {
+export async function crawl(session: QaSession, plan: CrawlPlan): Promise<CrawlResult> {
   const evaluate = requireEvaluate(session);
   const found: CrawlPath[] = [];
-  const visited = new Set<string>([plan.root]);
-  let frontier: { route: string; steps: PathStep[] }[] = [{ route: plan.root, steps: [] }];
-  for (let depth = 0; depth < plan.maxDepth && frontier.length > 0; depth += 1) {
-    const next: { route: string; steps: PathStep[] }[] = [];
+  const failures: CrawlFailure[] = [];
+  const rootTarget = resolveRoute(plan.root, plan.targets);
+  const visited = new Set<string>([plan.root, ...(rootTarget === null ? [] : [rootTarget])]);
+  const halt: { why: string | null } = { why: null };
+
+  const attempt = async <T,>(route: string, label: string | undefined, kind: CrawlFailure['kind'], work: () => Promise<T>): Promise<T | null> => {
+    const where = label === undefined ? `open ${route}` : `press "${label}" on ${route}`;
+    const at = { route, ...(label === undefined ? {} : { label }) };
+    try {
+      return await withinStep(plan.stepTimeoutMs, where, work(), (late) => failures.push({ ...at, kind: 'timeout', error: `after the bound: ${firstLine(late)}` }));
+    } catch (err) {
+      const closed = session.isClosed?.() === true;
+      failures.push({ ...at, kind: closed ? 'closed' : err instanceof StepTimeout ? 'timeout' : kind, error: firstLine(err) });
+      if (closed) halt.why = `the browser closed during ${where}: ${firstLine(err)}`;
+      return null;
+    }
+  };
+  const openPage = async (route: string): Promise<string> => {
+    await session.navigate(route);
+    const settled = await settleSoft(session, plan.settle);
+    if (settled !== null) failures.push({ route, kind: 'settle', error: settled });
+    return pathnameOf(await session.currentRoute());
+  };
+
+  let frontier: CrawlNode[] = [{ open: plan.root, steps: [] }];
+  for (let depth = 0; depth < plan.maxDepth && frontier.length > 0 && halt.why === null; depth += 1) {
+    const next: CrawlNode[] = [];
     for (const node of frontier) {
-      await session.navigate(node.route);
-      const controls = chooseEdges(normaliseControls((await evaluate(controlsExpression())) as { label: unknown; role: unknown }[]), plan.maxEdges);
-      for (const control of controls) {
-        await session.navigate(node.route);
-        const from = pathnameOf(await session.currentRoute());
-        const { moved, landed } = await followEdge(session, control, from, plan.settle);
-        if (!moved) continue;
-        const resolved = resolveRoute(landed, plan.targets);
-        const route = resolved ?? landed;
+      if (halt.why !== null) break;
+      const controls = await attempt(node.open, undefined, 'navigate', async () => {
+        await openPage(node.open);
+        return chooseEdges(normaliseControls((await evaluate(controlsExpression())) as { label: unknown; role: unknown }[]), plan.maxEdges);
+      });
+      // A root that does not open leaves nothing to crawl: every target carries the reason.
+      if (controls === null && depth === 0) halt.why ??= `${plan.root} did not open: ${failures.at(-1)?.error ?? 'no reason given'}`;
+      for (const control of controls ?? []) {
+        if (halt.why !== null) break;
+        const edge = await attempt(node.open, control.label, 'press', async () => {
+          const from = await openPage(node.open);
+          return { from, ...(await followEdge(session, control, from, plan.settle)) };
+        });
+        if (edge === null) continue;
+        if (edge.settled !== null) failures.push({ route: edge.from, label: control.label, kind: 'settle', error: edge.settled });
+        if (!edge.moved) continue;
+        const resolved = resolveRoute(edge.landed, plan.targets);
+        const route = resolved ?? edge.landed;
         if (visited.has(route)) continue;
         visited.add(route);
         const steps: PathStep[] = [...node.steps, { label: control.label, role: control.role, route }];
         const path = { leg: plan.leg, from: plan.root, steps, route };
-        found.push({ id: pathId(path), leg: plan.leg, from: plan.root, route, landed, resolved: resolved !== null, steps, readable: formatPath(path), depth: depth + 1 });
-        next.push({ route, steps });
+        found.push({ id: pathId(path), leg: plan.leg, from: plan.root, route, landed: edge.landed, resolved: resolved !== null, steps, readable: formatPath(path), depth: depth + 1 });
+        // The next level opens the address the app showed, never the pattern it matched.
+        next.push({ open: edge.landed, steps });
       }
     }
     frontier = next;
   }
-  return { paths: found, visited: [...visited] };
+  return { paths: found, visited: [...visited], failures, targets: targetResults(plan, found, halt.why ?? undefined) };
 }
 
 /** The result of one path recording. */

@@ -3,4 +3,4 @@
 // `./states-host/react`, so a project loads only the UI library it uses.
 export { QA_DEV_MARKER, QA_STATES_ATTRIBUTE, QA_STATES_PATH, QA_STATES_ROOT_ID } from './names.mts';
 export { readStatesRequest, startStatesPage, type StatesMountArgs, type StatesPageOptions, type StatesRequest } from './page.mts';
-export { qaStatesEntry, qaStatesHtml, qaStatesPage, type QaStatesOptions } from './vite.mts';
+export { keepsHtmlTransform, qaStatesEntry, qaStatesHtml, qaStatesPage, type QaStatesOptions } from './vite.mts';

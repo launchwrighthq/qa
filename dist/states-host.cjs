@@ -24,6 +24,7 @@ __export(states_host_exports, {
   QA_STATES_ATTRIBUTE: () => QA_STATES_ATTRIBUTE,
   QA_STATES_PATH: () => QA_STATES_PATH,
   QA_STATES_ROOT_ID: () => QA_STATES_ROOT_ID,
+  keepsHtmlTransform: () => keepsHtmlTransform,
   qaStatesEntry: () => qaStatesEntry,
   qaStatesHtml: () => qaStatesHtml,
   qaStatesPage: () => qaStatesPage,
@@ -123,6 +124,24 @@ var import_node_fs = require("fs");
 var import_node_url = require("url");
 var ENTRY_ID = "virtual:lw-qa-states";
 var RESOLVED_ENTRY_ID = `\0${ENTRY_ID}`;
+function keepsHtmlTransform(pluginName, htmlTransforms = "vite") {
+  if (htmlTransforms === "all" || pluginName.startsWith("vite:")) return true;
+  return htmlTransforms !== "vite" && htmlTransforms.includes(pluginName);
+}
+var ORIGINAL_HOOKS = /* @__PURE__ */ new WeakMap();
+function restoreHtmlTransform(plugin) {
+  if (ORIGINAL_HOOKS.has(plugin)) plugin.transformIndexHtml = ORIGINAL_HOOKS.get(plugin);
+}
+function guardHtmlTransform(plugin, skip) {
+  const hook = plugin.transformIndexHtml;
+  if (hook === void 0) return;
+  ORIGINAL_HOOKS.set(plugin, hook);
+  const own = typeof hook === "function" ? hook : hook.handler;
+  const guarded = function(html, ctx) {
+    return skip(ctx) ? html : own.call(this, html, ctx);
+  };
+  plugin.transformIndexHtml = typeof hook === "function" ? guarded : { ...hook, handler: guarded };
+}
 function fsUrl(root, path) {
   const absolute = /^(?:\/|[A-Za-z]:[\\/])/.test(path) ? path : `${root}/${path.replace(/^\.\//, "")}`;
   const slashed = absolute.replace(/\\/g, "/");
@@ -162,11 +181,19 @@ function qaStatesHtml() {
 function qaStatesPage(opts) {
   if (Object.keys(opts.components).length === 0) throw new LaunchwrightError("client.qa.states.components", "qaStatesPage needs at least one component");
   let config;
+  const name = "launchwright:qa-states";
   return {
-    name: "launchwright:qa-states",
+    name,
     apply: "serve",
     configResolved(resolved) {
       config = resolved;
+      const pagePath = `${resolved.base.replace(/\/$/, "")}${QA_STATES_PATH}`;
+      const isStatesPage = (ctx) => new URL(ctx.path, "http://dev.invalid").pathname === pagePath;
+      for (const plugin of resolved.plugins) {
+        if (plugin.name === name) continue;
+        restoreHtmlTransform(plugin);
+        if (!keepsHtmlTransform(plugin.name, opts.htmlTransforms)) guardHtmlTransform(plugin, isStatesPage);
+      }
     },
     resolveId(id) {
       return id === ENTRY_ID ? RESOLVED_ENTRY_ID : void 0;
@@ -198,6 +225,7 @@ function qaStatesPage(opts) {
   QA_STATES_ATTRIBUTE,
   QA_STATES_PATH,
   QA_STATES_ROOT_ID,
+  keepsHtmlTransform,
   qaStatesEntry,
   qaStatesHtml,
   qaStatesPage,

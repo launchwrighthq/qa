@@ -1,4 +1,4 @@
-import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { runContract } from '../../../../src/kernel/testing/index.mts';
 import { tmpDir } from '../../../../src/kernel/testing/index.mts';
@@ -93,6 +93,66 @@ describe('playwright target persona sign-in', () => {
         .catch((e: unknown) => e);
       expect(err).toMatchObject({ code: 'qa.target.persona' });
     } finally {
+      await app.close();
+    }
+  });
+});
+
+describe('playwright target navigation and crash probe', () => {
+  /** A page whose image request never answers, so the `load` event never fires. */
+  async function serveHeldPage(): Promise<{ baseUrl: string; close(): Promise<void> }> {
+    const held: ServerResponse[] = [];
+    const server: Server = createServer((req, res) => {
+      if (req.url === '/held.png') {
+        held.push(res);
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'text/html' }).end('<p id="ready">ready</p><img src="/held.png">');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const { port } = server.address() as AddressInfo;
+    return {
+      baseUrl: `http://127.0.0.1:${port}`,
+      close: () => {
+        for (const res of held) res.destroy();
+        return new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+      },
+    };
+  }
+
+  it('opens a page that holds a request open, after DOMContentLoaded and a bounded wait for load', async () => {
+    const app = await serveHeldPage();
+    const session = await createPlaywrightTarget({ executablePath, loadGraceMs: 300, navigateTimeoutMs: 5_000 }).open({ leg: webLeg, baseUrl: app.baseUrl, outDir: await tmpDir() });
+    try {
+      const started = Date.now();
+      await session.navigate('/');
+      expect(Date.now() - started).toBeLessThan(4_000);
+      expect(await (session.evaluate as (e: string) => Promise<unknown>)('document.getElementById("ready").textContent')).toBe('ready');
+      expect(session.isClosed?.()).toBe(false);
+    } finally {
+      await session.close();
+      await app.close();
+    }
+    expect(session.isClosed?.()).toBe(true);
+  });
+
+  it('reports a crashed page as closed', async () => {
+    const app = await serveHeldPage();
+    const session = await createPlaywrightTarget({ executablePath, loadGraceMs: 100 }).open({ leg: webLeg, baseUrl: app.baseUrl, outDir: await tmpDir() });
+    try {
+      const page = session.routable?.() as unknown as { goto(url: string): Promise<unknown>; waitForEvent(name: string): Promise<unknown> };
+      const crashed = page.waitForEvent('crash');
+      await page.goto('chrome://crash').then(
+        () => undefined,
+        (err: unknown) => expect(String(err)).toMatch(/crash|closed/i),
+      );
+      await crashed;
+      expect(session.isClosed?.()).toBe(true);
+    } finally {
+      await session.close().then(
+        () => undefined,
+        (err: unknown) => expect(String(err)).toMatch(/crash|closed/i),
+      );
       await app.close();
     }
   });

@@ -5,7 +5,7 @@
 // never contains them.
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { Plugin, ResolvedConfig } from 'vite';
+import type { IndexHtmlTransformContext, IndexHtmlTransformHook, Plugin, ResolvedConfig } from 'vite';
 import { LaunchwrightError } from '../kernel/services/errors.mts';
 import { QA_DEV_MARKER, QA_STATES_ATTRIBUTE, QA_STATES_PATH, QA_STATES_ROOT_ID } from './names.mts';
 
@@ -25,6 +25,46 @@ export interface QaStatesOptions {
    * children inside the project providers, filled with fakes (spec 2.14 C2).
    */
   wrapper?: string;
+  /**
+   * Which `transformIndexHtml` hooks of the other plugins run on the state page.
+   * - `'vite'` (the default): only plugins whose name starts with `vite:`. Those are Vite itself
+   *   and its official framework plugins, such as the React refresh preamble. A project hook
+   *   that rewrites the app page, for example one that adds a script or a meta tag, leaves the
+   *   state page alone.
+   * - `'all'`: every hook, as on the project index page.
+   * - a list of plugin names: the `vite:` hooks and the hooks of the named plugins.
+   */
+  htmlTransforms?: 'vite' | 'all' | readonly string[];
+}
+
+/** The hook of a plugin that the state page keeps under `htmlTransforms`. */
+export function keepsHtmlTransform(pluginName: string, htmlTransforms: QaStatesOptions['htmlTransforms'] = 'vite'): boolean {
+  if (htmlTransforms === 'all' || pluginName.startsWith('vite:')) return true;
+  return htmlTransforms !== 'vite' && htmlTransforms.includes(pluginName);
+}
+
+/** The hook a plugin had before a guard wrapped it. A second server over one plugin object starts from it. */
+const ORIGINAL_HOOKS = new WeakMap<Plugin, Plugin['transformIndexHtml']>();
+
+/** Puts back the hook of a plugin that an earlier server guarded. */
+function restoreHtmlTransform(plugin: Plugin): void {
+  if (ORIGINAL_HOOKS.has(plugin)) plugin.transformIndexHtml = ORIGINAL_HOOKS.get(plugin);
+}
+
+/**
+ * Wraps the `transformIndexHtml` hook of a plugin so that it returns the page as it is when
+ * `skip` says the page is the state page. Vite reads the hooks after `configResolved`, so a wrap
+ * made there is the hook it runs.
+ */
+function guardHtmlTransform(plugin: Plugin, skip: (ctx: IndexHtmlTransformContext) => boolean): void {
+  const hook = plugin.transformIndexHtml;
+  if (hook === undefined) return;
+  ORIGINAL_HOOKS.set(plugin, hook);
+  const own: IndexHtmlTransformHook = typeof hook === 'function' ? hook : hook.handler;
+  const guarded: IndexHtmlTransformHook = function (this: ThisParameterType<IndexHtmlTransformHook>, html, ctx) {
+    return skip(ctx) ? html : own.call(this, html, ctx);
+  };
+  plugin.transformIndexHtml = typeof hook === 'function' ? guarded : { ...hook, handler: guarded };
 }
 
 /** The URL of a file on disk that the Vite dev server serves. */
@@ -82,17 +122,25 @@ export function qaStatesHtml(): string {
 
 /**
  * A Vite dev server plugin (`apply: 'serve'`) that serves the state page at `/__states` under
- * the Vite `base`. The page runs through the plugins of the project (`transformIndexHtml`), so
- * the JSX transform and the HMR client apply.
+ * the Vite `base`. The page gets the Vite client and the HTML hooks that `htmlTransforms` keeps.
+ * The modules it imports go through every plugin, so the JSX transform applies.
  */
 export function qaStatesPage(opts: QaStatesOptions): Plugin {
   if (Object.keys(opts.components).length === 0) throw new LaunchwrightError('client.qa.states.components', 'qaStatesPage needs at least one component');
   let config: ResolvedConfig | undefined;
+  const name = 'launchwright:qa-states';
   return {
-    name: 'launchwright:qa-states',
+    name,
     apply: 'serve',
     configResolved(resolved) {
       config = resolved;
+      const pagePath = `${resolved.base.replace(/\/$/, '')}${QA_STATES_PATH}`;
+      const isStatesPage = (ctx: IndexHtmlTransformContext): boolean => new URL(ctx.path, 'http://dev.invalid').pathname === pagePath;
+      for (const plugin of resolved.plugins) {
+        if (plugin.name === name) continue;
+        restoreHtmlTransform(plugin);
+        if (!keepsHtmlTransform(plugin.name, opts.htmlTransforms)) guardHtmlTransform(plugin, isStatesPage);
+      }
     },
     resolveId(id) {
       return id === ENTRY_ID ? RESOLVED_ENTRY_ID : undefined;

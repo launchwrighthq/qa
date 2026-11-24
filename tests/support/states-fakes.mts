@@ -47,6 +47,12 @@ export interface ScriptedSessionOptions {
   /** Milliseconds the clock moves per click, so a recording has a duration. */
   clickMs?: number;
   evaluate?: boolean;
+  /** A screenshot whose path holds this text throws, and the session reports itself closed after it. */
+  crashOn?: string;
+  /** Routes whose navigation never ends: the crawl bound has to cut the step. */
+  hangOn?: string[];
+  /** Routes whose navigation fails at once. */
+  failOn?: string[];
 }
 
 /** A target session over a scripted site. `calls` records every call for assertions. */
@@ -55,6 +61,7 @@ export class ScriptedSession implements QaSession {
   pending: string | null = null;
   calls: string[] = [];
   videoFile: string | null = null;
+  dead = false;
   readonly evaluate?: (expression: string) => Promise<unknown>;
 
   constructor(private readonly opts: ScriptedSessionOptions = {}) {
@@ -70,8 +77,14 @@ export class ScriptedSession implements QaSession {
     return this.opts.site?.[route.replace(/\?.*$/, '')] ?? {};
   }
 
+  isClosed(): boolean {
+    return this.dead;
+  }
+
   async navigate(route: string): Promise<void> {
     this.calls.push(`navigate ${route}`);
+    if (this.opts.hangOn?.includes(route)) return new Promise<void>(() => undefined);
+    if (this.opts.failOn?.includes(route)) throw Object.assign(new Error(`could not open ${route}`), { code: 'qa.target.navigate' });
     this.route = route;
     this.pending = null;
     await this.opts.page?.load();
@@ -95,6 +108,10 @@ export class ScriptedSession implements QaSession {
 
   async screenshot(path: string): Promise<Capture> {
     this.calls.push(`screenshot ${path}`);
+    if (this.opts.crashOn !== undefined && path.includes(this.opts.crashOn)) {
+      this.dead = true;
+      throw new Error('Target crashed');
+    }
     writeFile(path, `png ${this.route}`);
     return { path, width: 10, height: 10 };
   }
@@ -148,8 +165,11 @@ export class ScriptedSession implements QaSession {
   }
 }
 
-/** A target that opens one scripted session. */
-export function scriptedTarget(session: ScriptedSession, options: { name?: string; capabilities?: QaTargetCapability[]; ready?: boolean } = {}): QaTarget & { opened: OpenOptions[] } {
+/** A target that opens one scripted session, or a new one from the factory at each open. */
+export function scriptedTarget(
+  session: ScriptedSession | (() => ScriptedSession),
+  options: { name?: string; capabilities?: QaTargetCapability[]; ready?: boolean } = {},
+): QaTarget & { opened: OpenOptions[] } {
   const opened: OpenOptions[] = [];
   const capabilities = new Set<QaTargetCapability>(options.capabilities ?? ['input', 'screenshot', 'video', 'webview']);
   return {
@@ -163,7 +183,7 @@ export function scriptedTarget(session: ScriptedSession, options: { name?: strin
     },
     async open(opts: OpenOptions) {
       opened.push(opts);
-      return session;
+      return typeof session === 'function' ? session() : session;
     },
   };
 }

@@ -139,6 +139,78 @@ purple, `#7c3aed`.
 `lw-qa session run` exits 1 when a row failed, and also when no row and leg pair ran (every pair is
 `not-run`), so CI never reads an empty run as green.
 
+## States and paths
+
+`lw-qa states run` photographs each member of each state union, and `lw-qa paths crawl` finds the
+taps that reach each route that renders one. Both read the route tables of `qa.routeTables`. These
+keys tune them:
+
+```toml
+[qa.routeWrappers]
+localized = "/:lang?"
+
+[qa.states]
+delivery = "qa/delivery.json"
+mounts = "qa/mounts.json"
+```
+
+### Route wrappers and optional segments
+
+A route table row may wrap its path in a one-argument function, for example
+`<Route path={localized(ROUTES.hot)} />`. When the client sources hold the body of the wrapper, the
+scan reads the body with the argument. The body ``(p) => p === '/' ? '/:lang?' : `/:lang?${p}` ``
+gives `/:lang?/hot`. The scan follows an `if` and `return` body, a `?:` on a string comparison, a
+template, a `+` join, and a wrapper that the table imports. `qa.routeWrappers` gives the prefix of a
+wrapper whose body the scan cannot read, such as one from a package. With no body and no key, the
+scan keeps the bare path.
+
+An optional segment `/:x?` matches an address with the segment and without it. A run opens the
+route without it, so `/:lang?/hot` opens `/hot`. A crawl takes the most specific route that matches
+a landing: `/en/hot` resolves to `/:lang?/hot`, not to `/:lang?`.
+
+### Descriptor files
+
+`qa.states.delivery` names a JSON file that maps a union name to its delivery descriptor:
+`route`, `leg`, `intercept` (`url`, `container`), `settle`, `act`, `verifyArgs`, `pivotModules`,
+`limit`, `batchSize`, `contrast`, `diffRoot`, `ignoreAttributes`, `maxSubjectAreaRatio` and
+`fixture`. `qa.states.mounts` names a JSON file that maps a union name to its mount hints:
+`component`, `leg`, `width`, `props`, `members` (props per member), `settle` and `fixture`. Both
+paths are project-relative, so the files can be tracked in git.
+
+A run checks each file before it starts. A key outside the schema, a bad value, a union the scan
+does not find, or a named file that does not exist stops the run with `qa.states.descriptors`. The
+message names the file and each bad key. Without a key, the run reads `.lw/qa/delivery.json` and
+`.lw/qa/mounts.json` when they exist.
+
+### Personas and crashes
+
+`fixture.persona` of a descriptor or of mount hints signs a persona in before the capture, as on a
+session row. A web leg posts the persona to `/__qa/session` when the session opens. A Mini App leg
+first opens the surface root with `?qa=<persona>`, which is the persona launch. Each persona gets
+its own session.
+
+When the browser, the context or the page closes during a capture, that capture fails as
+`crashed` with the reason. The next capture opens a new session, and the run goes on.
+
+### Crawl bounds
+
+A navigation of the `playwright` target waits for `DOMContentLoaded` (15 s at most), then up to
+2 s for `load`. A page that holds a request open never fires `load`, so the settle rule of the row
+or of the crawl decides when the page is ready. A crawl step, one navigation or one press, has
+30 s at most. A step that fails or runs out is marked and skipped. The crawl always ends with a row
+per target in `.lw/qa/paths/<slug>/targets.<leg>.json`, and each failed step goes to stderr.
+
+### The state page
+
+`qaStatesPage` serves `/__states` through the `transformIndexHtml` hooks of Vite and its official
+plugins only (plugin names that start with `vite:`). A project hook that rewrites the app page
+leaves the state page alone. `htmlTransforms: 'all'` runs every hook, and a list of plugin names
+runs the named ones too:
+
+```ts
+qaStatesPage({ framework: 'react', components: { Tile: './src/Tile.tsx' }, htmlTransforms: ['app-fonts'] });
+```
+
 ## Consent
 
 Before a pass opens a browser or touches a device, it prints a run contract. The contract lists

@@ -881,6 +881,18 @@ var qaConfig = import_zod6.z.object({
    * the `web` surface. The default is the project route file of main spec 2.26.3.
    */
   routeTables: import_zod6.z.array(import_zod6.z.union([import_zod6.z.string(), import_zod6.z.object({ file: import_zod6.z.string(), surface: import_zod6.z.enum(["web", "miniapp", "bot"]) })])).default(["{app:api}/src/routes.mts"]),
+  /**
+   * Path wrappers of the route tables, by function name, to the prefix each one adds, for example
+   * `{ localized = "/:lang?" }`. The delivery scan reads a wrapper body it can follow by itself;
+   * this key is for a wrapper it cannot, such as one imported from a package.
+   */
+  routeWrappers: import_zod6.z.record(import_zod6.z.string(), import_zod6.z.string().startsWith("/")).default({}),
+  /**
+   * The tracked files of a state run (spec 2.7). `delivery`: union name to its delivery descriptor.
+   * `mounts`: union name to its mount hints. A path is project-relative. When a key is not set,
+   * the run reads `.lw/qa/delivery.json` and `.lw/qa/mounts.json` if they exist.
+   */
+  states: import_zod6.z.object({ delivery: import_zod6.z.string().min(1).optional(), mounts: import_zod6.z.string().min(1).optional() }).prefault({}),
   /** Folders that only declare types, so the state scan can derive the shape of a parameter type. */
   typeRoots: import_zod6.z.array(import_zod6.z.string()).default([]),
   /** Overrides and additions to the default legs (spec 2.3). `false` removes a default leg. */
@@ -905,7 +917,11 @@ function withAppPaths(cfg, sections = {}) {
   const apps = sectionApps(sections);
   const dir = (p) => appDir(p, apps);
   const routeTables = cfg.routeTables.map((t) => typeof t === "string" ? dir(t) : { ...t, file: dir(t.file) });
-  return { ...cfg, app: dir(cfg.app), clientRoots: cfg.clientRoots.map(dir), buildDirs: cfg.buildDirs.map(dir), routeTables, typeRoots: cfg.typeRoots.map(dir) };
+  const states = {
+    ...cfg.states.delivery === void 0 ? {} : { delivery: dir(cfg.states.delivery) },
+    ...cfg.states.mounts === void 0 ? {} : { mounts: dir(cfg.states.mounts) }
+  };
+  return { ...cfg, app: dir(cfg.app), clientRoots: cfg.clientRoots.map(dir), buildDirs: cfg.buildDirs.map(dir), routeTables, typeRoots: cfg.typeRoots.map(dir), states };
 }
 
 // src/world/services/discover.mts

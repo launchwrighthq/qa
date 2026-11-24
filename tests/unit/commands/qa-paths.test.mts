@@ -100,4 +100,31 @@ describe('lw qa paths', () => {
     expect(await command.run(['record', '--base', 'http://x'], na.opts(root))).toBe(0);
     expect(na.out).toEqual(['desktop desktop.root.invites: n/a (video): the target playwright cannot record video']);
   });
+
+  it('crawl gives a row per target with the reason when the session does not open, and writes the results', async () => {
+    const root = await project(FILES);
+    const broken = scriptedTarget(new ScriptedSession());
+    broken.open = async () => {
+      throw new Error('browser did not start');
+    };
+    const { out, err, opts } = io();
+    const code = await createPathsCommand({ clock: fakeClock(), targets: registryOf({ playwright: broken }), revision: () => ({ commit: 'c', dirty: false }) }).run(['crawl', '--base', 'http://x'], opts(root));
+    expect(code).toBe(1);
+    expect(out[0]).toBe(`leg desktop: 0 path(s), 0 of 1 target route(s) reached -> ${join(root, '.lw/qa/paths/paths/results.desktop.jsonl')}`);
+    expect(err).toEqual(['leg desktop: the crawl did not finish: browser did not start']);
+    const written = JSON.parse(readFileSync(join(root, '.lw/qa/paths/paths/targets.desktop.json'), 'utf8'));
+    expect(written.targets).toEqual([{ route: '/invites', unions: ['InviteState'], reached: false, by: [], error: 'browser did not start' }]);
+  });
+
+  it('crawl marks a failed step, moves on and reports the targets it reached', async () => {
+    const root = await project(FILES);
+    const session = new ScriptedSession({ site: { '/': { controls: [{ label: 'Broken', role: 'link', to: '/broken' }, { label: 'Invites', role: 'link', to: '/invites' }] }, '/invites': { controls: [] } }, failOn: ['/broken'] });
+    const { out, err, opts } = io();
+    const code = await createPathsCommand({ clock: fakeClock(), targets: registryOf({ playwright: scriptedTarget(session) }), revision: () => ({ commit: 'c', dirty: false }) }).run(['crawl', '--base', 'http://x'], opts(root));
+    expect(out[0]).toContain('2 path(s), 1 of 1 target route(s) reached');
+    expect(err).toContain('leg desktop: step navigate on /broken: could not open /broken');
+    // The failed step exits 0 by itself. /broken is no target, so the drift check fails the run.
+    expect(err).toContain('leg desktop: route-drift, 1 route(s) the delivery scan does not name:');
+    expect(code).toBe(1);
+  });
 });

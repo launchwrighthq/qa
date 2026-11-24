@@ -32,11 +32,14 @@ var states_exports = {};
 __export(states_exports, {
   ABSENT: () => ABSENT,
   CaptureFailure: () => CaptureFailure,
+  DEFAULT_DELIVERY_FILE: () => DEFAULT_DELIVERY_FILE,
+  DEFAULT_MOUNTS_FILE: () => DEFAULT_MOUNTS_FILE,
   FAIL_REASONS: () => FAIL_REASONS,
   IGNORE_TAG: () => IGNORE_TAG,
   KINDS: () => KINDS,
   MAX_CANDIDATES: () => MAX_CANDIDATES,
   NULL_STATE: () => NULL_STATE,
+  PERSONA_LAUNCH_ROUTE: () => PERSONA_LAUNCH_ROUTE,
   PROVENANCE: () => PROVENANCE,
   STATES_FILE: () => STATES_FILE,
   STATES_HARNESS_PATH: () => STATES_HARNESS_PATH,
@@ -53,6 +56,7 @@ __export(states_exports, {
   captureGroup: () => captureGroup,
   captureMounted: () => captureMounted,
   describeCandidate: () => describeCandidate,
+  failedResult: () => failedResult,
   fieldValues: () => fieldValues,
   finishRun: () => finishRun,
   groupsFor: () => groupsFor,
@@ -67,6 +71,7 @@ __export(states_exports, {
   mountUrl: () => mountUrl,
   neitherUnions: () => neitherUnions,
   normaliseTables: () => normaliseTables,
+  onSession: () => onSession,
   parseInventory: () => parseInventory,
   parseResults: () => parseResults,
   plannedCaptures: () => plannedCaptures,
@@ -77,11 +82,13 @@ __export(states_exports, {
   resolveMount: () => resolveMount,
   scanProject: () => scanProject,
   scanStates: () => scanStates,
+  sessionPool: () => sessionPool,
   solve: () => solve,
   stateFindings: () => stateFindings,
   unreachable: () => unreachable,
   validateInventory: () => validateInventory,
-  validateShape: () => validateShape
+  validateShape: () => validateShape,
+  withDescriptors: () => withDescriptors
 });
 module.exports = __toCommonJS(states_exports);
 
@@ -1281,8 +1288,17 @@ function localConstants(sf) {
   visit(sf);
   return found;
 }
+function localFunctions(sf) {
+  const found = /* @__PURE__ */ new Map();
+  const visit = (node) => {
+    if (import_typescript2.default.isFunctionDeclaration(node) && node.name && node.body && !found.has(node.name.text)) found.set(node.name.text, node);
+    import_typescript2.default.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found;
+}
 function fileScope(sf) {
-  return { vocabulary: objectVocabulary(sf), constants: localConstants(sf), imported: () => null };
+  return { vocabulary: objectVocabulary(sf), constants: localConstants(sf), functions: localFunctions(sf), imported: () => null };
 }
 function moduleLinks(sf) {
   const named = /* @__PURE__ */ new Map();
@@ -1318,6 +1334,7 @@ function moduleScopes(parsed, resolve2) {
     const scope = {
       vocabulary: own.vocabulary,
       constants: own.constants,
+      functions: own.functions,
       imported(name) {
         links ??= moduleLinks(sf);
         const link = links.named.get(name);
@@ -1329,7 +1346,7 @@ function moduleScopes(parsed, resolve2) {
         for (const specifier of links.star) {
           const target = resolve2(file, specifier);
           const targetScope = target === null ? null : scopeOf(target);
-          if (targetScope && (targetScope.constants.has(name) || targetScope.vocabulary.has(name))) return { scope: targetScope, name };
+          if (targetScope && (targetScope.constants.has(name) || targetScope.vocabulary.has(name) || targetScope.functions.has(name))) return { scope: targetScope, name };
         }
         return null;
       }
@@ -1354,36 +1371,94 @@ function vocabularyOf(scope, name, depth = 0) {
   const link = scope.imported(name);
   return link ? vocabularyOf(link.scope, link.name, depth + 1) : null;
 }
-function evaluatePath(node, scope, depth = 0) {
-  if (!node || depth > MAX_HOPS * 2) return null;
+function functionOf(scope, name, depth = 0) {
+  if (depth > MAX_HOPS) return null;
+  const declared = scope.functions.get(name);
+  if (declared) return { fn: declared, scope };
+  let constant = scope.constants.get(name);
+  while (constant && (import_typescript2.default.isParenthesizedExpression(constant) || import_typescript2.default.isAsExpression(constant) || import_typescript2.default.isSatisfiesExpression(constant))) constant = constant.expression;
+  if (constant) return import_typescript2.default.isArrowFunction(constant) || import_typescript2.default.isFunctionExpression(constant) ? { fn: constant, scope } : null;
+  const link = scope.imported(name);
+  return link ? functionOf(link.scope, link.name, depth + 1) : null;
+}
+function evaluateCondition(node, scope, depth, env) {
+  if (import_typescript2.default.isParenthesizedExpression(node)) return evaluateCondition(node.expression, scope, depth + 1, env);
+  if (!import_typescript2.default.isBinaryExpression(node)) return null;
+  const op = node.operatorToken.kind;
+  const equal = op === import_typescript2.default.SyntaxKind.EqualsEqualsEqualsToken || op === import_typescript2.default.SyntaxKind.EqualsEqualsToken;
+  if (!equal && op !== import_typescript2.default.SyntaxKind.ExclamationEqualsEqualsToken && op !== import_typescript2.default.SyntaxKind.ExclamationEqualsToken) return null;
+  const left = evaluatePath(node.left, scope, depth + 1, env);
+  const right = evaluatePath(node.right, scope, depth + 1, env);
+  if (left === null || right === null) return null;
+  return equal ? left === right : left !== right;
+}
+function evaluateBody(body, scope, depth, env) {
+  if (!import_typescript2.default.isBlock(body) && !import_typescript2.default.isReturnStatement(body) && !import_typescript2.default.isIfStatement(body)) return import_typescript2.default.isExpression(body) ? evaluatePath(body, scope, depth + 1, env) : null;
+  const statements = import_typescript2.default.isBlock(body) ? body.statements : [body];
+  for (const statement of statements) {
+    if (import_typescript2.default.isReturnStatement(statement)) return evaluatePath(statement.expression, scope, depth + 1, env);
+    if (!import_typescript2.default.isIfStatement(statement)) return null;
+    const taken = evaluateCondition(statement.expression, scope, depth, env);
+    if (taken === null) return null;
+    const branch = taken ? statement.thenStatement : statement.elseStatement;
+    if (branch === void 0) continue;
+    return evaluateBody(branch, scope, depth + 1, env);
+  }
+  return null;
+}
+function wrappedPath(call, inner, scope, depth, env) {
+  const name = import_typescript2.default.isIdentifier(call.expression) ? call.expression.text : import_typescript2.default.isPropertyAccessExpression(call.expression) ? call.expression.name.text : null;
+  if (name === null) return inner;
+  const found = import_typescript2.default.isIdentifier(call.expression) ? functionOf(scope, name) : null;
+  const param = found?.fn.parameters[0]?.name;
+  if (found && found.fn.body && param && import_typescript2.default.isIdentifier(param)) {
+    const out = evaluateBody(found.fn.body, found.scope, depth + 1, { ...env, bindings: /* @__PURE__ */ new Map([[param.text, inner]]) });
+    if (out !== null && out.startsWith("/")) return out;
+  }
+  const prefix = env.wrappers?.[name];
+  return prefix === void 0 ? inner : joinPath(prefix.replace(/\/+$/, ""), inner);
+}
+function evaluatePath(node, scope, depth = 0, env = {}) {
+  if (!node || depth > MAX_HOPS * 4) return null;
   if (import_typescript2.default.isStringLiteral(node) || import_typescript2.default.isNoSubstitutionTemplateLiteral(node)) return node.text;
-  if (import_typescript2.default.isParenthesizedExpression(node) || import_typescript2.default.isAsExpression(node) || import_typescript2.default.isSatisfiesExpression(node)) return evaluatePath(node.expression, scope, depth + 1);
+  if (import_typescript2.default.isParenthesizedExpression(node) || import_typescript2.default.isAsExpression(node) || import_typescript2.default.isSatisfiesExpression(node)) return evaluatePath(node.expression, scope, depth + 1, env);
   if (import_typescript2.default.isPropertyAccessExpression(node) && import_typescript2.default.isIdentifier(node.expression)) {
     return vocabularyOf(scope, node.expression.text)?.get(node.name.text) ?? null;
   }
   if (import_typescript2.default.isIdentifier(node)) {
+    const bound = env.bindings?.get(node.text);
+    if (bound !== void 0) return bound;
     const declared = declarationOf(scope, node.text);
-    return declared ? evaluatePath(declared.expression, declared.scope, depth + 1) : null;
+    return declared ? evaluatePath(declared.expression, declared.scope, depth + 1, env) : null;
   }
   if (import_typescript2.default.isTemplateExpression(node)) {
     let out = node.head.text;
     for (const span of node.templateSpans) {
-      const part = evaluatePath(span.expression, scope, depth + 1);
+      const part = evaluatePath(span.expression, scope, depth + 1, env);
       if (part === null) return null;
       out += part + span.literal.text;
     }
     return out;
   }
+  if (import_typescript2.default.isBinaryExpression(node) && node.operatorToken.kind === import_typescript2.default.SyntaxKind.PlusToken) {
+    const left = evaluatePath(node.left, scope, depth + 1, env);
+    const right = left === null ? null : evaluatePath(node.right, scope, depth + 1, env);
+    return left === null || right === null ? null : left + right;
+  }
+  if (import_typescript2.default.isConditionalExpression(node)) {
+    const taken = evaluateCondition(node.condition, scope, depth, env);
+    return taken === null ? null : evaluatePath(taken ? node.whenTrue : node.whenFalse, scope, depth + 1, env);
+  }
   if (import_typescript2.default.isCallExpression(node) && node.arguments.length === 1) {
-    const inner = evaluatePath(node.arguments[0], scope, depth + 1);
-    return inner !== null && inner.startsWith("/") ? inner : null;
+    const inner = evaluatePath(node.arguments[0], scope, depth + 1, env);
+    return inner !== null && inner.startsWith("/") ? wrappedPath(node, inner, scope, depth, env) : null;
   }
   return null;
 }
 function isDynamicPath(path) {
-  return path.split("/").some((segment) => segment.startsWith(":"));
+  return path.split("/").some((segment) => segment.startsWith(":") && !segment.endsWith("?"));
 }
-function groupPrefix(node, scope) {
+function groupPrefix(node, scope, env) {
   const prefixes = [];
   let at = node.parent;
   while (at) {
@@ -1392,7 +1467,7 @@ function groupPrefix(node, scope) {
       if (options && import_typescript2.default.isObjectLiteralExpression(options)) {
         for (const property of options.properties) {
           if (import_typescript2.default.isPropertyAssignment(property) && import_typescript2.default.isIdentifier(property.name) && property.name.text === "prefix") {
-            const value = evaluatePath(property.initializer, scope);
+            const value = evaluatePath(property.initializer, scope, 0, env);
             if (value) prefixes.unshift(value.replace(/\/+$/, ""));
           }
         }
@@ -1406,10 +1481,10 @@ function joinPath(prefix, path) {
   if (prefix === "") return path;
   return path === "/" ? prefix : `${prefix}${path}`;
 }
-function routeRows(sf, scope = fileScope(sf)) {
+function routeRows(sf, scope = fileScope(sf), env = {}) {
   const rows = [];
   const push = (pathNode, component, pageName, prefix, at = scope) => {
-    const raw = evaluatePath(pathNode, at);
+    const raw = evaluatePath(pathNode, at, 0, env);
     if (raw === "*") return;
     const path = raw === null ? null : joinPath(prefix, raw);
     rows.push({ path, component, pageName, source: pathNode ? pathNode.getText(pathNode.getSourceFile()) : "<no path>", dynamic: path === null ? false : isDynamicPath(path) });
@@ -1418,7 +1493,7 @@ function routeRows(sf, scope = fileScope(sf)) {
     if (import_typescript2.default.isCallExpression(node) && import_typescript2.default.isPropertyAccessExpression(node.expression) && node.expression.name.text === "page" && node.arguments.length >= 2) {
       const [pathNode, nameNode] = node.arguments;
       const pageName = nameNode && (import_typescript2.default.isStringLiteral(nameNode) || import_typescript2.default.isNoSubstitutionTemplateLiteral(nameNode)) ? nameNode.text : null;
-      push(pathNode ?? null, null, pageName, groupPrefix(node, scope));
+      push(pathNode ?? null, null, pageName, groupPrefix(node, scope, env));
     }
     const opening = import_typescript2.default.isJsxSelfClosingElement(node) ? node : import_typescript2.default.isJsxElement(node) ? node.openingElement : null;
     if (opening && import_typescript2.default.isIdentifier(opening.tagName) && opening.tagName.text === "Route") {
@@ -1532,7 +1607,7 @@ function buildRouteMap(input) {
     const sf = parsed.get(table.file);
     if (!sf) return { table, found: false, routes: [] };
     const resolve2 = (specifier) => resolveSpecifier(table.file, specifier, files, aliases);
-    const routes = routeRows(sf, scopeOf(table.file) ?? fileScope(sf)).map((row) => ({
+    const routes = routeRows(sf, scopeOf(table.file) ?? fileScope(sf), { wrappers: input.wrappers ?? {} }).map((row) => ({
       path: row.path,
       dynamic: row.dynamic,
       source: row.source,
@@ -1665,6 +1740,7 @@ function scanStates(projectRoot2, config, generated) {
     tables,
     pageRoots: config.clientRoots,
     aliases: readAliases(projectRoot2, config.clientRoots),
+    wrappers: config.routeWrappers ?? {},
     generated
   });
   return { inventory: attachRoutes(scanned.inventory, map), problems: scanned.problems, map };
@@ -1985,7 +2061,8 @@ function groupFor(union, captures, defaultLeg, surface) {
     ...delivery.contrast === void 0 ? {} : { contrast: delivery.contrast },
     ...delivery.diffRoot ? { diffRoot: delivery.diffRoot } : {},
     ...delivery.ignoreAttributes ? { ignoreAttributes: delivery.ignoreAttributes } : {},
-    ...typeof delivery.maxSubjectAreaRatio === "number" ? { maxSubjectAreaRatio: delivery.maxSubjectAreaRatio } : {}
+    ...typeof delivery.maxSubjectAreaRatio === "number" ? { maxSubjectAreaRatio: delivery.maxSubjectAreaRatio } : {},
+    ...delivery.fixture?.persona ? { persona: delivery.fixture.persona } : {}
   };
   return { group, missing: null };
 }
@@ -2072,6 +2149,16 @@ function routeMatcher(pattern) {
 }
 function routeMatches(pattern, pathname) {
   return routeMatcher(pattern).test(String(pathname).replace(/[?#].*$/, ""));
+}
+function openRoute(pattern) {
+  const kept = [];
+  for (const segment of pattern.split("/")) {
+    if (segment.startsWith(":") && segment.endsWith("?")) continue;
+    if (segment.startsWith(":")) return null;
+    kept.push(segment);
+  }
+  const route = kept.join("/");
+  return route === "" ? "/" : route;
 }
 
 // src/states/services/capture.mts
@@ -2592,7 +2679,7 @@ async function solveGroupSubjects(page, projectRoot2, group, corpus, bodies) {
 async function renderOnce(session, group, substitution, subjects) {
   if (subjects === null) substitution.record();
   else substitution.use(subjects);
-  await session.navigate(group.route);
+  await session.navigate(openRoute(group.route) ?? group.route);
   for (const step of group.act ?? []) await session.act(step);
   await session.settle(group.settle);
   const held = await session.currentRoute();
@@ -2762,6 +2849,7 @@ function resolveMount(inventory, capture, defaultLeg) {
     props: {},
     width: hints.width ?? null,
     settle: hints.settle ?? DEFAULT_MOUNT_SETTLE,
+    persona: hints.fixture?.persona ?? null,
     refusal: null
   };
   const refuse = (refusal) => ({ ...base, refusal });
@@ -2863,15 +2951,204 @@ async function captureMounted(session, r, ctx) {
   result.ms = ctx.now() - started;
   return result;
 }
+
+// src/states/services/descriptors.mts
+var import_node_fs6 = require("fs");
+var import_node_path9 = require("path");
+
+// src/services/manifest.mts
+var import_promises2 = require("fs/promises");
+
+// src/services/legs.mts
+var CHROME_MAJOR = 145;
+var DESKTOP_USER_AGENT = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`;
+var DEFAULT_LEGS = Object.freeze({
+  desktop: {
+    surface: "web",
+    target: "playwright",
+    browser: "chromium",
+    viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 1,
+    userAgent: DESKTOP_USER_AGENT
+  },
+  "mobile-web": { surface: "web", target: "playwright", browser: "chromium", descriptor: "Pixel 7", userAgent: DESKTOP_USER_AGENT },
+  miniapp: { surface: "miniapp", target: "playwright", browser: "chromium", descriptor: "Pixel 7" },
+  "telegram-fake": { surface: "bot", target: "playwright", browser: "chromium", viewport: { width: 1280, height: 800 } },
+  "telegram-android": { surface: "miniapp", target: "android-adb" },
+  "safari-ios": { surface: "web", target: "ios-webkit" }
+});
+
+// src/services/manifest.mts
+var KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+// src/states/services/descriptors.mts
+var DEFAULT_DELIVERY_FILE = ".lw/qa/delivery.json";
+var DEFAULT_MOUNTS_FILE = ".lw/qa/mounts.json";
+var fixture = import_zod6.z.strictObject({ persona: import_zod6.z.string().regex(KEBAB, "must be a kebab-case persona id").optional() });
+var deliverySchema = import_zod6.z.strictObject({
+  route: import_zod6.z.string().startsWith("/").optional(),
+  leg: import_zod6.z.string().min(1).optional(),
+  intercept: import_zod6.z.strictObject({ url: import_zod6.z.string().min(1), container: import_zod6.z.string().min(1) }),
+  settle: import_zod6.z.strictObject({
+    selector: import_zod6.z.string().min(1).optional(),
+    artwork: import_zod6.z.boolean().optional(),
+    video: import_zod6.z.boolean().optional(),
+    busy: import_zod6.z.boolean().optional(),
+    timeout: import_zod6.z.number().int().positive().optional()
+  }),
+  act: import_zod6.z.array(import_zod6.z.unknown()).optional(),
+  verifyArgs: import_zod6.z.array(import_zod6.z.unknown()).optional(),
+  pivotModules: import_zod6.z.array(import_zod6.z.string()).optional(),
+  limit: import_zod6.z.number().int().positive().optional(),
+  batchSize: import_zod6.z.number().int().positive().optional(),
+  contrast: import_zod6.z.unknown().optional(),
+  diffRoot: import_zod6.z.string().min(1).optional(),
+  ignoreAttributes: import_zod6.z.array(import_zod6.z.string()).optional(),
+  maxSubjectAreaRatio: import_zod6.z.number().positive().max(1).optional(),
+  fixture: fixture.optional()
+});
+var mountSchema = import_zod6.z.strictObject({
+  component: import_zod6.z.string().min(1).optional(),
+  leg: import_zod6.z.string().min(1).optional(),
+  width: import_zod6.z.string().min(1).optional(),
+  props: import_zod6.z.record(import_zod6.z.string(), import_zod6.z.unknown()).optional(),
+  members: import_zod6.z.record(import_zod6.z.string(), import_zod6.z.record(import_zod6.z.string(), import_zod6.z.unknown())).optional(),
+  settle: import_zod6.z.strictObject({ selector: import_zod6.z.string().min(1).optional(), timeout: import_zod6.z.number().int().positive().optional() }).optional(),
+  fixture: fixture.optional()
+});
+var KINDS2 = {
+  delivery: { key: "qa.states.delivery", fallback: DEFAULT_DELIVERY_FILE, schema: deliverySchema },
+  mounts: { key: "qa.states.mounts", fallback: DEFAULT_MOUNTS_FILE, schema: mountSchema }
+};
+function issueLines(error) {
+  return error.issues.map((issue) => `  ${issue.path.map(String).join(".") || "(file)"}: ${issue.message}`);
+}
+function readDescriptors(kind, root, config, unions) {
+  const { key, fallback, schema } = KINDS2[kind];
+  const named = config.states[kind];
+  const rel = named ?? fallback;
+  const path = (0, import_node_path9.join)(root, rel);
+  if (!(0, import_node_fs6.existsSync)(path)) {
+    if (named === void 0) return { file: null, entries: {} };
+    throw new LaunchwrightError("qa.states.descriptors", `${key} names ${rel}, and the file does not exist.`, { context: { key, file: rel } });
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse((0, import_node_fs6.readFileSync)(path, "utf8"));
+  } catch (cause) {
+    throw new LaunchwrightError("qa.states.descriptors", `${rel} (${key}) is not JSON.`, { cause, context: { key, file: rel } });
+  }
+  const result = import_zod6.z.record(import_zod6.z.string(), schema).safeParse(parsed);
+  if (!result.success) {
+    throw new LaunchwrightError("qa.states.descriptors", `${rel} (${key}) does not match its schema:
+${issueLines(result.error).join("\n")}`, {
+      context: { key, file: rel }
+    });
+  }
+  const unknown = Object.keys(result.data).filter((name) => !unions.includes(name));
+  if (unknown.length > 0) {
+    throw new LaunchwrightError("qa.states.descriptors", `${rel} (${key}) names ${unknown.join(", ")}, and the state scan finds no union of that name.`, {
+      context: { key, file: rel, unknown }
+    });
+  }
+  return { file: rel, entries: result.data };
+}
+function withDescriptors(inventory, root, config) {
+  const names = [...inventory.unions.map((u) => u.name), ...inventory.ignored.map((g) => g.name)];
+  const delivery = readDescriptors("delivery", root, config, names).entries;
+  const mounts = readDescriptors("mounts", root, config, names).entries;
+  return {
+    ...inventory,
+    unions: inventory.unions.map((union) => ({
+      ...union,
+      ...delivery[union.name] ? { delivery: delivery[union.name] } : {},
+      ...mounts[union.name] ? { mount: mounts[union.name] } : {}
+    }))
+  };
+}
+
+// src/states/services/sessions.mts
+var PERSONA_LAUNCH_ROUTE = "/";
+function sessionPool(target, base) {
+  const held = /* @__PURE__ */ new Map();
+  const notes = [];
+  const label = (persona) => persona === null ? "no persona" : `persona ${persona}`;
+  const dispose = async (session, persona) => {
+    try {
+      await session.close();
+    } catch (err) {
+      notes.push(`the lost session of ${label(persona)} did not close: ${messageOf(err).split("\n")[0]}`);
+    }
+  };
+  const lost = (session) => session.isClosed?.() === true;
+  return {
+    notes,
+    lost,
+    async get(persona) {
+      const key = persona ?? "";
+      const open = held.get(key);
+      if (open && !lost(open)) return open;
+      if (open) {
+        held.delete(key);
+        await dispose(open, persona);
+        notes.push(`the browser of ${label(persona)} closed, so a new session opened`);
+      }
+      const session = await target.open({ ...base, ...persona === null ? {} : { persona } });
+      if (persona !== null && base.leg.surface === "miniapp") {
+        try {
+          await session.navigate(PERSONA_LAUNCH_ROUTE);
+        } catch (err) {
+          await dispose(session, persona);
+          throw err;
+        }
+      }
+      held.set(key, session);
+      return session;
+    },
+    async close() {
+      const all = [...held.entries()];
+      held.clear();
+      for (const [key, session] of all) {
+        if (lost(session)) await dispose(session, key === "" ? null : key);
+        else await session.close();
+      }
+    }
+  };
+}
+function failedResult(capture, reason, error) {
+  return { id: capture.id, union: capture.union, member: capture.member, ok: false, subject: null, context: null, provenance: null, verified: null, error, reason, ms: 0 };
+}
+var firstLine = (err) => messageOf(err).split("\n")[0] ?? "";
+async function onSession(pool, persona, captures, work) {
+  let session;
+  try {
+    session = await pool.get(persona);
+  } catch (err) {
+    const who = persona === null ? "the session" : `the session of persona ${persona}`;
+    return captures.map((c) => failedResult(c, "blocked", `${who} did not open: ${firstLine(err)}`));
+  }
+  let results;
+  try {
+    results = await work(session);
+  } catch (err) {
+    if (!pool.lost(session)) throw err;
+    results = captures.map((c) => failedResult(c, "crashed", firstLine(err)));
+  }
+  if (!pool.lost(session)) return results;
+  return results.map((r) => r.ok ? r : { ...r, reason: "crashed", error: `the browser closed during this capture: ${r.error ?? "no reason given"}` });
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   ABSENT,
   CaptureFailure,
+  DEFAULT_DELIVERY_FILE,
+  DEFAULT_MOUNTS_FILE,
   FAIL_REASONS,
   IGNORE_TAG,
   KINDS,
   MAX_CANDIDATES,
   NULL_STATE,
+  PERSONA_LAUNCH_ROUTE,
   PROVENANCE,
   STATES_FILE,
   STATES_HARNESS_PATH,
@@ -2888,6 +3165,7 @@ async function captureMounted(session, r, ctx) {
   captureGroup,
   captureMounted,
   describeCandidate,
+  failedResult,
   fieldValues,
   finishRun,
   groupsFor,
@@ -2902,6 +3180,7 @@ async function captureMounted(session, r, ctx) {
   mountUrl,
   neitherUnions,
   normaliseTables,
+  onSession,
   parseInventory,
   parseResults,
   plannedCaptures,
@@ -2912,10 +3191,12 @@ async function captureMounted(session, r, ctx) {
   resolveMount,
   scanProject,
   scanStates,
+  sessionPool,
   solve,
   stateFindings,
   unreachable,
   validateInventory,
-  validateShape
+  validateShape,
+  withDescriptors
 });
 //# sourceMappingURL=states.cjs.map

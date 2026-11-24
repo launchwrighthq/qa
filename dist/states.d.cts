@@ -1,5 +1,5 @@
-import { H as Surface, P as Provenance, E as EvidenceKind, t as QaSession, a1 as RoutablePage, S as Settle } from './contract-DSRjkOLo.cjs';
-import { Q as QaConfig } from './config-Z7lJ4xeJ.cjs';
+import { H as Surface, P as Provenance, E as EvidenceKind, t as QaSession, a1 as RoutablePage, S as Settle, Q as QaTarget, o as OpenOptions } from './contract-B9QWKAsv.cjs';
+import { Q as QaConfig } from './config-Du8sHpQm.cjs';
 import { L as LaunchwrightError } from './errors-DgRPaUlC.cjs';
 import 'zod';
 
@@ -224,7 +224,7 @@ interface DeliveryRoute {
     page: string | null;
     /** Import hops from the page to the union's anchor file. */
     distance: number;
-    /** The route has a `:param`, so a crawl cannot open it without a value. */
+    /** The route has a required `:param`, so a crawl cannot open it without a value. An optional `:param?` is left out. */
     dynamic: boolean;
     /** How many files the page reaches. A smaller number is a more specific route. */
     reaches: number;
@@ -234,7 +234,7 @@ interface DeliveryRoute {
  * subjects and the settle rule, and the route when the scan derives none. It sits beside a union in the inventory file.
  */
 interface DeliveryDescriptor {
-    /** Default: the nearest derived route without a `:param` on the surface of the leg. */
+    /** Default: the nearest derived route without a required `:param` on the surface of the leg. */
     route?: string;
     leg?: string;
     intercept: {
@@ -257,6 +257,12 @@ interface DeliveryDescriptor {
     diffRoot?: string;
     ignoreAttributes?: string[];
     maxSubjectAreaRatio?: number;
+    /** The persona the capture runs signed in as, as on a session row. */
+    fixture?: CaptureFixture;
+}
+/** The fixture of a state capture: the persona from the world registry that is signed in first. */
+interface CaptureFixture {
+    persona?: string;
 }
 /** What a mounted capture may say beyond the scan (spec 2.14 rule C2). */
 interface MountHints {
@@ -269,6 +275,8 @@ interface MountHints {
         selector?: string;
         timeout?: number;
     };
+    /** The persona the capture runs signed in as, as on a session row. */
+    fixture?: CaptureFixture;
 }
 interface UnionEntry {
     name: string;
@@ -424,6 +432,8 @@ interface CaptureGroup {
     diffRoot?: string;
     ignoreAttributes?: string[];
     maxSubjectAreaRatio?: number;
+    /** The persona the group runs signed in as (`fixture.persona` of the descriptor). */
+    persona?: string;
 }
 /** Every group the intercepted runner can take, and every union it cannot take, with the reason. */
 declare function groupsFor(inventory: Pick<Inventory, 'unions'>, captures: readonly PlannedCapture[], defaultLeg: string, surface?: Surface): {
@@ -641,6 +651,8 @@ declare function buildRouteMap(input: {
     tables: readonly RouteTable[];
     pageRoots: readonly string[];
     aliases?: Readonly<Record<string, string>>;
+    /** `qa.routeWrappers`: the prefix a path wrapper adds, by function name, for a wrapper whose body the scan cannot read. */
+    wrappers?: Readonly<Record<string, string>>;
     generated: string;
 }): RouteMap;
 /** The inventory with each union's routes, and the reason when it has none. */
@@ -663,7 +675,7 @@ interface StatesScan {
     map: RouteMap;
 }
 /** Scans the states of a project and derives the route of each union. */
-declare function scanStates(projectRoot: string, config: Pick<QaConfig, 'clientRoots' | 'typeRoots' | 'routeTables'>, generated: string): StatesScan;
+declare function scanStates(projectRoot: string, config: Pick<QaConfig, 'clientRoots' | 'typeRoots' | 'routeTables'> & Partial<Pick<QaConfig, 'routeWrappers'>>, generated: string): StatesScan;
 
 interface StateFinding {
     rule: 'C1' | 'C4';
@@ -707,6 +719,8 @@ interface ResolvedMount {
     props: Record<string, unknown>;
     width: string | null;
     settle: Settle;
+    /** The persona the capture runs signed in as (`fixture.persona` of the hints), or null. */
+    persona: string | null;
     refusal: CaptureFailure | null;
 }
 /**
@@ -726,4 +740,36 @@ declare function captureMounted(session: QaSession, r: ResolvedMount, ctx: {
     now: () => number;
 }): Promise<StateResult>;
 
-export { ABSENT, type CaptureContext, CaptureFailure, type CaptureGroup, type DeliveryDescriptor, type DeliveryRoute, type EvidenceRecorder, FAIL_REASONS, type FailReason, type Field, IGNORE_TAG, type IgnoredEntry, type InputSite, type Inventory, KINDS, MAX_CANDIDATES, type Mechanism, type MountHints, NULL_STATE, type OutputSite, PROVENANCE, type PlannedCapture, type RouteMap, type RouteTable, STATES_FILE, STATES_HARNESS_PATH, STATE_SUFFIXES, type ScanProblem, type ScanResult, type Shape, type SourceText, type StateFinding, type StateResult, type StatesPlan, type StatesScan, type UnionEntry, type UnionKind, analyzeSources, anchorSubjects, attachRoutes, buildPlan, buildRouteMap, c1Findings, c4Findings, candidatePlan, candidates, captureGroup, captureMounted, describeCandidate, fieldValues, finishRun, groupsFor, installSubstitution, isProductSource, isStateUnionName, issueFor, kindFor, locateSubjects, mechanismFor, mergeDelivery, mountUrl, neitherUnions, normaliseTables, parseInventory, parseResults, plannedCaptures, readAliases, readTree, renderReport, renderRouteSummary, resolveMount, scanProject, scanStates, solve, stateFindings, unreachable, validateInventory, validateShape };
+/** The descriptor files a run reads when `qa.states` names none. Both are optional. */
+declare const DEFAULT_DELIVERY_FILE = ".lw/qa/delivery.json";
+declare const DEFAULT_MOUNTS_FILE = ".lw/qa/mounts.json";
+/** The inventory with each union's delivery descriptor and mount hints from the descriptor files. */
+declare function withDescriptors(inventory: Inventory, root: string, config: Pick<QaConfig, 'states'>): Inventory;
+
+/**
+ * The route a Mini App persona session opens first. The navigation carries `?qa=<persona>`, and
+ * the launch signs the persona in, as on a session row (spec 2.6). A web session signs in when it
+ * opens, through `POST /__qa/session`.
+ */
+declare const PERSONA_LAUNCH_ROUTE = "/";
+interface SessionPool {
+    /** The open session of a persona, or of no persona for null. It opens on first use, and again after a crash. */
+    get(persona: string | null): Promise<QaSession>;
+    /** True when the session closed by itself. The next `get` of its persona opens a new one. */
+    lost(session: QaSession): boolean;
+    /** What the pool did that a reader should know: each reopen, and each failure to close a lost session. */
+    readonly notes: string[];
+    close(): Promise<void>;
+}
+/** A pool over one target and leg. `base` is the open options of every session, without the persona. */
+declare function sessionPool(target: QaTarget, base: Omit<OpenOptions, 'persona'>): SessionPool;
+/** A failed result for a capture that never reached its runner. */
+declare function failedResult(capture: Pick<PlannedCapture, 'id' | 'union' | 'member'>, reason: FailReason, error: string): StateResult;
+/**
+ * Runs captures on the session of a persona. A session that does not open fails each capture as
+ * `blocked` with the reason. When the session closed during the work, each failed capture becomes
+ * `crashed` with the reason, and the next call opens a new session.
+ */
+declare function onSession(pool: SessionPool, persona: string | null, captures: readonly Pick<PlannedCapture, 'id' | 'union' | 'member'>[], work: (session: QaSession) => Promise<StateResult[]>): Promise<StateResult[]>;
+
+export { ABSENT, type CaptureContext, CaptureFailure, type CaptureGroup, DEFAULT_DELIVERY_FILE, DEFAULT_MOUNTS_FILE, type DeliveryDescriptor, type DeliveryRoute, type EvidenceRecorder, FAIL_REASONS, type FailReason, type Field, IGNORE_TAG, type IgnoredEntry, type InputSite, type Inventory, KINDS, MAX_CANDIDATES, type Mechanism, type MountHints, NULL_STATE, type OutputSite, PERSONA_LAUNCH_ROUTE, PROVENANCE, type PlannedCapture, type RouteMap, type RouteTable, STATES_FILE, STATES_HARNESS_PATH, STATE_SUFFIXES, type ScanProblem, type ScanResult, type SessionPool, type Shape, type SourceText, type StateFinding, type StateResult, type StatesPlan, type StatesScan, type UnionEntry, type UnionKind, analyzeSources, anchorSubjects, attachRoutes, buildPlan, buildRouteMap, c1Findings, c4Findings, candidatePlan, candidates, captureGroup, captureMounted, describeCandidate, failedResult, fieldValues, finishRun, groupsFor, installSubstitution, isProductSource, isStateUnionName, issueFor, kindFor, locateSubjects, mechanismFor, mergeDelivery, mountUrl, neitherUnions, normaliseTables, onSession, parseInventory, parseResults, plannedCaptures, readAliases, readTree, renderReport, renderRouteSummary, resolveMount, scanProject, scanStates, sessionPool, solve, stateFindings, unreachable, validateInventory, validateShape, withDescriptors };

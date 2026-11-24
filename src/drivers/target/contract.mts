@@ -65,6 +65,11 @@ export interface QaSession {
   logs(): Promise<SessionLogLine[]>;
   close(): Promise<void>;
   /**
+   * True when the browser, the context or the page behind the session closed by itself, for
+   * example after a crash. A run then opens a new session. Absent: the target cannot tell.
+   */
+  isClosed?(): boolean;
+  /**
    * Runs a script expression in the page and returns its JSON value. An async expression is
    * awaited. Browser and WebView targets only. The path crawl and the state harness checks use it.
    */

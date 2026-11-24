@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { fakeClock, tmpDir } from '../../../src/kernel/testing/index.mts';
 import { describe, expect, it } from 'vitest';
 import {
+  bestRoute,
   budgetCheck,
   buildCrawlPlan,
   chooseEdges,
@@ -15,6 +16,7 @@ import {
   MAX_DEPTH,
   MAX_EDGES_PER_NODE,
   normaliseControls,
+  openRoute,
   pathId,
   recordPath,
   routeDrift,
@@ -188,5 +190,73 @@ describe('path contract', () => {
     const session = new ScriptedSession({ site, clock, clickMs: 5000 });
     const recorded = await recordPath(session, { root: '/', path: { id: 'x', steps: [{ label: 'Invites', role: 'link' }] }, file: join(await tmpDir(), 'x.webm'), device: 'd', capS: 2, now: () => clock.now() });
     expect(recorded).toMatchObject({ ok: false, reason: 'over-budget' });
+  });
+
+  it('ranks an optional locale segment below a static one, and opens a pattern without it', () => {
+    const routes = ['/:lang?', '/:lang?/spin', '/:lang?/categories/:slug', '/my-list/:tab?'];
+    expect(bestRoute(routes, '/en/spin')).toBe('/:lang?/spin');
+    expect(bestRoute(routes, '/spin')).toBe('/:lang?/spin');
+    expect(bestRoute(routes, '/en')).toBe('/:lang?');
+    expect(bestRoute(routes, '/')).toBe('/:lang?');
+    expect(bestRoute(routes, '/de/categories/mystery')).toBe('/:lang?/categories/:slug');
+    expect(bestRoute(routes, '/a/b/c/d')).toBeNull();
+    expect(openRoute('/:lang?/spin')).toBe('/spin');
+    expect(openRoute('/:lang?')).toBe('/');
+    expect(openRoute('/my-list/:tab?')).toBe('/my-list');
+    expect(openRoute('/series/:tail')).toBeNull();
+  });
+
+  it('resolves a landing with a locale segment to its optional-segment target, so it is no drift', async () => {
+    const localized = { unions: [{ union: 'WheelState', routes: [{ surface: 'web' as const, route: '/:lang?/spin' }, { surface: 'web' as const, route: '/:lang?' }] }] };
+    const session = new ScriptedSession({ site: { '/': { controls: [{ label: 'Spin', role: 'link', to: '/en/spin' }] }, '/en/spin': { controls: [{ label: 'Home', role: 'link', to: '/en' }] } } });
+    const targets = targetsFrom(localized);
+    const result = await crawl(session, buildCrawlPlan({ slug: 's', leg: 'desktop', surface: 'web', targets }));
+    expect(result.paths.map((p) => [p.route, p.landed, p.resolved])).toEqual([['/:lang?/spin', '/en/spin', true]]);
+    expect(routeDrift(targets, result.paths.map((p) => ({ id: p.id, surface: 'web' as const, route: p.route })))).toEqual([]);
+    expect(result.targets.map((t) => [t.route, t.reached])).toEqual([
+      ['/:lang?', false],
+      ['/:lang?/spin', true],
+    ]);
+    expect(crossReach(targets, [{ id: 'x', surface: 'web', route: '/de/spin' }]).unions).toEqual([{ union: 'WheelState', reachable: true }]);
+  });
+
+  it('bounds each crawl step: a hang and a failed navigation are marked, and the crawl ends with a row per target', async () => {
+    const hanging = {
+      '/': { controls: [{ label: 'Invites', role: 'link', to: '/invites' }, { label: 'Stuck', role: 'link', to: '/stuck' }, { label: 'Broken', role: 'link', to: '/broken' }] },
+      '/invites': { controls: [{ label: 'Stuck', role: 'link', to: '/stuck' }] },
+      '/stuck': { controls: [{ label: 'Home', role: 'link', to: '/' }] },
+      '/broken': { controls: [{ label: 'Home', role: 'link', to: '/' }] },
+    };
+    const session = new ScriptedSession({ site: hanging, hangOn: ['/stuck'], failOn: ['/broken'] });
+    const plan = buildCrawlPlan({ slug: 's', leg: 'desktop', surface: 'web', targets: targetsFrom(delivery), stepTimeoutMs: 50 });
+    const result = await crawl(session, plan);
+    expect(result.paths.map((p) => p.readable)).toEqual(['/ -> "Broken" -> /broken', '/ -> "Invites" -> /invites', '/ -> "Stuck" -> /stuck']);
+    expect(result.failures).toEqual([
+      { route: '/broken', kind: 'navigate', error: 'could not open /broken' },
+      { route: '/stuck', kind: 'timeout', error: 'open /stuck took longer than 50 ms' },
+    ]);
+    expect(result.targets).toEqual([
+      { route: '/invites', unions: ['InviteMark', 'TileState'], reached: true, by: ['desktop.root.invites'] },
+      { route: '/items/:id', unions: ['InviteMark'], reached: false, by: [] },
+    ]);
+  });
+
+  it('stops a crawl when the browser closes, and gives each unreached target the reason', async () => {
+    const session = new ScriptedSession({ site, failOn: ['/invites'] });
+    const navigate = session.navigate.bind(session);
+    session.navigate = async (route: string) => {
+      if (route === '/invites') session.dead = true;
+      return navigate(route);
+    };
+    const result = await crawl(session, buildCrawlPlan({ slug: 's', leg: 'desktop', surface: 'web', targets: targetsFrom(delivery) }));
+    expect(result.failures.at(-1)).toMatchObject({ route: '/invites', kind: 'closed' });
+    expect(result.targets.find((t) => t.route === '/items/:id')).toMatchObject({ reached: false, error: 'the browser closed during open /invites: could not open /invites' });
+    expect(result.targets.find((t) => t.route === '/invites')).toMatchObject({ reached: true });
+  });
+
+  it('ends a crawl whose root does not open with the reason on every target', async () => {
+    const result = await crawl(new ScriptedSession({ site, failOn: ['/'] }), buildCrawlPlan({ slug: 's', leg: 'desktop', surface: 'web', targets: targetsFrom(delivery) }));
+    expect(result.paths).toEqual([]);
+    expect(result.targets.map((t) => t.error)).toEqual(['/ did not open: could not open /', '/ did not open: could not open /']);
   });
 });

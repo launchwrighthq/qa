@@ -47,6 +47,8 @@ export interface ResolvedMount {
   props: Record<string, unknown>;
   width: string | null;
   settle: Settle;
+  /** The persona the capture runs signed in as (`fixture.persona` of the hints), or null. */
+  persona: string | null;
   refusal: CaptureFailure | null;
 }
 
@@ -74,6 +76,7 @@ export function resolveMount(inventory: Pick<Inventory, 'unions'>, capture: Plan
     props: {},
     width: hints.width ?? null,
     settle: hints.settle ?? DEFAULT_MOUNT_SETTLE,
+    persona: hints.fixture?.persona ?? null,
     refusal: null,
   };
   const refuse = (refusal: CaptureFailure): ResolvedMount => ({ ...base, refusal });

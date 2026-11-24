@@ -111,7 +111,7 @@ export interface DeliveryRoute {
   page: string | null;
   /** Import hops from the page to the union's anchor file. */
   distance: number;
-  /** The route has a `:param`, so a crawl cannot open it without a value. */
+  /** The route has a required `:param`, so a crawl cannot open it without a value. An optional `:param?` is left out. */
   dynamic: boolean;
   /** How many files the page reaches. A smaller number is a more specific route. */
   reaches: number;
@@ -122,7 +122,7 @@ export interface DeliveryRoute {
  * subjects and the settle rule, and the route when the scan derives none. It sits beside a union in the inventory file.
  */
 export interface DeliveryDescriptor {
-  /** Default: the nearest derived route without a `:param` on the surface of the leg. */
+  /** Default: the nearest derived route without a required `:param` on the surface of the leg. */
   route?: string;
   leg?: string;
   intercept: { url: string; container: string };
@@ -136,6 +136,13 @@ export interface DeliveryDescriptor {
   diffRoot?: string;
   ignoreAttributes?: string[];
   maxSubjectAreaRatio?: number;
+  /** The persona the capture runs signed in as, as on a session row. */
+  fixture?: CaptureFixture;
+}
+
+/** The fixture of a state capture: the persona from the world registry that is signed in first. */
+export interface CaptureFixture {
+  persona?: string;
 }
 
 /** What a mounted capture may say beyond the scan (spec 2.14 rule C2). */
@@ -146,6 +153,8 @@ export interface MountHints {
   props?: Record<string, unknown>;
   members?: Record<string, Record<string, unknown>>;
   settle?: { selector?: string; timeout?: number };
+  /** The persona the capture runs signed in as, as on a session row. */
+  fixture?: CaptureFixture;
 }
 
 export interface UnionEntry {

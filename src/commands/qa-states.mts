@@ -4,16 +4,17 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { type App, isCodedError, LaunchwrightError } from '../kernel/index.mts';
 import { type CommandArgs, parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { type QaConfig, qaConfigOf } from '../config.mts';
-import type { QaSession } from '../drivers/target/contract.mts';
 import { reportPaths } from '../services/ledger.mts';
 import { captureGroup } from '../states/services/capture.mts';
 import { c1Findings, c4Findings } from '../states/services/check.mts';
 import { renderRouteSummary } from '../states/services/delivery.mts';
 import { FORGE_NOTE, type ForgeContext, forgeState } from '../states/services/forge.mts';
 import { type AcceptedSeed, acceptedSeed, readSeed, seedFile, writeDraft } from '../states/services/forge-seed.mts';
-import { type DeliveryDescriptor, inferSeeds, type Inventory, type Mechanism, type SeedProposal, type StateResult } from '../states/services/inventory.mts';
-import { buildPlan, finishRun, groupsFor, mergeDelivery, parseInventory, parseResults, renderNeither, renderPlan, type StatesPlan } from '../states/services/loop.mts';
+import { inferSeeds, type Inventory, type Mechanism, type SeedProposal, type StateResult } from '../states/services/inventory.mts';
+import { buildPlan, finishRun, groupsFor, parseInventory, parseResults, renderNeither, renderPlan, type StatesPlan } from '../states/services/loop.mts';
 import { captureMounted, resolveMount } from '../states/services/mount.mts';
+import { onSession, sessionPool } from '../states/services/sessions.mts';
+import { withDescriptors } from '../states/services/descriptors.mts';
 import { scanStates, STATES_FILE } from '../states/services/project.mts';
 import { gitRevision, ledgerRecorder, legByName, runClock, type RunDeps, runDeps } from '../states/services/run.mts';
 import type { ListenQaApp } from '../world/services/api.mts';
@@ -36,7 +37,9 @@ const USAGE = [
   '                                        mount each input member at /__states and intercept each output member.',
   '                                        Images go to <reportDir>/assets/<slug>/states/ and into the ledger',
   '  report [--slug <slug>]                the coverage matrix of the last run of the slug',
-  'A delivery descriptor file .lw/qa/delivery.json (union name to { route, intercept, settle }) feeds intercepted capture.',
+  'qa.states.delivery names the file of delivery descriptors (union name to { route, intercept, settle, fixture }) that feeds',
+  'intercepted capture, and qa.states.mounts the file of mount hints (union name to { component, props, members, fixture }).',
+  'Without them, a run reads .lw/qa/delivery.json and .lw/qa/mounts.json when they exist. fixture.persona signs a persona in first.',
 ];
 
 /** The default slug of a state run. */
@@ -47,9 +50,6 @@ const DEFAULT_FORGE_SLUG = 'forged';
 
 /** The leg a state run uses when none is named: the harness is a route of the web client. */
 const DEFAULT_LEG = 'desktop';
-
-/** The delivery descriptors of intercepted capture, by union name. */
-const DELIVERY_FILE = '.lw/qa/delivery.json';
 
 type Action = 'scan' | 'plan' | 'infer' | 'forge' | 'run' | 'report';
 
@@ -92,18 +92,9 @@ function narrowOf(args: Flags): { files?: string[]; dirs?: string[]; label: stri
   return { ...(files ? { files } : {}), ...(dirs ? { dirs } : {}), label: [...(files ?? []), ...(dirs ?? [])].join(', ') };
 }
 
-/** The inventory of a run: a fresh scan, with the delivery descriptors of `.lw/qa/delivery.json`. */
+/** The inventory of a run: a fresh scan, with the descriptors of `qa.states.delivery` and `qa.states.mounts`. */
 function freshInventory(cwd: string, config: QaConfig, generated: string): Inventory {
-  const { inventory } = scanStates(cwd, config, generated);
-  const deliveryPath = join(cwd, DELIVERY_FILE);
-  if (!existsSync(deliveryPath)) return inventory;
-  let delivery: Record<string, DeliveryDescriptor>;
-  try {
-    delivery = JSON.parse(readFileSync(deliveryPath, 'utf8')) as Record<string, DeliveryDescriptor>;
-  } catch (cause) {
-    throw new LaunchwrightError('qa.states.delivery', `${DELIVERY_FILE} is not JSON`, { cause, context: { path: deliveryPath } });
-  }
-  return mergeDelivery(inventory, delivery);
+  return withDescriptors(scanStates(cwd, config, generated).inventory, cwd, config);
 }
 
 function scan(args: Flags, opts: QaCommandOptions, config: QaConfig, generated: string): number {
@@ -302,29 +293,34 @@ async function run(args: Flags, opts: QaCommandOptions, config: QaConfig, deps: 
     notRun.mount = why;
     notRun.solve = why;
   } else {
-    let session: QaSession | null = null;
+    const pool = sessionPool(target, { leg, baseUrl: base, outDir: join(reportPaths(reportDir, slug).assets, 'states') });
     try {
-      session = await target.open({ leg, baseUrl: base, outDir: join(reportPaths(reportDir, slug).assets, 'states') });
       const mounted = ledgerRecorder({ reportDir, slug, leg, provenance: 'mounted', clock: deps.clock, revision });
       for (const capture of built.captures.filter((c) => c.mechanism === 'mount')) {
-        attempts.push(await captureMounted(session, resolveMount(built.inventory, capture, leg.name), { reportDir, slug, record: mounted.record, now }));
+        const resolved = resolveMount(built.inventory, capture, leg.name);
+        attempts.push(...(await onSession(pool, resolved.persona, [capture], async (session) => [await captureMounted(session, resolved, { reportDir, slug, record: mounted.record, now })])));
       }
       await mounted.flush();
-      if (groups.length > 0) {
-        const page = session.routable?.();
-        if (!page) notRun.solve = `the target ${leg.target} gives no routable page, so no response can be intercepted`;
-        else {
-          const intercepted = ledgerRecorder({ reportDir, slug, leg, provenance: 'intercepted', clock: deps.clock, revision });
-          for (const group of groups) {
-            const { results, notes } = await captureGroup(session, page, group, { projectRoot: opts.cwd, reportDir, slug, record: intercepted.record, now });
-            for (const note of notes) opts.out(`${group.union}: ${note}`);
-            attempts.push(...results);
+      const intercepted = ledgerRecorder({ reportDir, slug, leg, provenance: 'intercepted', clock: deps.clock, revision });
+      for (const group of groups) {
+        const members = group.members.map((m) => ({ id: m.id, union: group.union, member: m.member }));
+        const results = await onSession(pool, group.persona ?? null, members, async (session) => {
+          const page = session.routable?.();
+          if (!page) {
+            notRun.solve = `the target ${leg.target} gives no routable page, so no response can be intercepted`;
+            return [];
           }
-          await intercepted.flush();
-        }
+          const captured = await captureGroup(session, page, group, { projectRoot: opts.cwd, reportDir, slug, record: intercepted.record, now });
+          for (const note of captured.notes) opts.out(`${group.union}: ${note}`);
+          return captured.results;
+        });
+        attempts.push(...results);
+        if (notRun.solve !== undefined) break;
       }
+      await intercepted.flush();
     } finally {
-      await session?.close();
+      await pool.close();
+      for (const note of pool.notes) opts.out(`session    ${note}`);
     }
   }
   writeJson(files.plan, { ...built, notRun, blocked });

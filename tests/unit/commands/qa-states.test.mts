@@ -23,10 +23,26 @@ const BASE_FILES = {
   'apps/client/src/tile.tsx': "export type TileState = 'on' | 'off';\nexport interface TileProps { state: TileState }\nexport const Tile = (p: TileProps) => null;",
 };
 
-function io() {
+function io(config: Record<string, unknown> = {}) {
   const out: string[] = [];
   const err: string[] = [];
-  return { out, err, opts: (cwd: string) => ({ cwd, out: (l: string) => out.push(l), err: (l: string) => err.push(l), config: {} }) };
+  return { out, err, opts: (cwd: string) => ({ cwd, out: (l: string) => out.push(l), err: (l: string) => err.push(l), config }) };
+}
+
+const INVITE_DELIVERY = { route: '/invites', intercept: { url: '**/api/invites*', container: 'items' }, settle: { selector: 'li' } };
+const HARNESS = { '/__states': { harness: { harness: true, error: null, roots: 1 } } };
+
+/** A target that opens a new scripted session over one fake API page at each open. */
+function sessionsOver(root: string, options: { crashOn?: string } = {}) {
+  const page = new FakeRoutablePage({ url: '**/api/invites*', body: { items: [{ closed: false, name: 'Ada' }] } }, (row) => (row.closed === true ? 'closed' : 'open'), root);
+  const sessions: ScriptedSession[] = [];
+  const target = scriptedTarget(() => {
+    const crash = sessions.length === 0 ? options.crashOn : undefined;
+    const session = new ScriptedSession({ page, site: HARNESS, ...(crash ? { crashOn: crash } : {}) });
+    sessions.push(session);
+    return session;
+  });
+  return { target, sessions };
 }
 
 describe('lw qa states', () => {
@@ -156,5 +172,69 @@ describe('lw qa states', () => {
     const { err, opts } = io();
     expect(await createStatesCommand().run(['report', '--slug', 'none'], opts(root))).toBe(1);
     expect(err[0]).toContain('qa.states.no-run');
+  });
+
+  it('run reads the tracked descriptor files of qa.states, applies the mount hints, and signs each persona in', async () => {
+    const root = await project({
+      ...BASE_FILES,
+      'qa/delivery.json': JSON.stringify({ InviteState: { ...INVITE_DELIVERY, fixture: { persona: 'member' } } }),
+      'qa/mounts.json': JSON.stringify({ TileState: { component: 'Tile', props: { size: 'large' }, fixture: { persona: 'owner' } } }),
+    });
+    const { target, sessions } = sessionsOver(root);
+    const command = createStatesCommand({ clock: fakeClock(), targets: registryOf({ playwright: target }), revision: () => ({ commit: 'c', dirty: false }) });
+    const { out, err, opts } = io({ qa: { states: { delivery: 'qa/delivery.json', mounts: 'qa/mounts.json' } } });
+    expect(await command.run(['run', '--base', 'http://127.0.0.1:5173'], opts(root))).toBe(0);
+    expect(err).toEqual([]);
+    expect(out.at(-1)).toBe('every planned rendering was captured.');
+    expect(target.opened.map((o) => o.persona)).toEqual(['owner', 'member']);
+    const mounted = sessions[0]?.calls.find((c) => c.startsWith('navigate /__states')) ?? '';
+    expect(JSON.parse(new URLSearchParams(mounted.slice(mounted.indexOf('?'))).get('props') ?? '{}')).toEqual({ size: 'large', state: 'on' });
+    expect(sessions.every((session) => session.calls.at(-1) === 'close')).toBe(true);
+  });
+
+  it('run launches a Mini App persona on the surface root before its first capture', async () => {
+    const root = await project({ ...BASE_FILES, '.lw/qa/mounts.json': JSON.stringify({ TileState: { fixture: { persona: 'member' } } }) });
+    const { target, sessions } = sessionsOver(root);
+    const command = createStatesCommand({ clock: fakeClock(), targets: registryOf({ playwright: target }), revision: () => ({ commit: 'c', dirty: false }) });
+    await command.run(['run', '--leg', 'miniapp', '--base', 'http://127.0.0.1:5173/app'], io().opts(root));
+    expect(target.opened[0]).toMatchObject({ persona: 'member', leg: { name: 'miniapp' } });
+    expect(sessions[0]?.calls.slice(0, 2).map((c) => c.split('?')[0])).toEqual(['navigate /', 'navigate /__states']);
+  });
+
+  it('run refuses a descriptor file that breaks its schema, names a missing file, or names an unknown union', async () => {
+    const root = await project({
+      ...BASE_FILES,
+      'qa/delivery.json': JSON.stringify({ InviteState: { ...INVITE_DELIVERY, intercept: { url: '' }, fixture: { persona: 'Not Kebab' } } }),
+      'qa/stale.json': JSON.stringify({ GoneState: { component: 'Gone' } }),
+    });
+    const command = createStatesCommand({ clock: fakeClock(), targets: registryOf({ playwright: scriptedTarget(new ScriptedSession()) }), revision: () => ({ commit: 'c', dirty: false }) });
+    const bad = io({ qa: { states: { delivery: 'qa/delivery.json' } } });
+    expect(await command.run(['plan'], bad.opts(root))).toBe(1);
+    expect(bad.err[0]).toContain('qa.states.descriptors: qa/delivery.json (qa.states.delivery) does not match its schema:');
+    expect(bad.err[0]).toContain('InviteState.intercept.url');
+    expect(bad.err[0]).toContain('InviteState.intercept.container');
+    expect(bad.err[0]).toContain('InviteState.fixture.persona: must be a kebab-case persona id');
+    const missing = io({ qa: { states: { mounts: 'qa/none.json' } } });
+    expect(await command.run(['plan'], missing.opts(root))).toBe(1);
+    expect(missing.err[0]).toBe('lw qa states plan: qa.states.descriptors: qa.states.mounts names qa/none.json, and the file does not exist.');
+    const stale = io({ qa: { states: { mounts: 'qa/stale.json' } } });
+    expect(await command.run(['plan'], stale.opts(root))).toBe(1);
+    expect(stale.err[0]).toContain('qa/stale.json (qa.states.mounts) names GoneState, and the state scan finds no union of that name.');
+  });
+
+  it('run survives a browser crash: the crashed capture fails with the reason, a new session opens, and the rest run', async () => {
+    const root = await project({ ...BASE_FILES, '.lw/qa/delivery.json': JSON.stringify({ InviteState: INVITE_DELIVERY }) });
+    const { target, sessions } = sessionsOver(root, { crashOn: 'TileState.on.subject' });
+    const command = createStatesCommand({ clock: fakeClock(), targets: registryOf({ playwright: target }), revision: () => ({ commit: 'c', dirty: false }) });
+    const { out, opts } = io();
+    expect(await command.run(['run', '--base', 'http://127.0.0.1:5173', '--slug', 'crash'], opts(root))).toBe(1);
+    expect(sessions).toHaveLength(2);
+    const text = out.join('\n');
+    expect(text).toContain('session    the browser of no persona closed, so a new session opened');
+    expect(text).toContain('TileState.on: the browser closed during this capture: Target crashed.');
+    expect(text).toContain('### Tile: TileState, 1 of 2 renderings');
+    expect(text).toContain('### inviteState: InviteState, 2 of 2 renderings');
+    const results = readFileSync(join(root, '.lw/qa/states/crash.results.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    expect(results.find((r: { id: string }) => r.id === 'TileState.on')).toMatchObject({ ok: false, reason: 'crashed' });
   });
 });

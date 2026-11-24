@@ -341,12 +341,14 @@ export interface CaptureGroup {
   diffRoot?: string;
   ignoreAttributes?: string[];
   maxSubjectAreaRatio?: number;
+  /** The persona the group runs signed in as (`fixture.persona` of the descriptor). */
+  persona?: string;
 }
 
 /**
  * One union's capture group, or the list of what is missing. The response and the settle come
  * from `union.delivery`, because no scan can know them. The route comes from `union.delivery`, else
- * from the nearest derived route without a `:param` on `surface`. The shape and the pivots come
+ * from the nearest derived route without a required `:param` on `surface`. The shape and the pivots come
  * from the scan, and the subjects are solved in the page.
  *
  * @param defaultLeg the leg a descriptor without `leg` runs on
@@ -398,6 +400,7 @@ export function groupFor(
     ...(delivery.diffRoot ? { diffRoot: delivery.diffRoot } : {}),
     ...(delivery.ignoreAttributes ? { ignoreAttributes: delivery.ignoreAttributes } : {}),
     ...(typeof delivery.maxSubjectAreaRatio === 'number' ? { maxSubjectAreaRatio: delivery.maxSubjectAreaRatio } : {}),
+    ...(delivery.fixture?.persona ? { persona: delivery.fixture.persona } : {}),
   };
   return { group, missing: null };
 }

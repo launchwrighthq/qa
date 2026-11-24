@@ -6,13 +6,14 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { type App, isCodedError, LaunchwrightError } from '../kernel/index.mts';
 import { type CommandArgs, parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { type QaConfig, qaConfigOf } from '../config.mts';
-import type { QaSession } from '../drivers/target/contract.mts';
+import type { OpenOptions, QaSession, QaTarget } from '../drivers/target/contract.mts';
 import type { Surface } from '../services/types.mts';
 import {
   buildCrawlPlan,
   crawl,
   type CrawlPath,
   type CrawlPlan,
+  type CrawlResult,
   crossReach,
   MAX_DEPTH,
   MAX_EDGES_PER_NODE,
@@ -20,6 +21,7 @@ import {
   recordPath,
   routeDrift,
   stamp,
+  targetResults,
   targetsFrom,
   videoPath,
 } from '../services/paths.mts';
@@ -111,6 +113,27 @@ function planCmd(args: Flags, opts: QaCommandOptions, config: QaConfig, generate
   return 0;
 }
 
+/**
+ * Opens one leg and crawls it. A session that does not open, or a crawl that throws, still gives a
+ * row per target, each with the reason, so a leg never ends without its targets.
+ */
+async function crawlLeg(target: QaTarget, open: OpenOptions, plan: CrawlPlan): Promise<CrawlResult & { crashed: string | null }> {
+  let session: QaSession | null = null;
+  let result: CrawlResult & { crashed: string | null };
+  try {
+    session = await target.open(open);
+    result = { ...(await crawl(session, plan)), crashed: null };
+  } catch (cause) {
+    if (isCodedError(cause) && cause.code === 'qa.paths.evaluate') throw cause;
+    const why = cause instanceof Error ? cause.message.split('\n')[0] ?? '' : String(cause);
+    result = { paths: [], visited: [], failures: [], targets: targetResults(plan, [], why), crashed: why };
+  } finally {
+    await session?.close();
+  }
+  const halted = result.targets.find((t) => t.error !== undefined)?.error ?? null;
+  return { ...result, crashed: result.crashed ?? halted };
+}
+
 async function crawlCmd(args: Flags, opts: QaCommandOptions, config: QaConfig, deps: RunDeps): Promise<number> {
   let failed = false;
   for (const plan of plansFor(args, opts, config, deps.clock.date().toISOString())) {
@@ -124,19 +147,20 @@ async function crawlCmd(args: Flags, opts: QaCommandOptions, config: QaConfig, d
       opts.err(`leg ${leg.name}: the target ${leg.target} is not ready: ${ready.reason ?? 'no reason given'}`);
       continue;
     }
-    let session: QaSession | null = null;
-    let paths: CrawlPath[] = [];
-    try {
-      session = await target.open({ leg, baseUrl: baseFor(args, config, leg.surface), outDir: dir });
-      paths = (await crawl(session, plan)).paths;
-    } finally {
-      await session?.close();
-    }
+    const result = await crawlLeg(target, { leg, baseUrl: baseFor(args, config, leg.surface), outDir: dir }, plan);
+    const { paths } = result;
     const log = join(dir, `results.${plan.leg}.jsonl`);
     mkdirSync(dirname(log), { recursive: true });
     writeFileSync(log, paths.map((p) => `${JSON.stringify(p)}\n`).join(''));
-    opts.out(`leg ${plan.leg}: ${paths.length} path(s) over ${plan.targets.length} target route(s) -> ${log}`);
+    writeJson(join(dir, `targets.${plan.leg}.json`), { targets: result.targets, failures: result.failures });
+    const reached = result.targets.filter((t) => t.reached).length;
+    opts.out(`leg ${plan.leg}: ${paths.length} path(s), ${reached} of ${plan.targets.length} target route(s) reached -> ${log}`);
     for (const path of paths) opts.out(`  ${path.readable}`);
+    for (const failure of result.failures) opts.err(`leg ${plan.leg}: step ${failure.kind} on ${failure.route}${failure.label ? ` "${failure.label}"` : ''}: ${failure.error}`);
+    if (result.crashed !== null) {
+      failed = true;
+      opts.err(`leg ${plan.leg}: the crawl did not finish: ${result.crashed}`);
+    }
     // A route the crawl reached and the delivery scan never named fails the run.
     const drift = routeDrift(plan.targets, paths.map((p) => ({ id: p.id, surface: plan.surface, route: p.route })));
     if (drift.length > 0) {
@@ -178,7 +202,10 @@ async function recordCmd(args: Flags, opts: QaCommandOptions, config: QaConfig, 
       for (const path of mine) {
         const file = join(reportDir, videoPath(slug, path.id, legName, 'webm'));
         mkdirSync(dirname(file), { recursive: true });
-        const recorded = await recordPath(session, { root: path.from, path, file, device: deviceOf(leg), capS: config.evidence.videoCapS, now: () => deps.clock.now() });
+        // A recording that throws fails its own path with the reason, and the next path runs.
+        const recorded: PathRecording = await recordPath(session, { root: path.from, path, file, device: deviceOf(leg), capS: config.evidence.videoCapS, now: () => deps.clock.now() }).catch(
+          (cause: unknown) => ({ ok: false as const, reason: 'crashed' as const, error: cause instanceof Error ? cause.message.split('\n')[0] ?? '' : String(cause) }),
+        );
         const kept = recorded.ok ? recorded.file : 'file' in recorded ? recorded.file : undefined;
         if (kept !== undefined && existsSync(kept)) await recorder.record({ file: kept, kind: 'video', row: path.id });
         lines.push({ ...recorded, id: path.id, leg: legName });

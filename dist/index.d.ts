@@ -1,13 +1,13 @@
-import { a as QaSubcommand, P as Provider } from './extensions-ryHAO9S-.js';
-export { E as EXTENSION_PREFIX, b as QaCommandOptions, Q as QaExtension, S as SUBCOMMANDS, e as extensionNames, c as extensionTargets, l as loadExtensions, q as qaCommand } from './extensions-ryHAO9S-.js';
+import { a as QaSubcommand, P as Provider } from './extensions-BPuzwEzt.js';
+export { E as EXTENSION_PREFIX, b as QaCommandOptions, Q as QaExtension, S as SUBCOMMANDS, e as extensionNames, c as extensionTargets, l as loadExtensions, q as qaCommand } from './extensions-BPuzwEzt.js';
 import { C as Clock } from './clock-BUdCJ9bN.js';
-import { a as QaTargetRegistry, Q as QaTarget, C as CredentialNeed, A as Act, S as Settle, L as LedgerEntry, O as OpenTargetRegistry } from './contract-DSRjkOLo.js';
-export { b as ACT_KINDS, c as ActKind, d as AttachmentKind, e as CONSENT_DIR, f as Capture, g as ConsentGrant, h as ConsentGroup, i as ConsentManifest, j as ConsentRecord, k as ConsentStore, D as DataNeed, E as EvidenceKind, G as GrantChoices, I as INTAKE_DIR, l as Isolation, m as Leg, M as ManifestInput, n as ManifestItem, o as OpenOptions, p as OutwardNeed, P as Provenance, q as QA_TARGET_CAPABILITIES, r as QA_TARGET_SPEC_VERSION, s as QaIssue, t as QaSession, u as QaTargetCapability, R as REPORT_STATUSES, v as ROW_FAILURES, w as RawMedia, x as ReportStatus, y as RowFailure, z as RowResult, B as SessionLogLine, F as SkipReason, H as Surface, T as TargetNeeds, J as TargetReadiness, V as VideoCapture, K as computeManifest, N as credentialNeed, U as diff, W as fileConsentStore, X as grant, Y as manifestHash, Z as missingCredentials, _ as recordGrants } from './contract-DSRjkOLo.js';
-import { L as ListenQaApp } from './api-Ds7LG-Mg.js';
-import { Q as QaConfig } from './config-Z7lJ4xeJ.js';
-export { L as LegConfig, q as qaConfig, a as qaConfigOf, w as withAppPaths } from './config-Z7lJ4xeJ.js';
+import { a as QaTargetRegistry, Q as QaTarget, C as CredentialNeed, A as Act, S as Settle, L as LedgerEntry, O as OpenTargetRegistry } from './contract-B9QWKAsv.js';
+export { b as ACT_KINDS, c as ActKind, d as AttachmentKind, e as CONSENT_DIR, f as Capture, g as ConsentGrant, h as ConsentGroup, i as ConsentManifest, j as ConsentRecord, k as ConsentStore, D as DataNeed, E as EvidenceKind, G as GrantChoices, I as INTAKE_DIR, l as Isolation, m as Leg, M as ManifestInput, n as ManifestItem, o as OpenOptions, p as OutwardNeed, P as Provenance, q as QA_TARGET_CAPABILITIES, r as QA_TARGET_SPEC_VERSION, s as QaIssue, t as QaSession, u as QaTargetCapability, R as REPORT_STATUSES, v as ROW_FAILURES, w as RawMedia, x as ReportStatus, y as RowFailure, z as RowResult, B as SessionLogLine, F as SkipReason, H as Surface, T as TargetNeeds, J as TargetReadiness, V as VideoCapture, K as computeManifest, N as credentialNeed, U as diff, W as fileConsentStore, X as grant, Y as manifestHash, Z as missingCredentials, _ as recordGrants } from './contract-B9QWKAsv.js';
+import { L as ListenQaApp } from './api-bWCqVRCb.js';
+import { Q as QaConfig } from './config-Du8sHpQm.js';
+export { L as LegConfig, q as qaConfig, a as qaConfigOf, w as withAppPaths } from './config-Du8sHpQm.js';
 export { i as isCodedError } from './errors-DgRPaUlC.js';
-export { I as IssueDraft, i as issueMarkdown, l as listIssues, r as readIssue, a as recordDir, b as recordId, w as writeIssue } from './records-DL531dR6.js';
+export { I as IssueDraft, i as issueMarkdown, l as listIssues, r as readIssue, a as recordDir, b as recordId, w as writeIssue } from './records-BNwK5R-m.js';
 import { z } from 'zod';
 import { T as Token } from './app-KXgbRXYO.js';
 
@@ -37,6 +37,13 @@ interface PlaywrightTargetOptions {
     actTimeoutMs?: number;
     /** The settle budget when a rule names none. Default 20 s. */
     settleTimeoutMs?: number;
+    /** How long a navigation may take to reach `DOMContentLoaded`. Default 15 s. */
+    navigateTimeoutMs?: number;
+    /**
+     * How long a navigation then waits for the `load` event. A page that holds a request open never
+     * fires it, so the navigation goes on after this wait, and the row's settle rule decides. Default 2 s.
+     */
+    loadGraceMs?: number;
 }
 /** The `playwright` `qa.target` driver. */
 declare function createPlaywrightTarget(opts?: PlaywrightTargetOptions): QaTarget;

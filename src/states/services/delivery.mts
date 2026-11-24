@@ -156,17 +156,29 @@ function localConstants(sf: ts.SourceFile): Map<string, ts.Expression> {
   return found;
 }
 
+/** The `function NAME(...) {}` declarations of one file, by name. */
+function localFunctions(sf: ts.SourceFile): Map<string, ts.FunctionDeclaration> {
+  const found = new Map<string, ts.FunctionDeclaration>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isFunctionDeclaration(node) && node.name && node.body && !found.has(node.name.text)) found.set(node.name.text, node);
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found;
+}
+
 /** What a path expression of one file is read against: its vocabulary objects, its constants, and its imports. */
 export interface PathScope {
   vocabulary: ReadonlyMap<string, ReadonlyMap<string, string>>;
   constants: ReadonlyMap<string, ts.Expression>;
+  functions: ReadonlyMap<string, ts.FunctionDeclaration>;
   /** The scope of the module that a name of this file comes from, and the name it has there. Null for a local or unknown name. */
   imported(name: string): { scope: PathScope; name: string } | null;
 }
 
 /** The scope of one file alone: an imported name stays unknown. */
 export function fileScope(sf: ts.SourceFile): PathScope {
-  return { vocabulary: objectVocabulary(sf), constants: localConstants(sf), imported: () => null };
+  return { vocabulary: objectVocabulary(sf), constants: localConstants(sf), functions: localFunctions(sf), imported: () => null };
 }
 
 /** How each name of a file comes from another module: `import { a as b }`, `import b`, `export { a as b } from` and `export * from`. */
@@ -209,6 +221,7 @@ export function moduleScopes(parsed: ReadonlyMap<string, ts.SourceFile>, resolve
     const scope: PathScope = {
       vocabulary: own.vocabulary,
       constants: own.constants,
+      functions: own.functions,
       imported(name) {
         links ??= moduleLinks(sf);
         const link = links.named.get(name);
@@ -220,7 +233,7 @@ export function moduleScopes(parsed: ReadonlyMap<string, ts.SourceFile>, resolve
         for (const specifier of links.star) {
           const target = resolve(file, specifier);
           const targetScope = target === null ? null : scopeOf(target);
-          if (targetScope && (targetScope.constants.has(name) || targetScope.vocabulary.has(name))) return { scope: targetScope, name };
+          if (targetScope && (targetScope.constants.has(name) || targetScope.vocabulary.has(name) || targetScope.functions.has(name))) return { scope: targetScope, name };
         }
         return null;
       },
@@ -251,41 +264,126 @@ function vocabularyOf(scope: PathScope, name: string, depth = 0): ReadonlyMap<st
 }
 
 /**
- * A path expression as the address it serves, or null. It reads a literal, `PATHS.key` of a
- * vocabulary object, a constant, a template, and a one-argument wrapper call such as
- * `localized('/hot')`, in this file or in the module that a name is imported from. A wrapper is
- * unwrapped only when its argument is an address (starts with `/`).
+ * What a path expression is read with beyond its scope: the parameter values inside a wrapper
+ * body, and the wrappers that `qa.routeWrappers` declares (function name to the prefix it adds).
  */
-export function evaluatePath(node: ts.Node | null | undefined, scope: PathScope, depth = 0): string | null {
-  if (!node || depth > MAX_HOPS * 2) return null;
+export interface PathEnv {
+  bindings?: ReadonlyMap<string, string>;
+  wrappers?: Readonly<Record<string, string>>;
+}
+
+type WrapperFunction = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
+
+/** The function declared as `name`, as a declaration or a `const` arrow or function, following imports. */
+function functionOf(scope: PathScope, name: string, depth = 0): { fn: WrapperFunction; scope: PathScope } | null {
+  if (depth > MAX_HOPS) return null;
+  const declared = scope.functions.get(name);
+  if (declared) return { fn: declared, scope };
+  let constant = scope.constants.get(name);
+  while (constant && (ts.isParenthesizedExpression(constant) || ts.isAsExpression(constant) || ts.isSatisfiesExpression(constant))) constant = constant.expression;
+  if (constant) return ts.isArrowFunction(constant) || ts.isFunctionExpression(constant) ? { fn: constant, scope } : null;
+  const link = scope.imported(name);
+  return link ? functionOf(link.scope, link.name, depth + 1) : null;
+}
+
+/** A string comparison as true or false, or null when a side does not evaluate. */
+function evaluateCondition(node: ts.Expression, scope: PathScope, depth: number, env: PathEnv): boolean | null {
+  if (ts.isParenthesizedExpression(node)) return evaluateCondition(node.expression, scope, depth + 1, env);
+  if (!ts.isBinaryExpression(node)) return null;
+  const op = node.operatorToken.kind;
+  const equal = op === ts.SyntaxKind.EqualsEqualsEqualsToken || op === ts.SyntaxKind.EqualsEqualsToken;
+  if (!equal && op !== ts.SyntaxKind.ExclamationEqualsEqualsToken && op !== ts.SyntaxKind.ExclamationEqualsToken) return null;
+  const left = evaluatePath(node.left, scope, depth + 1, env);
+  const right = evaluatePath(node.right, scope, depth + 1, env);
+  if (left === null || right === null) return null;
+  return equal ? left === right : left !== right;
+}
+
+/** The value a function body returns: an expression body, or `if (<comparison>) return ...; return ...;`. */
+function evaluateBody(body: ts.ConciseBody | ts.Statement, scope: PathScope, depth: number, env: PathEnv): string | null {
+  if (!ts.isBlock(body) && !ts.isReturnStatement(body) && !ts.isIfStatement(body)) return ts.isExpression(body) ? evaluatePath(body, scope, depth + 1, env) : null;
+  const statements = ts.isBlock(body) ? body.statements : [body];
+  for (const statement of statements) {
+    if (ts.isReturnStatement(statement)) return evaluatePath(statement.expression, scope, depth + 1, env);
+    if (!ts.isIfStatement(statement)) return null;
+    const taken = evaluateCondition(statement.expression, scope, depth, env);
+    if (taken === null) return null;
+    const branch = taken ? statement.thenStatement : statement.elseStatement;
+    if (branch === undefined) continue;
+    return evaluateBody(branch, scope, depth + 1, env);
+  }
+  return null;
+}
+
+/**
+ * The address a one-argument wrapper call serves. The wrapper body is read with its parameter
+ * bound to the argument, so `localized('/hot')` of `(p) => \`/:lang?${p}\`` gives `/:lang?/hot`.
+ * A body the reader cannot follow takes the prefix of `qa.routeWrappers` by function name, else
+ * the argument as it is.
+ */
+function wrappedPath(call: ts.CallExpression, inner: string, scope: PathScope, depth: number, env: PathEnv): string {
+  const name = ts.isIdentifier(call.expression) ? call.expression.text : ts.isPropertyAccessExpression(call.expression) ? call.expression.name.text : null;
+  if (name === null) return inner;
+  const found = ts.isIdentifier(call.expression) ? functionOf(scope, name) : null;
+  const param = found?.fn.parameters[0]?.name;
+  if (found && found.fn.body && param && ts.isIdentifier(param)) {
+    const out = evaluateBody(found.fn.body, found.scope, depth + 1, { ...env, bindings: new Map([[param.text, inner]]) });
+    if (out !== null && out.startsWith('/')) return out;
+  }
+  const prefix = env.wrappers?.[name];
+  return prefix === undefined ? inner : joinPath(prefix.replace(/\/+$/, ''), inner);
+}
+
+/**
+ * A path expression as the address it serves, or null. It reads a literal, `PATHS.key` of a
+ * vocabulary object, a constant, a template, a `+` join, a `?:` on a string comparison, and a
+ * one-argument wrapper call such as `localized('/hot')`, in this file or in the module that a name
+ * is imported from. A wrapper is read only when its argument is an address (starts with `/`).
+ */
+export function evaluatePath(node: ts.Node | null | undefined, scope: PathScope, depth = 0, env: PathEnv = {}): string | null {
+  if (!node || depth > MAX_HOPS * 4) return null;
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
-  if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) return evaluatePath(node.expression, scope, depth + 1);
+  if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) return evaluatePath(node.expression, scope, depth + 1, env);
   if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression)) {
     return vocabularyOf(scope, node.expression.text)?.get(node.name.text) ?? null;
   }
   if (ts.isIdentifier(node)) {
+    const bound = env.bindings?.get(node.text);
+    if (bound !== undefined) return bound;
     const declared = declarationOf(scope, node.text);
-    return declared ? evaluatePath(declared.expression, declared.scope, depth + 1) : null;
+    return declared ? evaluatePath(declared.expression, declared.scope, depth + 1, env) : null;
   }
   if (ts.isTemplateExpression(node)) {
     let out = node.head.text;
     for (const span of node.templateSpans) {
-      const part = evaluatePath(span.expression, scope, depth + 1);
+      const part = evaluatePath(span.expression, scope, depth + 1, env);
       if (part === null) return null;
       out += part + span.literal.text;
     }
     return out;
   }
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    const left = evaluatePath(node.left, scope, depth + 1, env);
+    const right = left === null ? null : evaluatePath(node.right, scope, depth + 1, env);
+    return left === null || right === null ? null : left + right;
+  }
+  if (ts.isConditionalExpression(node)) {
+    const taken = evaluateCondition(node.condition, scope, depth, env);
+    return taken === null ? null : evaluatePath(taken ? node.whenTrue : node.whenFalse, scope, depth + 1, env);
+  }
   if (ts.isCallExpression(node) && node.arguments.length === 1) {
-    const inner = evaluatePath(node.arguments[0], scope, depth + 1);
-    return inner !== null && inner.startsWith('/') ? inner : null;
+    const inner = evaluatePath(node.arguments[0], scope, depth + 1, env);
+    return inner !== null && inner.startsWith('/') ? wrappedPath(node, inner, scope, depth, env) : null;
   }
   return null;
 }
 
-/** A path with a `:param` cannot be opened without a value the scan does not have. */
+/**
+ * A path with a required `:param` cannot be opened without a value the scan does not have. An
+ * optional `:param?` can: the address leaves it out.
+ */
 export function isDynamicPath(path: string): boolean {
-  return path.split('/').some((segment) => segment.startsWith(':'));
+  return path.split('/').some((segment) => segment.startsWith(':') && !segment.endsWith('?'));
 }
 
 /** One row of a route table. */
@@ -301,7 +399,7 @@ export interface RouteRow {
 }
 
 /** The `prefix` of every enclosing `group({ prefix })` call, outermost first. */
-function groupPrefix(node: ts.Node, scope: PathScope): string {
+function groupPrefix(node: ts.Node, scope: PathScope, env: PathEnv): string {
   const prefixes: string[] = [];
   let at: ts.Node | undefined = node.parent;
   while (at) {
@@ -310,7 +408,7 @@ function groupPrefix(node: ts.Node, scope: PathScope): string {
       if (options && ts.isObjectLiteralExpression(options)) {
         for (const property of options.properties) {
           if (ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) && property.name.text === 'prefix') {
-            const value = evaluatePath(property.initializer, scope);
+            const value = evaluatePath(property.initializer, scope, 0, env);
             if (value) prefixes.unshift(value.replace(/\/+$/, ''));
           }
         }
@@ -331,10 +429,10 @@ function joinPath(prefix: string, path: string): string {
  * route list that began with it would rank the one screen nobody can ask for first. `scope` reads
  * the path names; the default reads the file alone, so a name imported from another module stays unresolved.
  */
-export function routeRows(sf: ts.SourceFile, scope: PathScope = fileScope(sf)): RouteRow[] {
+export function routeRows(sf: ts.SourceFile, scope: PathScope = fileScope(sf), env: PathEnv = {}): RouteRow[] {
   const rows: RouteRow[] = [];
   const push = (pathNode: ts.Node | null, component: string | null, pageName: string | null, prefix: string, at: PathScope = scope): void => {
-    const raw = evaluatePath(pathNode, at);
+    const raw = evaluatePath(pathNode, at, 0, env);
     if (raw === '*') return;
     const path = raw === null ? null : joinPath(prefix, raw);
     rows.push({ path, component, pageName, source: pathNode ? pathNode.getText(pathNode.getSourceFile()) : '<no path>', dynamic: path === null ? false : isDynamicPath(path) });
@@ -344,7 +442,7 @@ export function routeRows(sf: ts.SourceFile, scope: PathScope = fileScope(sf)): 
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'page' && node.arguments.length >= 2) {
       const [pathNode, nameNode] = node.arguments;
       const pageName = nameNode && (ts.isStringLiteral(nameNode) || ts.isNoSubstitutionTemplateLiteral(nameNode)) ? nameNode.text : null;
-      push(pathNode ?? null, null, pageName, groupPrefix(node, scope));
+      push(pathNode ?? null, null, pageName, groupPrefix(node, scope, env));
     }
     // The JSX form: `<Route path={...} component={X} />`.
     const opening = ts.isJsxSelfClosingElement(node) ? node : ts.isJsxElement(node) ? node.openingElement : null;
@@ -516,6 +614,8 @@ export function buildRouteMap(input: {
   tables: readonly RouteTable[];
   pageRoots: readonly string[];
   aliases?: Readonly<Record<string, string>>;
+  /** `qa.routeWrappers`: the prefix a path wrapper adds, by function name, for a wrapper whose body the scan cannot read. */
+  wrappers?: Readonly<Record<string, string>>;
   generated: string;
 }): RouteMap {
   const aliases = input.aliases ?? {};
@@ -527,7 +627,7 @@ export function buildRouteMap(input: {
     const sf = parsed.get(table.file);
     if (!sf) return { table, found: false, routes: [] as { path: string | null; dynamic: boolean; source: string; pages: string[] }[] };
     const resolve = (specifier: string): string | null => resolveSpecifier(table.file, specifier, files, aliases);
-    const routes = routeRows(sf, scopeOf(table.file) ?? fileScope(sf)).map((row) => ({
+    const routes = routeRows(sf, scopeOf(table.file) ?? fileScope(sf), { wrappers: input.wrappers ?? {} }).map((row) => ({
       path: row.path,
       dynamic: row.dynamic,
       source: row.source,

@@ -30,6 +30,13 @@ export interface PlaywrightTargetOptions {
   actTimeoutMs?: number;
   /** The settle budget when a rule names none. Default 20 s. */
   settleTimeoutMs?: number;
+  /** How long a navigation may take to reach `DOMContentLoaded`. Default 15 s. */
+  navigateTimeoutMs?: number;
+  /**
+   * How long a navigation then waits for the `load` event. A page that holds a request open never
+   * fires it, so the navigation goes on after this wait, and the row's settle rule decides. Default 2 s.
+   */
+  loadGraceMs?: number;
 }
 
 /** The persona sign-in route of the web surface (spec 2.6). The world submodule mounts it. */
@@ -115,7 +122,9 @@ class PlaywrightSession implements QaSession {
   private tracing = true;
   private videoPath: string | null = null;
   private videoStart = 0;
-  private closed = false;
+  private shut = false;
+  /** Set when the page crashed or the browser disconnected: the session cannot run another step. */
+  private broken = false;
 
   constructor(
     private readonly target: PlaywrightTarget,
@@ -125,6 +134,12 @@ class PlaywrightSession implements QaSession {
     private readonly page: Page,
   ) {
     const at = (): string => target.clock.date().toISOString();
+    page.on('crash', () => {
+      this.broken = true;
+    });
+    browser.on('disconnected', () => {
+      this.broken = true;
+    });
     page.on('pageerror', (err) => this.lines.push({ at: at(), kind: 'page-error', text: err.message }));
     page.on('console', (msg) => {
       if (msg.type() === 'error') this.lines.push({ at: at(), kind: 'console-error', text: msg.text() });
@@ -152,10 +167,24 @@ class PlaywrightSession implements QaSession {
   async navigate(route: string): Promise<void> {
     const url = routeUrl(this.opts.baseUrl, route, this.queryPersona());
     try {
-      await this.page.goto(url, { waitUntil: 'load' });
+      await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: this.target.navigateTimeoutMs });
     } catch (err) {
       throw this.fail('qa.target.navigate', `Leg ${this.opts.leg.name} could not open ${route}.`, err, { route });
     }
+    await this.loadGrace();
+  }
+
+  /** Waits a bounded time for `load`. A page that never fires it is no failure: the settle rule decides. */
+  private async loadGrace(): Promise<void> {
+    try {
+      await this.page.waitForLoadState('load', { timeout: this.target.loadGraceMs });
+    } catch (err) {
+      if ((err as Error).name !== 'TimeoutError') throw this.fail('qa.target.navigate', `Leg ${this.opts.leg.name} lost the page while it loaded.`, err);
+    }
+  }
+
+  isClosed(): boolean {
+    return this.shut || this.broken || this.page.isClosed() || !this.browser.isConnected();
   }
 
   async act(step: Act): Promise<void> {
@@ -182,7 +211,7 @@ class PlaywrightSession implements QaSession {
           await this.target.clock.sleep(step.ms ?? 0);
           return;
         case 'back':
-          await this.page.goBack({ waitUntil: 'load' });
+          await this.page.goBack({ waitUntil: 'domcontentloaded', timeout: this.target.navigateTimeoutMs });
           return;
       }
     } catch (err) {
@@ -280,8 +309,8 @@ class PlaywrightSession implements QaSession {
   }
 
   async close(): Promise<void> {
-    if (this.closed) return;
-    this.closed = true;
+    if (this.shut) return;
+    this.shut = true;
     try {
       if (this.videoPath !== null) await this.page.screencast.stop();
       if (this.tracing) await this.context.tracing.stop();
@@ -306,12 +335,16 @@ class PlaywrightTarget implements QaTarget {
   readonly clock: Clock;
   readonly actTimeoutMs: number;
   readonly settleTimeoutMs: number;
+  readonly navigateTimeoutMs: number;
+  readonly loadGraceMs: number;
   private readonly executablePath: string | undefined;
 
   constructor(opts: PlaywrightTargetOptions) {
     this.clock = opts.clock ?? systemClock;
     this.actTimeoutMs = opts.actTimeoutMs ?? 15_000;
     this.settleTimeoutMs = opts.settleTimeoutMs ?? 20_000;
+    this.navigateTimeoutMs = opts.navigateTimeoutMs ?? 15_000;
+    this.loadGraceMs = opts.loadGraceMs ?? 2_000;
     this.executablePath = opts.executablePath;
   }
 

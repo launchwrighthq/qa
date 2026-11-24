@@ -3,6 +3,7 @@ import {
   aliasesFromTsconfig,
   attachRoutes,
   buildRouteMap,
+  isDynamicPath,
   normaliseTables,
   resolveSpecifier,
   routeRows,
@@ -194,5 +195,65 @@ export const App = () => (
     const map = buildRouteMap({ inventory: inventory(), sources: client, tables: normaliseTables(['apps/api/src/routes.mts']), pageRoots: ['apps/client/src'], generated: GENERATED });
     expect(map.tables[0]?.found).toBe(false);
     expect(map.unions[0]?.why).toContain('no route table could be read (apps/api/src/routes.mts)');
+  });
+
+  it('reads a wrapper body that adds an optional segment, follows an imported wrapper, and falls back to qa.routeWrappers', () => {
+    const sources: SourceText[] = [
+      { file: 'web/src/paths.ts', text: "export const PATHS = { home: '/', wheel: '/wheel', shelf: '/shelf/:slug', account: '/account' } as const;" },
+      { file: 'web/src/region.ts', text: "export const withRegion = (path: string): string => '/:region?' + path;" },
+      { file: 'web/src/pages/wheel.tsx', text: "import { Wheel } from '../wheel';\nexport const WheelPage = () => <Wheel />;" },
+      { file: 'web/src/wheel.tsx', text: "export type WheelMark = 'idle' | 'won';\nexport interface WheelProps { mark: WheelMark }\nexport const Wheel = (p: WheelProps) => null;" },
+      {
+        file: 'web/src/App.tsx',
+        text: `
+import { prefixed } from 'some-router-kit';
+import { PATHS } from './paths';
+import { withRegion } from './region';
+import { WheelPage } from './pages/wheel';
+function localized(path: string): string {
+  return path === '/' ? '/:lang?' : \`/:lang?\${path}\`;
+}
+function scoped(path: string): string {
+  if (path === '/') return '/:scope?';
+  return '/:scope?' + path;
+}
+export const App = () => (
+  <Router>
+    <Route path={localized(PATHS.home)} component={WheelPage} />
+    <Route path={localized(PATHS.wheel)} component={WheelPage} />
+    <Route path={localized(PATHS.shelf)} component={WheelPage} />
+    <Route path={withRegion(PATHS.wheel)} component={WheelPage} />
+    <Route path={scoped(PATHS.account)} component={WheelPage} />
+    <Route path={prefixed(PATHS.account)} component={WheelPage} />
+    <Route path={PATHS.account} component={WheelPage} />
+  </Router>
+);
+`,
+      },
+    ];
+    const build = (wrappers?: Record<string, string>) =>
+      buildRouteMap({
+        inventory: analyzeSources({ sources, roots: ['web/src'], generated: GENERATED }).inventory,
+        sources,
+        tables: [{ file: 'web/src/App.tsx', surface: 'web' }],
+        pageRoots: ['web/src'],
+        ...(wrappers ? { wrappers } : {}),
+        generated: GENERATED,
+      });
+    const routesOf = (map: ReturnType<typeof build>) => map.unions.find((u) => u.union === 'WheelMark')?.routes.map((r) => [r.route, r.dynamic]);
+    expect(routesOf(build())).toEqual([
+      ['/:lang?', false],
+      ['/:lang?/shelf/:slug', true],
+      ['/:lang?/wheel', false],
+      ['/:region?/wheel', false],
+      ['/:scope?/account', false],
+      ['/account', false],
+      ['/account', false],
+    ]);
+    // The package wrapper has no body to read, so it is the bare path until qa.routeWrappers declares it.
+    expect(routesOf(build({ prefixed: '/:lang?', localized: '/:ignored?' }))).toContainEqual(['/:lang?/account', false]);
+    expect(routesOf(build({ localized: '/:ignored?' }))?.some(([route]) => String(route).includes('ignored'))).toBe(false);
+    expect(isDynamicPath('/:lang?/wheel')).toBe(false);
+    expect(isDynamicPath('/:lang?/shelf/:slug')).toBe(true);
   });
 });

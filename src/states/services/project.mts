@@ -41,7 +41,7 @@ export interface StatesScan {
 }
 
 /** Scans the states of a project and derives the route of each union. */
-export function scanStates(projectRoot: string, config: Pick<QaConfig, 'clientRoots' | 'typeRoots' | 'routeTables'>, generated: string): StatesScan {
+export function scanStates(projectRoot: string, config: Pick<QaConfig, 'clientRoots' | 'typeRoots' | 'routeTables'> & Partial<Pick<QaConfig, 'routeWrappers'>>, generated: string): StatesScan {
   const scanned = scanProject(projectRoot, { clientRoots: config.clientRoots, typeRoots: config.typeRoots, generated });
   const tables = normaliseTables(config.routeTables);
   const known = new Set(scanned.sources.map((s) => s.file));
@@ -54,6 +54,7 @@ export function scanStates(projectRoot: string, config: Pick<QaConfig, 'clientRo
     tables,
     pageRoots: config.clientRoots,
     aliases: readAliases(projectRoot, config.clientRoots),
+    wrappers: config.routeWrappers ?? {},
     generated,
   });
   return { inventory: attachRoutes(scanned.inventory, map), problems: scanned.problems, map };

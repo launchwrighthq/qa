@@ -46,4 +46,6 @@ export { readAliases, scanStates, STATES_FILE, type StatesScan } from './service
 export { c1Findings, c4Findings, type StateFinding, stateFindings } from './services/check.mts';
 export { buildPlan, type CaptureGroup, finishRun, groupsFor, issueFor, mergeDelivery, neitherUnions, parseInventory, parseResults, renderReport, type StatesPlan } from './services/loop.mts';
 export { captureMounted, mountUrl, resolveMount, STATES_HARNESS_PATH } from './services/mount.mts';
+export { DEFAULT_DELIVERY_FILE, DEFAULT_MOUNTS_FILE, withDescriptors } from './services/descriptors.mts';
+export { failedResult, onSession, PERSONA_LAUNCH_ROUTE, type SessionPool, sessionPool } from './services/sessions.mts';
 export { CaptureFailure, captureGroup, type CaptureContext, type EvidenceRecorder, installSubstitution, locateSubjects } from './services/capture.mts';

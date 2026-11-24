@@ -1,19 +1,26 @@
 import {
+  DEFAULT_DELIVERY_FILE,
+  DEFAULT_MOUNTS_FILE,
+  PERSONA_LAUNCH_ROUTE,
   buildPlan,
+  failedResult,
   finishRun,
   groupsFor,
   issueFor,
   mergeDelivery,
   neitherUnions,
+  onSession,
   parseInventory,
   parseResults,
-  renderReport
-} from "./chunk-IX3NBJY2.js";
+  renderReport,
+  sessionPool,
+  withDescriptors
+} from "./chunk-W6MGERRV.js";
 import {
   c1Findings,
   c4Findings,
   stateFindings
-} from "./chunk-P6OTXJJ2.js";
+} from "./chunk-ZRBKWAMJ.js";
 import {
   STATES_FILE,
   analyzeSources,
@@ -26,7 +33,7 @@ import {
   renderRouteSummary,
   scanProject,
   scanStates
-} from "./chunk-D46OJBIP.js";
+} from "./chunk-OSGSGOS2.js";
 import {
   CaptureFailure,
   STATES_HARNESS_PATH,
@@ -36,7 +43,7 @@ import {
   locateSubjects,
   mountUrl,
   resolveMount
-} from "./chunk-DY4PZ7TQ.js";
+} from "./chunk-B3YQ27NA.js";
 import {
   ABSENT,
   FAIL_REASONS,
@@ -59,18 +66,23 @@ import {
   unreachable,
   validateInventory,
   validateShape
-} from "./chunk-6HYCZCXT.js";
+} from "./chunk-42WWWMVO.js";
 import "./chunk-277Y4WQJ.js";
+import "./chunk-TQCRYULZ.js";
+import "./chunk-SA2YN55L.js";
 import "./chunk-5AJ7M7K5.js";
 import "./chunk-KK6DCU3O.js";
 export {
   ABSENT,
   CaptureFailure,
+  DEFAULT_DELIVERY_FILE,
+  DEFAULT_MOUNTS_FILE,
   FAIL_REASONS,
   IGNORE_TAG,
   KINDS,
   MAX_CANDIDATES,
   NULL_STATE,
+  PERSONA_LAUNCH_ROUTE,
   PROVENANCE,
   STATES_FILE,
   STATES_HARNESS_PATH,
@@ -87,6 +99,7 @@ export {
   captureGroup,
   captureMounted,
   describeCandidate,
+  failedResult,
   fieldValues,
   finishRun,
   groupsFor,
@@ -101,6 +114,7 @@ export {
   mountUrl,
   neitherUnions,
   normaliseTables,
+  onSession,
   parseInventory,
   parseResults,
   plannedCaptures,
@@ -111,10 +125,12 @@ export {
   resolveMount,
   scanProject,
   scanStates,
+  sessionPool,
   solve,
   stateFindings,
   unreachable,
   validateInventory,
-  validateShape
+  validateShape,
+  withDescriptors
 };
 //# sourceMappingURL=states.js.map
