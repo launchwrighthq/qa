@@ -1,6 +1,6 @@
 {
   "name": "@launchwrighthq/qa",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "license": "MIT",
   "description": "A standalone, public QA library for AI products: QA passes with evidence, personas, state triggers, devices, fake Telegram, issue intake, a reviewer-comment viewer and a score.",
   "type": "module",
