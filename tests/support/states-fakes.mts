@@ -145,6 +145,9 @@ export class ScriptedSession implements QaSession {
   }
 
   private async answer(expression: string): Promise<unknown> {
+    // A scripted site has no overlay: the probe sees none, and no dismiss control is on a page.
+    if (expression.includes('/* lw-qa overlay probe */')) return null;
+    if (expression.includes('/* lw-qa dismiss press */')) return { found: false };
     if (expression.includes('el.click()')) {
       const want = String(literalAfter(expression, 'const want = norm(', ');\n'));
       const role = String(literalAfter(expression, 'const wantRole = '));

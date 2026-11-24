@@ -893,6 +893,25 @@ var qaConfig = import_zod6.z.object({
    * the run reads `.lw/qa/delivery.json` and `.lw/qa/mounts.json` if they exist.
    */
   states: import_zod6.z.object({ delivery: import_zod6.z.string().min(1).optional(), mounts: import_zod6.z.string().min(1).optional() }).prefault({}),
+  /**
+   * The path crawl (spec 2.7). `dismiss`: what clears a dialog or sheet over a page, tried in order
+   * after each settle. A string is a CSS selector; `{ role, name }` is a control; `{ key }` is a key
+   * that is pressed while an overlay shows. `overlayWaitMs`: how long the crawl waits after a settle
+   * for an overlay or a dismiss control to show. `fixture.persona`: the persona the crawl and the
+   * recordings run signed in as, as on a session row.
+   */
+  paths: import_zod6.z.object({
+    dismiss: import_zod6.z.array(
+      import_zod6.z.union([
+        import_zod6.z.string().min(1),
+        import_zod6.z.strictObject({ selector: import_zod6.z.string().min(1) }),
+        import_zod6.z.strictObject({ role: import_zod6.z.string().min(1), name: import_zod6.z.string().min(1) }),
+        import_zod6.z.strictObject({ key: import_zod6.z.string().min(1) })
+      ])
+    ).default([]),
+    overlayWaitMs: import_zod6.z.number().int().nonnegative().max(2e4).default(0),
+    fixture: import_zod6.z.strictObject({ persona: import_zod6.z.string().min(1).optional() }).prefault({})
+  }).prefault({}),
   /** Folders that only declare types, so the state scan can derive the shape of a parameter type. */
   typeRoots: import_zod6.z.array(import_zod6.z.string()).default([]),
   /** Overrides and additions to the default legs (spec 2.3). `false` removes a default leg. */

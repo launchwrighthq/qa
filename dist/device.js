@@ -51,34 +51,35 @@ import {
   writeBytes,
   writeHeld,
   writePng
-} from "./chunk-HTDFJ5EK.js";
-import "./chunk-DP3BJCQL.js";
-import "./chunk-PYBSJLYL.js";
+} from "./chunk-N3OGMLD6.js";
+import "./chunk-GIEIWPMN.js";
+import "./chunk-WJ4Y4PIX.js";
 import {
   QA_TARGETS
-} from "./chunk-Y3DM4XPJ.js";
+} from "./chunk-IVS4OOQ5.js";
 import "./chunk-W4O3YTED.js";
 import "./chunk-53M6IOKX.js";
-import "./chunk-7YME3OFL.js";
+import "./chunk-N736V2LB.js";
 import {
   credentialNeed
 } from "./chunk-N6G3DBRC.js";
 import "./chunk-62VIRJ2H.js";
 import "./chunk-ZYIHPZ3V.js";
-import "./chunk-7U5DCOOY.js";
-import "./chunk-I3IUHHIW.js";
-import "./chunk-4M4L73SK.js";
-import "./chunk-4HWKGNXL.js";
-import "./chunk-JPCS27IP.js";
+import "./chunk-PJ4EVPMV.js";
+import "./chunk-4NVXHDDA.js";
+import "./chunk-FBFYFI2Z.js";
+import "./chunk-BPOUYCDS.js";
+import "./chunk-XCKU4A2P.js";
 import "./chunk-YKX37RJG.js";
 import "./chunk-I52564IV.js";
 import "./chunk-I4K4P4GZ.js";
 import "./chunk-YDFQPHPI.js";
-import "./chunk-RGX37KPN.js";
-import "./chunk-W6MGERRV.js";
+import "./chunk-X6J22AIF.js";
+import "./chunk-2ZWT4EZS.js";
+import "./chunk-5BUZECXG.js";
 import "./chunk-ZRBKWAMJ.js";
 import "./chunk-OSGSGOS2.js";
-import "./chunk-B3YQ27NA.js";
+import "./chunk-FA2UE7YP.js";
 import "./chunk-42WWWMVO.js";
 import "./chunk-277Y4WQJ.js";
 import "./chunk-KCJ7A64B.js";
@@ -464,7 +465,7 @@ var qaDeviceProvider = provider({
 // src/device/services/extension.mts
 var qaExtension = {
   name: "qa-device",
-  subcommands: { device: async () => (await import("./qa-device-KYLPXUBZ.js")).default },
+  subcommands: { device: async () => (await import("./qa-device-ZTRUPRIO.js")).default },
   targets: (config, root, env) => deviceTargets(withDevice(config), systemDeviceDeps(root, env))
 };
 export {

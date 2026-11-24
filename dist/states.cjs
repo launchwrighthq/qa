@@ -2137,6 +2137,52 @@ var QA_STATES_ATTRIBUTE = "data-qa-states";
 // src/states/services/capture.mts
 var import_node_path7 = require("path");
 
+// src/services/overlays.mts
+var CONTROL_SELECTOR = 'button, a, [role="button"], [role="link"], [role="tab"]';
+var MAX_LABEL = 60;
+var PAGE_HELPERS = `
+  const SELECTOR = ${JSON.stringify(CONTROL_SELECTOR)};
+  const norm = (s) => String(s == null ? '' : s).replace(/\\s+/g, ' ').trim().slice(0, ${MAX_LABEL});
+  const shown = (el) => {
+    const box = el.getBoundingClientRect();
+    if (box.width < 4 || box.height < 4) return false;
+    const style = getComputedStyle(el);
+    return !(style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0');
+  };
+  const nameOf = (el) => (el.getAttribute('aria-label') || el.innerText || el.getAttribute('title') || '').trim();
+  const roleOf = (el) => el.getAttribute('role') || (el.tagName === 'A' ? 'link' : 'button');
+  const inView = ([x, y]) => x >= 0 && y >= 0 && x < innerWidth && y < innerHeight;
+  const onScreen = (box) => box.bottom > 0 && box.right > 0 && box.top < innerHeight && box.left < innerWidth;
+  const points = (box) => [[0.5, 0.5], [0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]].map(([fx, fy]) => [box.left + box.width * fx, box.top + box.height * fy]).filter(inView);
+  const isModal = (el) => {
+    if (el.getAttribute('aria-modal') === 'true') return true;
+    if (el.tagName !== 'DIALOG' || !el.open) return false;
+    try {
+      return el.matches(':modal');
+    } catch (err) {
+      return false;
+    }
+  };
+  const modalRoot = () => Array.from(document.querySelectorAll('dialog[open], [aria-modal="true"]')).find((el) => isModal(el) && shown(el)) || null;
+  const pressable = (el, modal) => {
+    if (!shown(el) || el.closest('[inert], [aria-hidden="true"]')) return false;
+    if (modal !== null && !modal.contains(el)) return false;
+    const seen = points(el.getBoundingClientRect());
+    if (seen.length === 0) return true;
+    return seen.some(([x, y]) => {
+      const hit = document.elementFromPoint(x, y);
+      return hit !== null && (el.contains(hit) || hit.contains(el));
+    });
+  };
+  const findEntry = (entry) => {
+    const modal = modalRoot();
+    const pool = entry.selector !== undefined
+      ? Array.from(document.querySelectorAll(entry.selector))
+      : Array.from(document.querySelectorAll(SELECTOR)).filter((el) => roleOf(el) === entry.role && norm(nameOf(el)) === norm(entry.name));
+    return pool.find((el) => pressable(el, modal)) || null;
+  };
+`;
+
 // src/services/paths.mts
 function routeMatcher(pattern) {
   const [head = "", ...rest] = String(pattern).split("/");

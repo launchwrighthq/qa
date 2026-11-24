@@ -15,6 +15,7 @@ import {
   formatPath,
   MAX_DEPTH,
   MAX_EDGES_PER_NODE,
+  MAX_RESTARTS,
   normaliseControls,
   openRoute,
   pathId,
@@ -28,6 +29,8 @@ import {
   videoPath,
   videoRecord,
 } from '../../../src/services/paths.mts';
+import { qaConfigOf } from '../../../src/config.mts';
+import { describeDismiss, dismissEntries } from '../../../src/services/overlays.mts';
 import type { UnionEntry } from '../../../src/states/services/inventory.mts';
 import { ScriptedSession } from '../../support/states-fakes.mts';
 
@@ -252,6 +255,73 @@ describe('path contract', () => {
     expect(result.failures.at(-1)).toMatchObject({ route: '/invites', kind: 'closed' });
     expect(result.targets.find((t) => t.route === '/items/:id')).toMatchObject({ reached: false, error: 'the browser closed during open /invites: could not open /invites' });
     expect(result.targets.find((t) => t.route === '/invites')).toMatchObject({ reached: true });
+  });
+
+  it('opens a new session after a crash, marks the route it worked on and goes on', async () => {
+    const opened: ScriptedSession[] = [];
+    const sessions = {
+      async get() {
+        const live = opened.at(-1);
+        if (live && !live.dead) return live;
+        const fresh = new ScriptedSession({ site });
+        if (opened.length === 0) {
+          const navigate = fresh.navigate.bind(fresh);
+          fresh.navigate = async (route: string) => {
+            if (route === '/invites') {
+              fresh.dead = true;
+              throw new Error('Target crashed');
+            }
+            return navigate(route);
+          };
+        }
+        opened.push(fresh);
+        return fresh;
+      },
+    };
+    const result = await crawl(sessions, buildCrawlPlan({ slug: 's', leg: 'desktop', surface: 'web', targets: targetsFrom(delivery) }));
+    expect(opened).toHaveLength(2);
+    expect(result.failures).toEqual([{ route: '/invites', kind: 'closed', error: 'Target crashed' }]);
+    expect(result.paths.map((p) => p.readable)).toContain('/ -> "Invites" -> "Open item" -> /items/:id');
+    expect(result.targets).toEqual([
+      { route: '/invites', unions: ['InviteMark', 'TileState'], reached: true, by: ['desktop.root.invites'], crashed: 'the browser closed during open /invites: Target crashed' },
+      { route: '/items/:id', unions: ['InviteMark'], reached: true, by: ['desktop.root.invites.open-item'] },
+    ]);
+  });
+
+  it(`stops after ${MAX_RESTARTS} restarts and gives each unreached target the reason`, async () => {
+    // The root lists ten controls, and each press crashes the browser.
+    const wide = { '/': { controls: Array.from({ length: 10 }, (_, i) => ({ label: `Item ${i}`, role: 'link', to: `/items/${i}` })) } };
+    const opened: ScriptedSession[] = [];
+    let navigations = 0;
+    const sessions = {
+      async get() {
+        const live = opened.at(-1);
+        if (live && !live.dead) return live;
+        const fresh = new ScriptedSession({ site: wide });
+        const navigate = fresh.navigate.bind(fresh);
+        fresh.navigate = async (route: string) => {
+          navigations += 1;
+          if (navigations === 1) return navigate(route);
+          fresh.dead = true;
+          throw new Error('Target crashed');
+        };
+        opened.push(fresh);
+        return fresh;
+      },
+    };
+    const result = await crawl(sessions, buildCrawlPlan({ slug: 's', leg: 'desktop', surface: 'web', targets: targetsFrom(delivery) }));
+    expect(result.failures.filter((f) => f.kind === 'closed')).toHaveLength(MAX_RESTARTS + 1);
+    expect(opened).toHaveLength(MAX_RESTARTS + 1);
+    expect(result.targets.find((t) => t.route === '/items/:id')?.error).toMatch(new RegExp(`^the browser closed ${MAX_RESTARTS + 1} times, the last time during `));
+  });
+
+  it('reads the overlay keys and the persona of qa.paths', () => {
+    expect(qaConfigOf({}).paths).toEqual({ dismiss: [], overlayWaitMs: 0, fixture: {} });
+    const paths = qaConfigOf({ qa: { paths: { dismiss: ['.close', { role: 'button', name: 'Not now' }, { key: 'Escape' }], overlayWaitMs: 2500, fixture: { persona: 'reader' } } } }).paths;
+    expect(dismissEntries(paths.dismiss)).toEqual([{ selector: '.close' }, { role: 'button', name: 'Not now' }, { key: 'Escape' }]);
+    expect(dismissEntries(paths.dismiss).map(describeDismiss)).toEqual(['selector .close', 'button "Not now"', 'key Escape']);
+    expect(paths).toMatchObject({ overlayWaitMs: 2500, fixture: { persona: 'reader' } });
+    expect(() => qaConfigOf({ qa: { paths: { dismiss: [{ role: 'button' }] } } })).toThrow();
   });
 
   it('ends a crawl whose root does not open with the reason on every target', async () => {

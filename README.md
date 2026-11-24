@@ -200,6 +200,42 @@ or of the crawl decides when the page is ready. A crawl step, one navigation or 
 30 s at most. A step that fails or runs out is marked and skipped. The crawl always ends with a row
 per target in `.lw/qa/paths/<slug>/targets.<leg>.json`, and each failed step goes to stderr.
 
+When the browser, the context or the page closes during a crawl step, the crawl opens a new session
+and goes on with the next step. The row of the route that the crawl worked on gets `crashed` with the
+reason, and the run exits 1. After 5 restarts, one more crash stops the crawl, and each unreached
+target gets `error` with the reason.
+
+### Overlays and the crawl reader
+
+The crawl lists only the controls that a person can press. A control under another element, outside
+an open modal dialog, or inside an `inert` or `aria-hidden` subtree is left out. A launch sheet
+over the root therefore hides the links under it, and the crawl clears it first:
+
+```toml
+[qa.paths]
+dismiss = ["[data-sheet-close]", { role = "button", name = "Not now" }, { key = "Escape" }]
+overlayWaitMs = 3000
+
+[qa.paths.fixture]
+persona = "reader"
+```
+
+After each settle, the crawl waits up to `overlayWaitMs` (default 0) for an overlay or a control of
+the dismiss list to show. Set it to the delay of a sheet that opens a few seconds after load. Then
+it presses each entry of `dismiss` in order. A string is a CSS selector, `{ role, name }` is a
+control by its accessible name, and `{ key }` is a key that is pressed while an overlay shows. When
+an overlay stays, the crawl presses `Escape`. An overlay is an open `dialog`, an element with role
+`dialog` or `alertdialog` or with `aria-modal="true"`, or a fixed layer of 90 % of the viewport
+that lies over a control outside it. Up to 3 overlays in a row are cleared.
+
+A dismiss is no path step. Each one goes to `dismissals` in `targets.<leg>.json` with the page, the
+press, the overlay and `cleared`. A dismiss that leaves an overlay goes to stderr. A press that moves
+the app to another pathname is logged as failed, and the crawl opens the page again and reads it as
+it is. `lw-qa paths record` clears the root in the same way before the recorder starts.
+
+`fixture.persona` signs a persona in before the crawl and each recording, as on a session row. Pick
+the persona whose launch state the crawl must see.
+
 ### The state page
 
 `qaStatesPage` serves `/__states` through the `transformIndexHtml` hooks of Vite and its official

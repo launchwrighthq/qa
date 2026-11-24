@@ -10,19 +10,16 @@
 import { isCodedError, LaunchwrightError } from '../kernel/index.mts';
 import type { QaSession } from '../drivers/target/contract.mts';
 import { type Inventory, PROVENANCE } from '../states/services/inventory.mts';
+import { clearOverlays, CONTROL_SELECTOR, type Dismissal, type DismissEntry, MAX_LABEL, type OverlayRule, PAGE_HELPERS } from './overlays.mts';
 import type { Provenance, Settle, Surface } from './types.mts';
+
+export { CONTROL_SELECTOR, MAX_LABEL };
 
 /** How deep the crawl goes: home, a section, a thing in it. */
 export const MAX_DEPTH = 3;
 
 /** How many controls the crawl follows from one screen, after sorting. */
 export const MAX_EDGES_PER_NODE = 12;
-
-/** The elements the crawl lists as controls. An element a person cannot see as a control is no step. */
-export const CONTROL_SELECTOR = 'button, a, [role="button"], [role="link"], [role="tab"]';
-
-/** A step carries the control's accessible name, cut to this length. */
-export const MAX_LABEL = 60;
 
 /**
  * Why a path run fails. A state that no path reaches is reported, not failed, because a deep link
@@ -272,21 +269,21 @@ export function videoRecord(args: { kind: string; file: string; provenance: stri
 }
 
 /**
- * The expression that lists every visible control with its accessible name: `aria-label`, then the
- * text, then `title`. The click expression derives the name the same way, so a device presses the
+ * The expression that lists every control a person can press, with its accessible name:
+ * `aria-label`, then the text, then `title`. A control under an overlay, outside an open modal or
+ * inert is left out. The click expression derives the name the same way, so a device presses the
  * control the browser pressed.
  */
 export function controlsExpression(): string {
   return `(() => {
+  ${PAGE_HELPERS}
+  const modal = modalRoot();
   const out = [];
-  for (const el of Array.from(document.querySelectorAll(${JSON.stringify(CONTROL_SELECTOR)}))) {
-    const box = el.getBoundingClientRect();
-    if (box.width < 4 || box.height < 4) continue;
-    const style = getComputedStyle(el);
-    if (style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0') continue;
-    const name = (el.getAttribute('aria-label') || el.innerText || el.getAttribute('title') || '').trim();
+  for (const el of Array.from(document.querySelectorAll(SELECTOR))) {
+    if (!pressable(el, modal)) continue;
+    const name = nameOf(el);
     if (name === '') continue;
-    out.push({ label: name, role: el.getAttribute('role') || (el.tagName === 'A' ? 'link' : 'button') });
+    out.push({ label: name, role: roleOf(el) });
   }
   return out;
 })()`;
@@ -295,23 +292,23 @@ export function controlsExpression(): string {
 /** The expression that presses a control by its role and accessible name. It reports, never throws. */
 export function clickByNameExpression(label: string, role: string): string {
   return `(() => {
-  const norm = (s) => String(s == null ? '' : s).replace(/\\s+/g, ' ').trim().slice(0, ${MAX_LABEL});
+  ${PAGE_HELPERS}
   const want = norm(${JSON.stringify(String(label))});
   const wantRole = ${JSON.stringify(String(role))};
   const before = window.location.pathname;
-  for (const el of Array.from(document.querySelectorAll(${JSON.stringify(CONTROL_SELECTOR)}))) {
-    const box = el.getBoundingClientRect();
-    if (box.width < 4 || box.height < 4) continue;
-    const style = getComputedStyle(el);
-    if (style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0') continue;
-    const r = el.getAttribute('role') || (el.tagName === 'A' ? 'link' : 'button');
-    if (r !== wantRole) continue;
-    const name = norm(el.getAttribute('aria-label') || el.innerText || el.getAttribute('title') || '');
-    if (name !== want) continue;
+  const modal = modalRoot();
+  let covered = false;
+  for (const el of Array.from(document.querySelectorAll(SELECTOR))) {
+    if (!shown(el) || roleOf(el) !== wantRole || norm(nameOf(el)) !== want) continue;
+    if (!pressable(el, modal)) {
+      covered = true;
+      continue;
+    }
     el.click();
     return { ok: true, before };
   }
-  return { ok: false, error: 'no ' + wantRole + ' called ' + JSON.stringify(want) + ' on ' + before };
+  const what = wantRole + ' called ' + JSON.stringify(want);
+  return { ok: false, error: (covered ? 'the ' + what + ' is covered by an overlay' : 'no ' + what) + ' on ' + before };
 })()`;
 }
 
@@ -385,8 +382,8 @@ export function budgetCheck(args: { steps: readonly { label: string; atMs?: numb
   return { ok: false, reason: 'over-budget', error: `the recorder stopped at ${stamp(limitMs)} and the path was still on "${over.label}" at ${stamp(over.atMs ?? 0)}` };
 }
 
-/** A crawl plan for one leg. */
-export interface CrawlPlan {
+/** A crawl plan for one leg. The overlay rule clears a dialog or sheet before each control list. */
+export interface CrawlPlan extends OverlayRule {
   slug: string;
   leg: string;
   surface: Surface;
@@ -407,7 +404,17 @@ export const CLICK_SETTLE: Settle = { busy: true, timeout: 4_000 };
 export const STEP_TIMEOUT_MS = 30_000;
 
 /** Builds the crawl plan of one leg from the delivery targets of its surface. */
-export function buildCrawlPlan(args: { slug: string; leg: string; surface: Surface; targets: readonly Target[]; root?: string; settle?: Settle; stepTimeoutMs?: number }): CrawlPlan {
+export function buildCrawlPlan(args: {
+  slug: string;
+  leg: string;
+  surface: Surface;
+  targets: readonly Target[];
+  root?: string;
+  settle?: Settle;
+  stepTimeoutMs?: number;
+  dismiss?: DismissEntry[];
+  overlayWaitMs?: number;
+}): CrawlPlan {
   return {
     slug: args.slug,
     leg: args.leg,
@@ -418,6 +425,8 @@ export function buildCrawlPlan(args: { slug: string; leg: string; surface: Surfa
     targets: args.targets.filter((t) => t.surface === args.surface),
     settle: args.settle ?? CLICK_SETTLE,
     stepTimeoutMs: args.stepTimeoutMs ?? STEP_TIMEOUT_MS,
+    dismiss: args.dismiss ?? [],
+    overlayWaitMs: args.overlayWaitMs ?? 0,
   };
 }
 
@@ -447,29 +456,47 @@ export interface TargetResult {
   by: string[];
   /** Why the crawl could not finish, when it did not. Every unreached target of that crawl carries it. */
   error?: string;
+  /** The browser closed while the crawl worked on this route. The crawl opened a new session and went on. */
+  crashed?: string;
 }
 
-/** The result of a crawl: the paths, the routes visited, each failed step and one row per target. */
+/** The result of a crawl: the paths, the routes visited, each failed step, each dismiss and one row per target. */
 export interface CrawlResult {
   paths: CrawlPath[];
   visited: string[];
   failures: CrawlFailure[];
+  dismissals: Dismissal[];
   targets: TargetResult[];
 }
 
-/** One row per target from the paths of a crawl. `error` marks each unreached row of a crawl that stopped. */
-export function targetResults(plan: Pick<CrawlPlan, 'surface' | 'targets'>, paths: readonly Pick<CrawlPath, 'id' | 'route'>[], error?: string): TargetResult[] {
+const stepName = (at: { route: string; label?: string }): string => (at.label === undefined ? `open ${at.route}` : `press "${at.label}" on ${at.route}`);
+
+/**
+ * One row per target from the paths of a crawl. `error` marks each unreached row of a crawl that
+ * stopped. `crashed` marks the row of each route the crawl worked on when the browser closed.
+ */
+export function targetResults(
+  plan: Pick<CrawlPlan, 'surface' | 'targets'>,
+  paths: readonly Pick<CrawlPath, 'id' | 'route'>[],
+  error?: string,
+  failures: readonly CrawlFailure[] = [],
+): TargetResult[] {
   const cross = crossReach(
     plan.targets,
     paths.map((p) => ({ id: p.id, route: p.route, surface: plan.surface })),
   );
-  return cross.routes.map((row) => ({
-    route: row.route,
-    unions: row.unions,
-    reached: row.reached,
-    by: row.by,
-    ...(error !== undefined && !row.reached ? { error } : {}),
-  }));
+  const crashes = failures.filter((f) => f.kind === 'closed');
+  return cross.routes.map((row) => {
+    const crash = crashes.find((c) => resolveRoute(pathnameOf(c.route), plan.targets) === row.route);
+    return {
+      route: row.route,
+      unions: row.unions,
+      reached: row.reached,
+      by: row.by,
+      ...(error !== undefined && !row.reached ? { error } : {}),
+      ...(crash === undefined ? {} : { crashed: `the browser closed during ${stepName(crash)}: ${crash.error}` }),
+    };
+  });
 }
 
 class StepTimeout extends LaunchwrightError {}
@@ -504,13 +531,18 @@ function requireEvaluate(session: QaSession): (expression: string) => Promise<un
 
 /**
  * Waits for a settle rule. A settle timeout comes back as its sentence, because a page that stays
- * busy can still be read and pressed. Any other failure goes up.
+ * busy can still be read and pressed. A settle that failed because the browser closed goes up as
+ * `qa.paths.closed`, and any other failure goes up as it is.
  */
 async function settleSoft(session: QaSession, rule: Settle): Promise<string | null> {
   try {
     await session.settle(rule);
     return null;
   } catch (err) {
+    if (session.isClosed?.() === true) {
+      const cause = err instanceof Error && err.cause !== undefined ? err.cause : err;
+      throw new LaunchwrightError('qa.paths.closed', `the browser closed while the page settled: ${firstLine(cause)}`, { cause: err });
+    }
     if (isCodedError(err) && err.code === 'qa.target.settle') return firstLine(err);
     throw err;
   }
@@ -531,6 +563,20 @@ async function followEdge(
   return { moved: landed !== before, landed, settled };
 }
 
+/** How many times one crawl opens a new session after the browser closed. One more crash stops it. */
+export const MAX_RESTARTS = 5;
+
+/** Where a crawl gets its session. `get` answers the open session, and a new one after a crash. */
+export interface CrawlSessions {
+  get(): Promise<QaSession>;
+}
+
+/** A single session never restarts. A source restarts. */
+function sessionSource(sessions: QaSession | CrawlSessions): CrawlSessions & { restarts: boolean } {
+  if ('navigate' in sessions) return { get: async () => sessions, restarts: false };
+  return { get: () => sessions.get(), restarts: true };
+}
+
 /** A screen to expand: the address that opens it, and the steps that reached it. */
 interface CrawlNode {
   open: string;
@@ -543,51 +589,84 @@ interface CrawlNode {
  * the previous edge left the navigation stack, and two runs would then disagree.
  *
  * Each step is bounded by `plan.stepTimeoutMs`. A step that fails or runs out is recorded in
- * `failures` and skipped, so the crawl always ends with a row per target. A closed browser stops
- * the crawl, and each unreached target then carries the reason.
+ * `failures` and skipped, so the crawl always ends with a row per target. Before it reads or
+ * presses a page, the crawl clears the overlays of the page (`clearOverlays`).
+ *
+ * A closed browser is a `closed` failure, and the row of the route the crawl worked on carries it.
+ * With a session source, the next step runs on a new session, up to `MAX_RESTARTS` times. A single
+ * session cannot restart: the crawl stops, and each unreached target carries the reason.
  */
-export async function crawl(session: QaSession, plan: CrawlPlan): Promise<CrawlResult> {
-  const evaluate = requireEvaluate(session);
+export async function crawl(sessions: QaSession | CrawlSessions, plan: CrawlPlan): Promise<CrawlResult> {
+  const source = sessionSource(sessions);
+  requireEvaluate(await source.get());
   const found: CrawlPath[] = [];
   const failures: CrawlFailure[] = [];
+  const dismissals: Dismissal[] = [];
   const rootTarget = resolveRoute(plan.root, plan.targets);
   const visited = new Set<string>([plan.root, ...(rootTarget === null ? [] : [rootTarget])]);
   const halt: { why: string | null } = { why: null };
+  const crash = { count: 0, last: null as { session: QaSession; at: { route: string; label?: string } } | null };
 
-  const attempt = async <T,>(route: string, label: string | undefined, kind: CrawlFailure['kind'], work: () => Promise<T>): Promise<T | null> => {
-    const where = label === undefined ? `open ${route}` : `press "${label}" on ${route}`;
+  const closed = (at: { route: string; label?: string }, error: string): void => {
+    failures.push({ ...at, kind: 'closed', error });
+    crash.last = null;
+    crash.count += 1;
+    if (!source.restarts) halt.why = `the browser closed during ${stepName(at)}: ${error}`;
+    else if (crash.count > MAX_RESTARTS) halt.why = `the browser closed ${crash.count} times, the last time during ${stepName(at)}: ${error}`;
+  };
+  const attempt = async <T,>(route: string, label: string | undefined, kind: CrawlFailure['kind'], work: (session: QaSession) => Promise<T>): Promise<T | null> => {
     const at = { route, ...(label === undefined ? {} : { label }) };
+    // A browser that closed after the previous step ended: that step gets the crash.
+    const previous = crash.last;
+    if (previous !== null && previous.session.isClosed?.() === true) {
+      closed(previous.at, 'the browser closed after this step');
+      if (halt.why !== null) return null;
+    }
+    const held: { session: QaSession | null } = { session: null };
+    const run = async (): Promise<T> => {
+      held.session = await source.get();
+      crash.last = { session: held.session, at };
+      return work(held.session);
+    };
     try {
-      return await withinStep(plan.stepTimeoutMs, where, work(), (late) => failures.push({ ...at, kind: 'timeout', error: `after the bound: ${firstLine(late)}` }));
+      return await withinStep(plan.stepTimeoutMs, stepName(at), run(), (late) => failures.push({ ...at, kind: 'timeout', error: `after the bound: ${firstLine(late)}` }));
     } catch (err) {
-      const closed = session.isClosed?.() === true;
-      failures.push({ ...at, kind: closed ? 'closed' : err instanceof StepTimeout ? 'timeout' : kind, error: firstLine(err) });
-      if (closed) halt.why = `the browser closed during ${where}: ${firstLine(err)}`;
+      if (held.session === null) {
+        failures.push({ ...at, kind: 'closed', error: `no new session opened: ${firstLine(err)}` });
+        halt.why = `no new session opened for ${stepName(at)}: ${firstLine(err)}`;
+      } else if (held.session.isClosed?.() === true) closed(at, firstLine(err));
+      else failures.push({ ...at, kind: err instanceof StepTimeout ? 'timeout' : kind, error: firstLine(err) });
       return null;
     }
   };
-  const openPage = async (route: string): Promise<string> => {
+  const openPage = async (session: QaSession, route: string): Promise<string> => {
     await session.navigate(route);
     const settled = await settleSoft(session, plan.settle);
     if (settled !== null) failures.push({ route, kind: 'settle', error: settled });
+    const landed = pathnameOf(await session.currentRoute());
+    await clearOverlays(session, plan, landed, (d) => dismissals.push(d));
     return pathnameOf(await session.currentRoute());
   };
+  const readNode = (node: CrawlNode): Promise<{ label: string; role: string }[] | null> =>
+    attempt(node.open, undefined, 'navigate', async (session) => {
+      await openPage(session, node.open);
+      return chooseEdges(normaliseControls((await requireEvaluate(session)(controlsExpression())) as { label: unknown; role: unknown }[]), plan.maxEdges);
+    });
 
   let frontier: CrawlNode[] = [{ open: plan.root, steps: [] }];
   for (let depth = 0; depth < plan.maxDepth && frontier.length > 0 && halt.why === null; depth += 1) {
     const next: CrawlNode[] = [];
     for (const node of frontier) {
       if (halt.why !== null) break;
-      const controls = await attempt(node.open, undefined, 'navigate', async () => {
-        await openPage(node.open);
-        return chooseEdges(normaliseControls((await evaluate(controlsExpression())) as { label: unknown; role: unknown }[]), plan.maxEdges);
-      });
+      let controls = await readNode(node);
+      // A screen whose read crashed the browser is read once more on the new session.
+      if (controls === null && halt.why === null && failures.at(-1)?.kind === 'closed') controls = await readNode(node);
       // A root that does not open leaves nothing to crawl: every target carries the reason.
       if (controls === null && depth === 0) halt.why ??= `${plan.root} did not open: ${failures.at(-1)?.error ?? 'no reason given'}`;
       for (const control of controls ?? []) {
         if (halt.why !== null) break;
-        const edge = await attempt(node.open, control.label, 'press', async () => {
-          const from = await openPage(node.open);
+        const edge = await attempt(node.open, control.label, 'press', async (session) => {
+          const from = await openPage(session, node.open);
           return { from, ...(await followEdge(session, control, from, plan.settle)) };
         });
         if (edge === null) continue;
@@ -606,7 +685,7 @@ export async function crawl(session: QaSession, plan: CrawlPlan): Promise<CrawlR
     }
     frontier = next;
   }
-  return { paths: found, visited: [...visited], failures, targets: targetResults(plan, found, halt.why ?? undefined) };
+  return { paths: found, visited: [...visited], failures, dismissals, targets: targetResults(plan, found, halt.why ?? undefined, failures) };
 }
 
 /** The result of one path recording. */
@@ -614,19 +693,24 @@ export type PathRecording = VideoRecordResult | { ok: false; reason: PathFailRea
 
 /**
  * Replays a discovered path with the recorder on. The recording is a replay of a path already
- * proved to walk, so it holds none of the crawl's dead ends.
+ * proved to walk, so it holds none of the crawl's dead ends. The overlays of the root are cleared
+ * before the recorder starts. A dismiss after a step is a mark of the video, never a step.
  *
  * @param capS the video cap in seconds (`qa.evidence.videoCapS`)
  * @param now milliseconds, from the kernel clock
  */
 export async function recordPath(
   session: QaSession,
-  args: { root: string; path: Pick<CrawlPath, 'id' | 'steps'>; file: string; device: string | null; capS: number; settle?: Settle; now: () => number },
+  args: { root: string; path: Pick<CrawlPath, 'id' | 'steps'>; file: string; device: string | null; capS: number; settle?: Settle; overlays?: OverlayRule; now: () => number },
 ): Promise<PathRecording> {
   const settle = args.settle ?? CLICK_SETTLE;
+  const overlays = args.overlays ?? { dismiss: [], overlayWaitMs: 0 };
   const steps: PathStep[] = [];
+  const marks: { atMs: number; text: string }[] = [];
   await session.navigate(args.root);
+  await settleSoft(session, settle);
   let current = pathnameOf(await session.currentRoute());
+  await clearOverlays(session, overlays, current, () => undefined);
   await session.startVideo(args.file);
   const startedAt = args.now();
   let driveError: string | null = null;
@@ -634,12 +718,15 @@ export async function recordPath(
   try {
     for (const step of args.path.steps) {
       const { moved, landed, error } = await followEdge(session, step, current, settle);
-      steps.push({ label: step.label, role: step.role, route: landed, atMs: args.now() - startedAt });
+      const atMs = args.now() - startedAt;
+      steps.push({ label: step.label, role: step.role, route: landed, atMs });
+      marks.push({ atMs, text: step.label });
       if (!moved) {
         driveError = error ?? `"${step.label}" no longer navigates`;
         break;
       }
       current = landed;
+      await clearOverlays(session, overlays, current, (d) => marks.push({ atMs: args.now() - startedAt, text: `dismiss ${d.press}` }));
     }
   } finally {
     // The video is kept even when a step failed: it shows where the path stopped.
@@ -649,5 +736,5 @@ export async function recordPath(
   if (!budget.ok) return { ...budget, file, steps };
   if (driveError !== null) return { ok: false, reason: 'state-mismatch', error: driveError, file, steps };
   const seconds = (args.now() - startedAt) / 1000;
-  return videoRecord({ kind: 'path', file, provenance: 'live', device: args.device, seconds, steps, marks: steps.map((s) => `${stamp(s.atMs ?? 0)}  ${s.label}`) });
+  return videoRecord({ kind: 'path', file, provenance: 'live', device: args.device, seconds, steps, marks: marks.map((m) => `${stamp(m.atMs)}  ${m.text}`) });
 }

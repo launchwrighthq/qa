@@ -6,7 +6,8 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { type App, isCodedError, LaunchwrightError } from '../kernel/index.mts';
 import { type CommandArgs, parseCommandArgs, UsageError } from '../kernel/services/args.mts';
 import { type QaConfig, qaConfigOf } from '../config.mts';
-import type { OpenOptions, QaSession, QaTarget } from '../drivers/target/contract.mts';
+import type { OpenOptions, QaTarget } from '../drivers/target/contract.mts';
+import { type Dismissal, dismissEntries, type OverlayRule } from '../services/overlays.mts';
 import type { Surface } from '../services/types.mts';
 import {
   buildCrawlPlan,
@@ -27,6 +28,7 @@ import {
 } from '../services/paths.mts';
 import { scanStates } from '../states/services/project.mts';
 import { deviceOf, ledgerRecorder, legByName, type RunDeps, runDeps } from '../states/services/run.mts';
+import { sessionPool } from '../states/services/sessions.mts';
 import type { QaCommandOptions, QaSubcommand } from './qa.command.mts';
 
 const USAGE = [
@@ -92,7 +94,7 @@ function plansFor(args: Flags, opts: QaCommandOptions, config: QaConfig, generat
     .filter(Boolean)
     .map((name) => {
       const leg = legByName(config, name);
-      return buildCrawlPlan({ slug, leg: leg.name, surface: leg.surface, targets });
+      return buildCrawlPlan({ slug, leg: leg.name, surface: leg.surface, targets, ...overlayRule(config) });
     });
   // A named leg must have targets. A default leg without a route table of its surface is left out.
   const empty = plans.filter((p) => p.targets.length === 0);
@@ -113,25 +115,49 @@ function planCmd(args: Flags, opts: QaCommandOptions, config: QaConfig, generate
   return 0;
 }
 
+/** The dismiss list and the overlay wait of `qa.paths`. */
+function overlayRule(config: QaConfig): OverlayRule {
+  return { dismiss: dismissEntries(config.paths.dismiss), overlayWaitMs: config.paths.overlayWaitMs };
+}
+
+/** The persona of `qa.paths.fixture`, or null to run as the target's own reader. */
+function personaOf(config: QaConfig): string | null {
+  return config.paths.fixture.persona ?? null;
+}
+
 /**
- * Opens one leg and crawls it. A session that does not open, or a crawl that throws, still gives a
- * row per target, each with the reason, so a leg never ends without its targets.
+ * Opens one leg and crawls it on a session pool, so a crashed browser gives way to a new session.
+ * A session that does not open, or a crawl that throws, still gives a row per target, each with
+ * the reason, so a leg never ends without its targets.
  */
-async function crawlLeg(target: QaTarget, open: OpenOptions, plan: CrawlPlan): Promise<CrawlResult & { crashed: string | null }> {
-  let session: QaSession | null = null;
+async function crawlLeg(target: QaTarget, open: Omit<OpenOptions, 'persona'>, plan: CrawlPlan, persona: string | null): Promise<CrawlResult & { crashed: string | null; notes: string[] }> {
+  const pool = sessionPool(target, open);
   let result: CrawlResult & { crashed: string | null };
   try {
-    session = await target.open(open);
-    result = { ...(await crawl(session, plan)), crashed: null };
+    await pool.get(persona);
+    result = { ...(await crawl({ get: () => pool.get(persona) }, plan)), crashed: null };
   } catch (cause) {
     if (isCodedError(cause) && cause.code === 'qa.paths.evaluate') throw cause;
     const why = cause instanceof Error ? cause.message.split('\n')[0] ?? '' : String(cause);
-    result = { paths: [], visited: [], failures: [], targets: targetResults(plan, [], why), crashed: why };
+    result = { paths: [], visited: [], failures: [], dismissals: [], targets: targetResults(plan, [], why), crashed: why };
   } finally {
-    await session?.close();
+    await pool.close();
   }
   const halted = result.targets.find((t) => t.error !== undefined)?.error ?? null;
-  return { ...result, crashed: result.crashed ?? halted };
+  return { ...result, crashed: result.crashed ?? halted, notes: [...pool.notes] };
+}
+
+/** One line per distinct dismiss of a leg: what pressed it, what it cleared, and how often. */
+function dismissLines(dismissals: readonly Dismissal[]): { line: string; failed: boolean }[] {
+  const counts = new Map<string, { count: number; failed: boolean; text: string }>();
+  for (const d of dismissals) {
+    const failed = !d.cleared;
+    const text = `dismiss (${d.by}) ${d.press} on ${d.route}${d.overlay === null ? '' : ` over ${d.overlay}`}: ${failed ? `not cleared${d.error === undefined ? '' : `, ${d.error}`}` : 'cleared'}`;
+    const seen = counts.get(text);
+    if (seen) seen.count += 1;
+    else counts.set(text, { count: 1, failed, text });
+  }
+  return [...counts.values()].map((c) => ({ line: c.count > 1 ? `${c.text} (${c.count} times)` : c.text, failed: c.failed }));
 }
 
 async function crawlCmd(args: Flags, opts: QaCommandOptions, config: QaConfig, deps: RunDeps): Promise<number> {
@@ -147,16 +173,24 @@ async function crawlCmd(args: Flags, opts: QaCommandOptions, config: QaConfig, d
       opts.err(`leg ${leg.name}: the target ${leg.target} is not ready: ${ready.reason ?? 'no reason given'}`);
       continue;
     }
-    const result = await crawlLeg(target, { leg, baseUrl: baseFor(args, config, leg.surface), outDir: dir }, plan);
+    const persona = personaOf(config);
+    const result = await crawlLeg(target, { leg, baseUrl: baseFor(args, config, leg.surface), outDir: dir }, plan, persona);
     const { paths } = result;
     const log = join(dir, `results.${plan.leg}.jsonl`);
     mkdirSync(dirname(log), { recursive: true });
     writeFileSync(log, paths.map((p) => `${JSON.stringify(p)}\n`).join(''));
-    writeJson(join(dir, `targets.${plan.leg}.json`), { targets: result.targets, failures: result.failures });
+    writeJson(join(dir, `targets.${plan.leg}.json`), { persona, targets: result.targets, failures: result.failures, dismissals: result.dismissals });
     const reached = result.targets.filter((t) => t.reached).length;
-    opts.out(`leg ${plan.leg}: ${paths.length} path(s), ${reached} of ${plan.targets.length} target route(s) reached -> ${log}`);
+    opts.out(`leg ${plan.leg}: ${paths.length} path(s), ${reached} of ${plan.targets.length} target route(s) reached${persona === null ? '' : ` as persona ${persona}`} -> ${log}`);
     for (const path of paths) opts.out(`  ${path.readable}`);
+    for (const { line, failed } of dismissLines(result.dismissals)) (failed ? opts.err : opts.out)(`leg ${plan.leg}: ${line}`);
+    for (const note of result.notes) opts.out(`leg ${plan.leg}: ${note}`);
     for (const failure of result.failures) opts.err(`leg ${plan.leg}: step ${failure.kind} on ${failure.route}${failure.label ? ` "${failure.label}"` : ''}: ${failure.error}`);
+    const crashedRows = result.targets.filter((t) => t.crashed !== undefined);
+    if (crashedRows.length > 0) {
+      failed = true;
+      for (const row of crashedRows) opts.err(`leg ${plan.leg}: target ${row.route}: ${row.crashed}. A new session opened and the crawl went on.`);
+    }
     if (result.crashed !== null) {
       failed = true;
       opts.err(`leg ${plan.leg}: the crawl did not finish: ${result.crashed}`);
@@ -196,22 +230,25 @@ async function recordCmd(args: Flags, opts: QaCommandOptions, config: QaConfig, 
       continue;
     }
     const recorder = ledgerRecorder({ reportDir, slug, leg, provenance: 'live', clock: deps.clock, revision });
-    let session: QaSession | null = null;
+    // The pool opens a new session after a crash, so one crashed recording fails only its own path.
+    const pool = sessionPool(target, { leg, baseUrl: baseFor(args, config, leg.surface), outDir: dir });
+    const persona = personaOf(config);
+    const failOf = (cause: unknown): PathRecording => ({ ok: false, reason: 'crashed', error: cause instanceof Error ? cause.message.split('\n')[0] ?? '' : String(cause) });
     try {
-      session = await target.open({ leg, baseUrl: baseFor(args, config, leg.surface), outDir: dir });
       for (const path of mine) {
         const file = join(reportDir, videoPath(slug, path.id, legName, 'webm'));
         mkdirSync(dirname(file), { recursive: true });
         // A recording that throws fails its own path with the reason, and the next path runs.
-        const recorded: PathRecording = await recordPath(session, { root: path.from, path, file, device: deviceOf(leg), capS: config.evidence.videoCapS, now: () => deps.clock.now() }).catch(
-          (cause: unknown) => ({ ok: false as const, reason: 'crashed' as const, error: cause instanceof Error ? cause.message.split('\n')[0] ?? '' : String(cause) }),
-        );
+        const recorded: PathRecording = await pool
+          .get(persona)
+          .then((session) => recordPath(session, { root: path.from, path, file, device: deviceOf(leg), capS: config.evidence.videoCapS, overlays: overlayRule(config), now: () => deps.clock.now() }))
+          .catch(failOf);
         const kept = recorded.ok ? recorded.file : 'file' in recorded ? recorded.file : undefined;
         if (kept !== undefined && existsSync(kept)) await recorder.record({ file: kept, kind: 'video', row: path.id });
         lines.push({ ...recorded, id: path.id, leg: legName });
       }
     } finally {
-      await session?.close();
+      await pool.close();
       await recorder.flush();
     }
   }

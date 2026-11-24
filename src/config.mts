@@ -66,6 +66,29 @@ export const qaConfig = z.object({
    * the run reads `.lw/qa/delivery.json` and `.lw/qa/mounts.json` if they exist.
    */
   states: z.object({ delivery: z.string().min(1).optional(), mounts: z.string().min(1).optional() }).prefault({}),
+  /**
+   * The path crawl (spec 2.7). `dismiss`: what clears a dialog or sheet over a page, tried in order
+   * after each settle. A string is a CSS selector; `{ role, name }` is a control; `{ key }` is a key
+   * that is pressed while an overlay shows. `overlayWaitMs`: how long the crawl waits after a settle
+   * for an overlay or a dismiss control to show. `fixture.persona`: the persona the crawl and the
+   * recordings run signed in as, as on a session row.
+   */
+  paths: z
+    .object({
+      dismiss: z
+        .array(
+          z.union([
+            z.string().min(1),
+            z.strictObject({ selector: z.string().min(1) }),
+            z.strictObject({ role: z.string().min(1), name: z.string().min(1) }),
+            z.strictObject({ key: z.string().min(1) }),
+          ]),
+        )
+        .default([]),
+      overlayWaitMs: z.number().int().nonnegative().max(20_000).default(0),
+      fixture: z.strictObject({ persona: z.string().min(1).optional() }).prefault({}),
+    })
+    .prefault({}),
   /** Folders that only declare types, so the state scan can derive the shape of a parameter type. */
   typeRoots: z.array(z.string()).default([]),
   /** Overrides and additions to the default legs (spec 2.3). `false` removes a default leg. */

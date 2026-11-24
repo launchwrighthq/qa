@@ -1043,6 +1043,25 @@ var init_config2 = __esm({
        * the run reads `.lw/qa/delivery.json` and `.lw/qa/mounts.json` if they exist.
        */
       states: import_zod6.z.object({ delivery: import_zod6.z.string().min(1).optional(), mounts: import_zod6.z.string().min(1).optional() }).prefault({}),
+      /**
+       * The path crawl (spec 2.7). `dismiss`: what clears a dialog or sheet over a page, tried in order
+       * after each settle. A string is a CSS selector; `{ role, name }` is a control; `{ key }` is a key
+       * that is pressed while an overlay shows. `overlayWaitMs`: how long the crawl waits after a settle
+       * for an overlay or a dismiss control to show. `fixture.persona`: the persona the crawl and the
+       * recordings run signed in as, as on a session row.
+       */
+      paths: import_zod6.z.object({
+        dismiss: import_zod6.z.array(
+          import_zod6.z.union([
+            import_zod6.z.string().min(1),
+            import_zod6.z.strictObject({ selector: import_zod6.z.string().min(1) }),
+            import_zod6.z.strictObject({ role: import_zod6.z.string().min(1), name: import_zod6.z.string().min(1) }),
+            import_zod6.z.strictObject({ key: import_zod6.z.string().min(1) })
+          ])
+        ).default([]),
+        overlayWaitMs: import_zod6.z.number().int().nonnegative().max(2e4).default(0),
+        fixture: import_zod6.z.strictObject({ persona: import_zod6.z.string().min(1).optional() }).prefault({})
+      }).prefault({}),
       /** Folders that only declare types, so the state scan can derive the shape of a parameter type. */
       typeRoots: import_zod6.z.array(import_zod6.z.string()).default([]),
       /** Overrides and additions to the default legs (spec 2.3). `false` removes a default leg. */
@@ -3031,6 +3050,176 @@ var init_inventory = __esm({
   }
 });
 
+// src/services/overlays.mts
+function dismissEntries(raw) {
+  return raw.map((entry) => typeof entry === "string" ? { selector: entry } : entry);
+}
+function describeDismiss(entry) {
+  if ("key" in entry) return `key ${entry.key}`;
+  if ("selector" in entry) return `selector ${entry.selector}`;
+  return `${entry.role} "${entry.name}"`;
+}
+function overlayProbeExpression(waitMs, want, dismiss) {
+  const listed = dismiss.filter((entry) => !("key" in entry));
+  return `(async () => {
+  /* lw-qa overlay probe */
+  ${PAGE_HELPERS}
+  const label = (el) => {
+    const by = el.getAttribute('aria-labelledby');
+    const titled = by ? document.getElementById(by) : null;
+    const heading = el.querySelector('h1, h2, h3, [role="heading"]');
+    return norm(el.getAttribute('aria-label') || (titled && titled.innerText) || (heading && heading.innerText) || el.innerText || '');
+  };
+  const coversControls = (layer) => Array.from(document.querySelectorAll(SELECTOR)).some((el) => {
+    if (layer.contains(el) || !shown(el)) return false;
+    return points(el.getBoundingClientRect()).some(([x, y]) => layer.contains(document.elementFromPoint(x, y)));
+  });
+  const fixedLayer = () => {
+    for (const [fx, fy] of [[0.5, 0.5], [0.15, 0.15], [0.85, 0.15], [0.15, 0.85], [0.85, 0.85]]) {
+      for (let el = document.elementFromPoint(innerWidth * fx, innerHeight * fy); el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+        if (getComputedStyle(el).position !== 'fixed') continue;
+        const box = el.getBoundingClientRect();
+        if (box.width >= innerWidth * 0.9 && box.height >= innerHeight * 0.9 && coversControls(el)) return el;
+      }
+    }
+    return null;
+  };
+  const detect = () => {
+    for (const el of Array.from(document.querySelectorAll('dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]'))) {
+      if (!shown(el) || !onScreen(el.getBoundingClientRect()) || el.closest('[inert], [aria-hidden="true"]')) continue;
+      return { kind: isModal(el) ? 'modal' : 'dialog', name: label(el) };
+    }
+    const layer = fixedLayer();
+    return layer === null ? null : { kind: 'layer', name: label(layer) };
+  };
+  const listed = ${JSON.stringify(listed)};
+  const want = ${JSON.stringify(want)};
+  const until = Date.now() + ${Math.max(0, Math.round(waitMs))};
+  for (;;) {
+    const seen = detect();
+    const done = want === 'present' ? seen !== null || listed.some((entry) => findEntry(entry) !== null) : seen === null;
+    if (done || Date.now() >= until) return seen;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+})()`;
+}
+function pressDismissExpression(entry) {
+  return `(() => {
+  /* lw-qa dismiss press */
+  ${PAGE_HELPERS}
+  const target = findEntry(${JSON.stringify(entry)});
+  if (target === null) return { found: false };
+  target.click();
+  return { found: true };
+})()`;
+}
+async function pressEntry(session2, evaluate, entry, overlay) {
+  try {
+    if ("key" in entry) {
+      if (overlay === null) return "absent";
+      await session2.act({ kind: "press", key: entry.key });
+      return null;
+    }
+    const pressed = await evaluate(pressDismissExpression(entry));
+    return pressed.found ? null : "absent";
+  } catch (err) {
+    if (session2.isClosed?.() === true) throw err;
+    return messageOf(err).split("\n")[0] ?? "";
+  }
+}
+async function clearOverlays(session2, rule, route, log) {
+  if (!session2.evaluate) {
+    throw new LaunchwrightError("qa.paths.evaluate", "The target cannot evaluate in the page, so the crawl cannot find an overlay. Use a browser or WebView target.");
+  }
+  const evaluate = session2.evaluate.bind(session2);
+  const probe = async (waitMs, want) => await evaluate(overlayProbeExpression(waitMs, want, rule.dismiss));
+  const auto = { key: AUTO_DISMISS_KEY };
+  let overlay = await probe(rule.overlayWaitMs, "present");
+  for (let round = 0; round < DISMISS_ROUNDS; round += 1) {
+    if (round > 0) overlay = await probe(0, "present");
+    const before = overlay;
+    let pressed = false;
+    let pressedAuto = false;
+    const press = async (entry, by) => {
+      const error = await pressEntry(session2, evaluate, entry, overlay);
+      if (error === "absent") return true;
+      pressed = true;
+      if ("key" in entry && entry.key === AUTO_DISMISS_KEY) pressedAuto = true;
+      const after = error === null ? await probe(DISMISS_WAIT_MS, "absent") : overlay;
+      const landed = (await session2.currentRoute()).replace(/[?#].*$/, "") || "/";
+      const entryText = describeDismiss(entry);
+      if (landed !== route) {
+        log({ route, by, press: entryText, overlay: describeOverlay(overlay), cleared: false, error: `the press moved the app from ${route} to ${landed}, so the overlay belongs to the page` });
+        await session2.navigate(route);
+        return false;
+      }
+      log({ route, by, press: entryText, overlay: describeOverlay(overlay), cleared: after === null, ...error === null ? {} : { error } });
+      overlay = after;
+      return true;
+    };
+    for (const entry of rule.dismiss) if (!await press(entry, "list")) return;
+    if (overlay !== null && !pressedAuto && !await press(auto, "auto")) return;
+    if (!pressed || sameOverlay(before, overlay)) return;
+  }
+}
+var CONTROL_SELECTOR, MAX_LABEL, DISMISS_WAIT_MS, DISMISS_ROUNDS, AUTO_DISMISS_KEY, describeOverlay, PAGE_HELPERS, sameOverlay;
+var init_overlays = __esm({
+  "src/services/overlays.mts"() {
+    "use strict";
+    init_cjs_shims();
+    init_kernel();
+    CONTROL_SELECTOR = 'button, a, [role="button"], [role="link"], [role="tab"]';
+    MAX_LABEL = 60;
+    DISMISS_WAIT_MS = 1500;
+    DISMISS_ROUNDS = 3;
+    AUTO_DISMISS_KEY = "Escape";
+    describeOverlay = (overlay) => overlay === null ? null : `${overlay.kind} "${overlay.name}"`;
+    PAGE_HELPERS = `
+  const SELECTOR = ${JSON.stringify(CONTROL_SELECTOR)};
+  const norm = (s) => String(s == null ? '' : s).replace(/\\s+/g, ' ').trim().slice(0, ${MAX_LABEL});
+  const shown = (el) => {
+    const box = el.getBoundingClientRect();
+    if (box.width < 4 || box.height < 4) return false;
+    const style = getComputedStyle(el);
+    return !(style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0');
+  };
+  const nameOf = (el) => (el.getAttribute('aria-label') || el.innerText || el.getAttribute('title') || '').trim();
+  const roleOf = (el) => el.getAttribute('role') || (el.tagName === 'A' ? 'link' : 'button');
+  const inView = ([x, y]) => x >= 0 && y >= 0 && x < innerWidth && y < innerHeight;
+  const onScreen = (box) => box.bottom > 0 && box.right > 0 && box.top < innerHeight && box.left < innerWidth;
+  const points = (box) => [[0.5, 0.5], [0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]].map(([fx, fy]) => [box.left + box.width * fx, box.top + box.height * fy]).filter(inView);
+  const isModal = (el) => {
+    if (el.getAttribute('aria-modal') === 'true') return true;
+    if (el.tagName !== 'DIALOG' || !el.open) return false;
+    try {
+      return el.matches(':modal');
+    } catch (err) {
+      return false;
+    }
+  };
+  const modalRoot = () => Array.from(document.querySelectorAll('dialog[open], [aria-modal="true"]')).find((el) => isModal(el) && shown(el)) || null;
+  const pressable = (el, modal) => {
+    if (!shown(el) || el.closest('[inert], [aria-hidden="true"]')) return false;
+    if (modal !== null && !modal.contains(el)) return false;
+    const seen = points(el.getBoundingClientRect());
+    if (seen.length === 0) return true;
+    return seen.some(([x, y]) => {
+      const hit = document.elementFromPoint(x, y);
+      return hit !== null && (el.contains(hit) || hit.contains(el));
+    });
+  };
+  const findEntry = (entry) => {
+    const modal = modalRoot();
+    const pool = entry.selector !== undefined
+      ? Array.from(document.querySelectorAll(entry.selector))
+      : Array.from(document.querySelectorAll(SELECTOR)).filter((el) => roleOf(el) === entry.role && norm(nameOf(el)) === norm(entry.name));
+    return pool.find((el) => pressable(el, modal)) || null;
+  };
+`;
+    sameOverlay = (a, b) => a !== null && b !== null && a.kind === b.kind && a.name === b.name;
+  }
+});
+
 // src/services/paths.mts
 function cleanLabel(raw) {
   return String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_LABEL);
@@ -3148,38 +3337,37 @@ function videoRecord(args) {
 }
 function controlsExpression() {
   return `(() => {
+  ${PAGE_HELPERS}
+  const modal = modalRoot();
   const out = [];
-  for (const el of Array.from(document.querySelectorAll(${JSON.stringify(CONTROL_SELECTOR)}))) {
-    const box = el.getBoundingClientRect();
-    if (box.width < 4 || box.height < 4) continue;
-    const style = getComputedStyle(el);
-    if (style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0') continue;
-    const name = (el.getAttribute('aria-label') || el.innerText || el.getAttribute('title') || '').trim();
+  for (const el of Array.from(document.querySelectorAll(SELECTOR))) {
+    if (!pressable(el, modal)) continue;
+    const name = nameOf(el);
     if (name === '') continue;
-    out.push({ label: name, role: el.getAttribute('role') || (el.tagName === 'A' ? 'link' : 'button') });
+    out.push({ label: name, role: roleOf(el) });
   }
   return out;
 })()`;
 }
 function clickByNameExpression(label, role) {
   return `(() => {
-  const norm = (s) => String(s == null ? '' : s).replace(/\\s+/g, ' ').trim().slice(0, ${MAX_LABEL});
+  ${PAGE_HELPERS}
   const want = norm(${JSON.stringify(String(label))});
   const wantRole = ${JSON.stringify(String(role))};
   const before = window.location.pathname;
-  for (const el of Array.from(document.querySelectorAll(${JSON.stringify(CONTROL_SELECTOR)}))) {
-    const box = el.getBoundingClientRect();
-    if (box.width < 4 || box.height < 4) continue;
-    const style = getComputedStyle(el);
-    if (style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0') continue;
-    const r = el.getAttribute('role') || (el.tagName === 'A' ? 'link' : 'button');
-    if (r !== wantRole) continue;
-    const name = norm(el.getAttribute('aria-label') || el.innerText || el.getAttribute('title') || '');
-    if (name !== want) continue;
+  const modal = modalRoot();
+  let covered = false;
+  for (const el of Array.from(document.querySelectorAll(SELECTOR))) {
+    if (!shown(el) || roleOf(el) !== wantRole || norm(nameOf(el)) !== want) continue;
+    if (!pressable(el, modal)) {
+      covered = true;
+      continue;
+    }
     el.click();
     return { ok: true, before };
   }
-  return { ok: false, error: 'no ' + wantRole + ' called ' + JSON.stringify(want) + ' on ' + before };
+  const what = wantRole + ' called ' + JSON.stringify(want);
+  return { ok: false, error: (covered ? 'the ' + what + ' is covered by an overlay' : 'no ' + what) + ' on ' + before };
 })()`;
 }
 function normaliseControls(raw) {
@@ -3220,7 +3408,9 @@ function buildCrawlPlan(args) {
     maxEdges: MAX_EDGES_PER_NODE,
     targets: args.targets.filter((t) => t.surface === args.surface),
     settle: args.settle ?? CLICK_SETTLE,
-    stepTimeoutMs: args.stepTimeoutMs ?? STEP_TIMEOUT_MS
+    stepTimeoutMs: args.stepTimeoutMs ?? STEP_TIMEOUT_MS,
+    dismiss: args.dismiss ?? [],
+    overlayWaitMs: args.overlayWaitMs ?? 0
   };
 }
 function resolveRoute(landed, targets) {
@@ -3229,18 +3419,23 @@ function resolveRoute(landed, targets) {
     landed
   );
 }
-function targetResults(plan2, paths, error) {
+function targetResults(plan2, paths, error, failures = []) {
   const cross = crossReach(
     plan2.targets,
     paths.map((p) => ({ id: p.id, route: p.route, surface: plan2.surface }))
   );
-  return cross.routes.map((row) => ({
-    route: row.route,
-    unions: row.unions,
-    reached: row.reached,
-    by: row.by,
-    ...error !== void 0 && !row.reached ? { error } : {}
-  }));
+  const crashes = failures.filter((f) => f.kind === "closed");
+  return cross.routes.map((row) => {
+    const crash = crashes.find((c) => resolveRoute(pathnameOf(c.route), plan2.targets) === row.route);
+    return {
+      route: row.route,
+      unions: row.unions,
+      reached: row.reached,
+      by: row.by,
+      ...error !== void 0 && !row.reached ? { error } : {},
+      ...crash === void 0 ? {} : { crashed: `the browser closed during ${stepName(crash)}: ${crash.error}` }
+    };
+  });
 }
 async function withinStep(ms, what, work, late) {
   let timer;
@@ -3267,6 +3462,10 @@ async function settleSoft(session2, rule) {
     await session2.settle(rule);
     return null;
   } catch (err) {
+    if (session2.isClosed?.() === true) {
+      const cause = err instanceof Error && err.cause !== void 0 ? err.cause : err;
+      throw new LaunchwrightError("qa.paths.closed", `the browser closed while the page settled: ${firstLine(cause)}`, { cause: err });
+    }
     if (isCodedError(err) && err.code === "qa.target.settle") return firstLine(err);
     throw err;
   }
@@ -3279,45 +3478,75 @@ async function followEdge(session2, control, before, settle) {
   const landed = pathnameOf(await session2.currentRoute());
   return { moved: landed !== before, landed, settled };
 }
-async function crawl(session2, plan2) {
-  const evaluate = requireEvaluate(session2);
+function sessionSource(sessions) {
+  if ("navigate" in sessions) return { get: async () => sessions, restarts: false };
+  return { get: () => sessions.get(), restarts: true };
+}
+async function crawl(sessions, plan2) {
+  const source = sessionSource(sessions);
+  requireEvaluate(await source.get());
   const found = [];
   const failures = [];
+  const dismissals = [];
   const rootTarget = resolveRoute(plan2.root, plan2.targets);
   const visited = /* @__PURE__ */ new Set([plan2.root, ...rootTarget === null ? [] : [rootTarget]]);
   const halt = { why: null };
+  const crash = { count: 0, last: null };
+  const closed = (at, error) => {
+    failures.push({ ...at, kind: "closed", error });
+    crash.last = null;
+    crash.count += 1;
+    if (!source.restarts) halt.why = `the browser closed during ${stepName(at)}: ${error}`;
+    else if (crash.count > MAX_RESTARTS) halt.why = `the browser closed ${crash.count} times, the last time during ${stepName(at)}: ${error}`;
+  };
   const attempt = async (route, label, kind, work) => {
-    const where = label === void 0 ? `open ${route}` : `press "${label}" on ${route}`;
     const at = { route, ...label === void 0 ? {} : { label } };
+    const previous = crash.last;
+    if (previous !== null && previous.session.isClosed?.() === true) {
+      closed(previous.at, "the browser closed after this step");
+      if (halt.why !== null) return null;
+    }
+    const held = { session: null };
+    const run10 = async () => {
+      held.session = await source.get();
+      crash.last = { session: held.session, at };
+      return work(held.session);
+    };
     try {
-      return await withinStep(plan2.stepTimeoutMs, where, work(), (late) => failures.push({ ...at, kind: "timeout", error: `after the bound: ${firstLine(late)}` }));
+      return await withinStep(plan2.stepTimeoutMs, stepName(at), run10(), (late) => failures.push({ ...at, kind: "timeout", error: `after the bound: ${firstLine(late)}` }));
     } catch (err) {
-      const closed = session2.isClosed?.() === true;
-      failures.push({ ...at, kind: closed ? "closed" : err instanceof StepTimeout ? "timeout" : kind, error: firstLine(err) });
-      if (closed) halt.why = `the browser closed during ${where}: ${firstLine(err)}`;
+      if (held.session === null) {
+        failures.push({ ...at, kind: "closed", error: `no new session opened: ${firstLine(err)}` });
+        halt.why = `no new session opened for ${stepName(at)}: ${firstLine(err)}`;
+      } else if (held.session.isClosed?.() === true) closed(at, firstLine(err));
+      else failures.push({ ...at, kind: err instanceof StepTimeout ? "timeout" : kind, error: firstLine(err) });
       return null;
     }
   };
-  const openPage = async (route) => {
+  const openPage = async (session2, route) => {
     await session2.navigate(route);
     const settled = await settleSoft(session2, plan2.settle);
     if (settled !== null) failures.push({ route, kind: "settle", error: settled });
+    const landed = pathnameOf(await session2.currentRoute());
+    await clearOverlays(session2, plan2, landed, (d) => dismissals.push(d));
     return pathnameOf(await session2.currentRoute());
   };
+  const readNode = (node) => attempt(node.open, void 0, "navigate", async (session2) => {
+    await openPage(session2, node.open);
+    return chooseEdges(normaliseControls(await requireEvaluate(session2)(controlsExpression())), plan2.maxEdges);
+  });
   let frontier = [{ open: plan2.root, steps: [] }];
   for (let depth = 0; depth < plan2.maxDepth && frontier.length > 0 && halt.why === null; depth += 1) {
     const next = [];
     for (const node of frontier) {
       if (halt.why !== null) break;
-      const controls = await attempt(node.open, void 0, "navigate", async () => {
-        await openPage(node.open);
-        return chooseEdges(normaliseControls(await evaluate(controlsExpression())), plan2.maxEdges);
-      });
+      let controls = await readNode(node);
+      if (controls === null && halt.why === null && failures.at(-1)?.kind === "closed") controls = await readNode(node);
       if (controls === null && depth === 0) halt.why ??= `${plan2.root} did not open: ${failures.at(-1)?.error ?? "no reason given"}`;
       for (const control of controls ?? []) {
         if (halt.why !== null) break;
-        const edge = await attempt(node.open, control.label, "press", async () => {
-          const from = await openPage(node.open);
+        const edge = await attempt(node.open, control.label, "press", async (session2) => {
+          const from = await openPage(session2, node.open);
           return { from, ...await followEdge(session2, control, from, plan2.settle) };
         });
         if (edge === null) continue;
@@ -3335,13 +3564,17 @@ async function crawl(session2, plan2) {
     }
     frontier = next;
   }
-  return { paths: found, visited: [...visited], failures, targets: targetResults(plan2, found, halt.why ?? void 0) };
+  return { paths: found, visited: [...visited], failures, dismissals, targets: targetResults(plan2, found, halt.why ?? void 0, failures) };
 }
 async function recordPath(session2, args) {
   const settle = args.settle ?? CLICK_SETTLE;
+  const overlays = args.overlays ?? { dismiss: [], overlayWaitMs: 0 };
   const steps = [];
+  const marks = [];
   await session2.navigate(args.root);
+  await settleSoft(session2, settle);
   let current = pathnameOf(await session2.currentRoute());
+  await clearOverlays(session2, overlays, current, () => void 0);
   await session2.startVideo(args.file);
   const startedAt = args.now();
   let driveError = null;
@@ -3349,12 +3582,15 @@ async function recordPath(session2, args) {
   try {
     for (const step of args.path.steps) {
       const { moved, landed, error } = await followEdge(session2, step, current, settle);
-      steps.push({ label: step.label, role: step.role, route: landed, atMs: args.now() - startedAt });
+      const atMs = args.now() - startedAt;
+      steps.push({ label: step.label, role: step.role, route: landed, atMs });
+      marks.push({ atMs, text: step.label });
       if (!moved) {
         driveError = error ?? `"${step.label}" no longer navigates`;
         break;
       }
       current = landed;
+      await clearOverlays(session2, overlays, current, (d) => marks.push({ atMs: args.now() - startedAt, text: `dismiss ${d.press}` }));
     }
   } finally {
     file = (await session2.stopVideo()).path;
@@ -3363,26 +3599,27 @@ async function recordPath(session2, args) {
   if (!budget.ok) return { ...budget, file, steps };
   if (driveError !== null) return { ok: false, reason: "state-mismatch", error: driveError, file, steps };
   const seconds = (args.now() - startedAt) / 1e3;
-  return videoRecord({ kind: "path", file, provenance: "live", device: args.device, seconds, steps, marks: steps.map((s) => `${stamp(s.atMs ?? 0)}  ${s.label}`) });
+  return videoRecord({ kind: "path", file, provenance: "live", device: args.device, seconds, steps, marks: marks.map((m) => `${stamp(m.atMs)}  ${m.text}`) });
 }
-var MAX_DEPTH, MAX_EDGES_PER_NODE, CONTROL_SELECTOR, MAX_LABEL, VIDEO_KINDS, CLICK_SETTLE, STEP_TIMEOUT_MS, pathnameOf, StepTimeout, firstLine;
+var MAX_DEPTH, MAX_EDGES_PER_NODE, VIDEO_KINDS, CLICK_SETTLE, STEP_TIMEOUT_MS, pathnameOf, stepName, StepTimeout, firstLine, MAX_RESTARTS;
 var init_paths = __esm({
   "src/services/paths.mts"() {
     "use strict";
     init_cjs_shims();
     init_kernel();
     init_inventory();
+    init_overlays();
     MAX_DEPTH = 3;
     MAX_EDGES_PER_NODE = 12;
-    CONTROL_SELECTOR = 'button, a, [role="button"], [role="link"], [role="tab"]';
-    MAX_LABEL = 60;
     VIDEO_KINDS = ["path", "state"];
     CLICK_SETTLE = { busy: true, timeout: 4e3 };
     STEP_TIMEOUT_MS = 3e4;
     pathnameOf = (route) => route.replace(/[?#].*$/, "") || "/";
+    stepName = (at) => at.label === void 0 ? `open ${at.route}` : `press "${at.label}" on ${at.route}`;
     StepTimeout = class extends LaunchwrightError {
     };
     firstLine = (err) => (err instanceof Error ? err.message : String(err)).split("\n")[0] ?? "";
+    MAX_RESTARTS = 5;
   }
 });
 
@@ -12711,7 +12948,7 @@ function plansFor(args, opts, config, generated) {
   const targets = targetsFrom(inventory);
   const plans = (named2?.split(",") ?? DEFAULT_LEGS2).map((s) => s.trim()).filter(Boolean).map((name) => {
     const leg = legByName(config, name);
-    return buildCrawlPlan({ slug: slug3, leg: leg.name, surface: leg.surface, targets });
+    return buildCrawlPlan({ slug: slug3, leg: leg.name, surface: leg.surface, targets, ...overlayRule(config) });
   });
   const empty = plans.filter((p) => p.targets.length === 0);
   if (named2 !== null && empty.length > 0) {
@@ -12729,21 +12966,38 @@ function planCmd(args, opts, config, generated) {
   }
   return 0;
 }
-async function crawlLeg(target, open, plan2) {
-  let session2 = null;
+function overlayRule(config) {
+  return { dismiss: dismissEntries(config.paths.dismiss), overlayWaitMs: config.paths.overlayWaitMs };
+}
+function personaOf(config) {
+  return config.paths.fixture.persona ?? null;
+}
+async function crawlLeg(target, open, plan2, persona) {
+  const pool2 = sessionPool(target, open);
   let result;
   try {
-    session2 = await target.open(open);
-    result = { ...await crawl(session2, plan2), crashed: null };
+    await pool2.get(persona);
+    result = { ...await crawl({ get: () => pool2.get(persona) }, plan2), crashed: null };
   } catch (cause) {
     if (isCodedError(cause) && cause.code === "qa.paths.evaluate") throw cause;
     const why = cause instanceof Error ? cause.message.split("\n")[0] ?? "" : String(cause);
-    result = { paths: [], visited: [], failures: [], targets: targetResults(plan2, [], why), crashed: why };
+    result = { paths: [], visited: [], failures: [], dismissals: [], targets: targetResults(plan2, [], why), crashed: why };
   } finally {
-    await session2?.close();
+    await pool2.close();
   }
   const halted = result.targets.find((t) => t.error !== void 0)?.error ?? null;
-  return { ...result, crashed: result.crashed ?? halted };
+  return { ...result, crashed: result.crashed ?? halted, notes: [...pool2.notes] };
+}
+function dismissLines(dismissals) {
+  const counts = /* @__PURE__ */ new Map();
+  for (const d of dismissals) {
+    const failed = !d.cleared;
+    const text2 = `dismiss (${d.by}) ${d.press} on ${d.route}${d.overlay === null ? "" : ` over ${d.overlay}`}: ${failed ? `not cleared${d.error === void 0 ? "" : `, ${d.error}`}` : "cleared"}`;
+    const seen = counts.get(text2);
+    if (seen) seen.count += 1;
+    else counts.set(text2, { count: 1, failed, text: text2 });
+  }
+  return [...counts.values()].map((c) => ({ line: c.count > 1 ? `${c.text} (${c.count} times)` : c.text, failed: c.failed }));
 }
 async function crawlCmd(args, opts, config, deps) {
   let failed = false;
@@ -12758,17 +13012,25 @@ async function crawlCmd(args, opts, config, deps) {
       opts.err(`leg ${leg.name}: the target ${leg.target} is not ready: ${ready.reason ?? "no reason given"}`);
       continue;
     }
-    const result = await crawlLeg(target, { leg, baseUrl: baseFor(args, config, leg.surface), outDir: dir }, plan2);
+    const persona = personaOf(config);
+    const result = await crawlLeg(target, { leg, baseUrl: baseFor(args, config, leg.surface), outDir: dir }, plan2, persona);
     const { paths } = result;
     const log = (0, import_node_path41.join)(dir, `results.${plan2.leg}.jsonl`);
     (0, import_node_fs19.mkdirSync)((0, import_node_path41.dirname)(log), { recursive: true });
     (0, import_node_fs19.writeFileSync)(log, paths.map((p) => `${JSON.stringify(p)}
 `).join(""));
-    writeJson3((0, import_node_path41.join)(dir, `targets.${plan2.leg}.json`), { targets: result.targets, failures: result.failures });
+    writeJson3((0, import_node_path41.join)(dir, `targets.${plan2.leg}.json`), { persona, targets: result.targets, failures: result.failures, dismissals: result.dismissals });
     const reached = result.targets.filter((t) => t.reached).length;
-    opts.out(`leg ${plan2.leg}: ${paths.length} path(s), ${reached} of ${plan2.targets.length} target route(s) reached -> ${log}`);
+    opts.out(`leg ${plan2.leg}: ${paths.length} path(s), ${reached} of ${plan2.targets.length} target route(s) reached${persona === null ? "" : ` as persona ${persona}`} -> ${log}`);
     for (const path of paths) opts.out(`  ${path.readable}`);
+    for (const { line, failed: failed2 } of dismissLines(result.dismissals)) (failed2 ? opts.err : opts.out)(`leg ${plan2.leg}: ${line}`);
+    for (const note of result.notes) opts.out(`leg ${plan2.leg}: ${note}`);
     for (const failure of result.failures) opts.err(`leg ${plan2.leg}: step ${failure.kind} on ${failure.route}${failure.label ? ` "${failure.label}"` : ""}: ${failure.error}`);
+    const crashedRows = result.targets.filter((t) => t.crashed !== void 0);
+    if (crashedRows.length > 0) {
+      failed = true;
+      for (const row of crashedRows) opts.err(`leg ${plan2.leg}: target ${row.route}: ${row.crashed}. A new session opened and the crawl went on.`);
+    }
     if (result.crashed !== null) {
       failed = true;
       opts.err(`leg ${plan2.leg}: the crawl did not finish: ${result.crashed}`);
@@ -12804,21 +13066,20 @@ async function recordCmd(args, opts, config, deps) {
       continue;
     }
     const recorder = ledgerRecorder({ reportDir, slug: slug3, leg, provenance: "live", clock: deps.clock, revision: revision2 });
-    let session2 = null;
+    const pool2 = sessionPool(target, { leg, baseUrl: baseFor(args, config, leg.surface), outDir: dir });
+    const persona = personaOf(config);
+    const failOf = (cause) => ({ ok: false, reason: "crashed", error: cause instanceof Error ? cause.message.split("\n")[0] ?? "" : String(cause) });
     try {
-      session2 = await target.open({ leg, baseUrl: baseFor(args, config, leg.surface), outDir: dir });
       for (const path of mine) {
         const file = (0, import_node_path41.join)(reportDir, videoPath(slug3, path.id, legName, "webm"));
         (0, import_node_fs19.mkdirSync)((0, import_node_path41.dirname)(file), { recursive: true });
-        const recorded = await recordPath(session2, { root: path.from, path, file, device: deviceOf(leg), capS: config.evidence.videoCapS, now: () => deps.clock.now() }).catch(
-          (cause) => ({ ok: false, reason: "crashed", error: cause instanceof Error ? cause.message.split("\n")[0] ?? "" : String(cause) })
-        );
+        const recorded = await pool2.get(persona).then((session2) => recordPath(session2, { root: path.from, path, file, device: deviceOf(leg), capS: config.evidence.videoCapS, overlays: overlayRule(config), now: () => deps.clock.now() })).catch(failOf);
         const kept = recorded.ok ? recorded.file : "file" in recorded ? recorded.file : void 0;
         if (kept !== void 0 && (0, import_node_fs19.existsSync)(kept)) await recorder.record({ file: kept, kind: "video", row: path.id });
         lines2.push({ ...recorded, id: path.id, leg: legName });
       }
     } finally {
-      await session2?.close();
+      await pool2.close();
       await recorder.flush();
     }
   }
@@ -12929,9 +13190,11 @@ var init_qa_paths = __esm({
     init_kernel();
     init_args();
     init_config2();
+    init_overlays();
     init_paths();
     init_project2();
     init_run();
+    init_sessions();
     USAGE11 = [
       "usage: lw qa paths <plan|crawl|record|report> [options]",
       `  plan   [--legs a,b] [--slug s]              write the crawl plan of each leg from the delivery scan`,
