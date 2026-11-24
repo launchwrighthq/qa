@@ -51,35 +51,35 @@ import {
   writeBytes,
   writeHeld,
   writePng
-} from "./chunk-TRG6QP57.js";
-import "./chunk-XG43L2MR.js";
-import "./chunk-UTLQTV2X.js";
+} from "./chunk-3AXFOTAI.js";
+import "./chunk-DCJZUW5G.js";
+import "./chunk-32IF5JNA.js";
 import {
   QA_TARGETS
-} from "./chunk-CB2YK37X.js";
+} from "./chunk-2QPEXFZW.js";
 import "./chunk-W4O3YTED.js";
 import "./chunk-37DKYQMH.js";
-import "./chunk-ZNUANGPQ.js";
+import "./chunk-C3CKDTFU.js";
 import {
   credentialNeed
 } from "./chunk-N6G3DBRC.js";
 import "./chunk-62VIRJ2H.js";
 import "./chunk-ZYIHPZ3V.js";
-import "./chunk-EUYLWYDS.js";
-import "./chunk-GJVA76MS.js";
-import "./chunk-ZMPWNSJU.js";
-import "./chunk-K4LKBBDD.js";
-import "./chunk-RCXD64CA.js";
-import "./chunk-ZJ35OYFC.js";
-import "./chunk-CNY6SOD7.js";
+import "./chunk-6ULDPJIA.js";
+import "./chunk-SECVQO4X.js";
+import "./chunk-NL3NSCEL.js";
+import "./chunk-3EVFW7CC.js";
+import "./chunk-NRYDNIVU.js";
+import "./chunk-YKX37RJG.js";
+import "./chunk-I52564IV.js";
 import "./chunk-I4K4P4GZ.js";
 import "./chunk-YDFQPHPI.js";
 import "./chunk-4B5GWDFB.js";
-import "./chunk-5KDQJ25J.js";
-import "./chunk-SQO6FPZ2.js";
-import "./chunk-NYZ72SDM.js";
-import "./chunk-AA7FPMJ7.js";
-import "./chunk-LBZC23FE.js";
+import "./chunk-IX3NBJY2.js";
+import "./chunk-P6OTXJJ2.js";
+import "./chunk-D46OJBIP.js";
+import "./chunk-DY4PZ7TQ.js";
+import "./chunk-6HYCZCXT.js";
 import "./chunk-277Y4WQJ.js";
 import "./chunk-O5NSNELG.js";
 import "./chunk-B7UB2WOJ.js";
@@ -350,7 +350,10 @@ var BrowserstackTarget = class {
       if (deviceKind(resolved.device.kind).access !== "webdriver") return { ready: false, reason: `Device ${resolved.name} is ${resolved.device.kind}, not a cloud device.` };
       deviceKeys(resolved.name, resolved.device, cloudDeviceKeys);
       if (!cfg.username || !cfg.accessKey) {
-        return { ready: false, reason: "qa.device.browserstack.username and accessKey are not set. Map BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY from the secret store." };
+        return {
+          ready: false,
+          reason: "The BrowserStack keys are not set. Set BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY in the process env, or qa.device.browserstack.username and accessKey in the config."
+        };
       }
       if (this.budget.startedAt !== null) checkBudget(this.budget.startedAt, this.ctx.deps.clock.now(), cfg);
       return { ready: true };
@@ -362,7 +365,7 @@ var BrowserstackTarget = class {
   open(opts) {
     return CloudSession.open(this.ctx, opts, this.budget, this.name);
   }
-  /** The two secret store keys that the config maps into `qa.device.browserstack` (spec 2.6). */
+  /** The two keys of `qa.device.browserstack`, or of the env when the config names none (spec 2.6). Set or empty only. */
   needs(leg) {
     const cfg = this.ctx.config.device.browserstack;
     return { credentials: [credentialNeed("BROWSERSTACK_USERNAME", cfg.username, [leg.name]), credentialNeed("BROWSERSTACK_ACCESS_KEY", cfg.accessKey, [leg.name])] };
@@ -461,8 +464,8 @@ var qaDeviceProvider = provider({
 // src/device/services/extension.mts
 var qaExtension = {
   name: "qa-device",
-  subcommands: { device: async () => (await import("./qa-device-FQIFVEF2.js")).default },
-  targets: (config, root) => deviceTargets(withDevice(config), systemDeviceDeps(root))
+  subcommands: { device: async () => (await import("./qa-device-4AYAJ4AA.js")).default },
+  targets: (config, root, env) => deviceTargets(withDevice(config), systemDeviceDeps(root, env))
 };
 export {
   DEFAULT_RUN_TIMEOUT_MS,

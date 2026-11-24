@@ -119,4 +119,27 @@ describe('pgAdmin', () => {
   it('refuses a server that is not on this machine before it connects', async () => {
     await expect(pgAdmin('postgres://lw:secret@db.example.com/app', () => true)).rejects.toMatchObject({ code: 'qa.stack.host' });
   });
+
+  it('runs the statements on the connection of a connect hook, on the maintenance database', async () => {
+    const urls: string[] = [];
+    const sql: string[] = [];
+    const connect = async (url: string) => {
+      urls.push(url);
+      return {
+        execute: async (statement: string) => {
+          sql.push(statement);
+          return { rows: statement.startsWith('select datname') ? [{ datname: 'app' }, { datname: 'app_qa' }] : [] };
+        },
+        close: async () => undefined,
+      };
+    };
+    const admin = await pgAdmin(DEV, (name) => name === 'app_qa', connect);
+    expect(await admin.exists('app_qa')).toBe(true);
+    await admin.drop('app_qa');
+    await admin.create('app_qa');
+    await expect(admin.drop('app')).rejects.toMatchObject({ code: 'qa.stack.guard' });
+    await admin.close();
+    expect(urls).toEqual([urlWithDatabase(DEV, 'postgres')]);
+    expect(sql.slice(-2)).toEqual(['drop database if exists "app_qa"', 'create database "app_qa"']);
+  });
 });

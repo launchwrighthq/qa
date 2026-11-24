@@ -126,7 +126,7 @@ export const qaCommand = {
       opts.err(`lw qa: unknown subcommand ${first}. A subcommand of an extension module needs that module in the project config, for example qa-${first}.`);
       return usage(opts, extensions);
     }
-    const added = extensions.some((e) => e.targets) ? extensionTargets(extensions, qaConfigOf(opts.config), opts.cwd) : {};
+    const added = extensions.some((e) => e.targets) ? extensionTargets(extensions, qaConfigOf(opts.config), opts.cwd, opts.processEnv) : {};
     return spec.run(rest, { ...opts, targets: { ...added, ...opts.targets } });
   },
 };

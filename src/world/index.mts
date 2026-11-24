@@ -5,12 +5,14 @@ export {
   loadAppEntry,
   openWorld,
   type QaAppEntry,
+  type QaDatabaseContext,
   qaDatabase,
   type QaFakeBot,
   qaFakeBots,
   qaFakeToken,
   type QaHandler,
   type QaOverlay,
+  type QaPersonaLink,
   qaSections,
   QA_TELEGRAM_PORT,
   type QaWorld,
@@ -29,6 +31,7 @@ export { setMenuButton, type MenuOptions } from './services/menu.mts';
 export { assertRegistry, buildRegistry, defineWorld, factById, listWorld, type LoadedWorld, personaById, registryHash, registryProblem } from './services/registry.mts';
 export {
   assertQaTarget,
+  type ConnectDb,
   databaseName,
   dbAdmin,
   type DbAdmin,
@@ -41,5 +44,5 @@ export {
   urlWithDatabase,
 } from './services/stack.mts';
 export type { ArmCtx, Fact, FactHandles, FeatureWorld, Owned, Persona, PersonaHandles, PersonaIds, WorldCtx, WorldEntry, WorldRegistry } from './services/types.mts';
-export { baseSeedNames, readStamp, resetWorld, type ResetOptions, seedWorld, STAMP_FILE, type WorldStamp, type WorldStatus, worldStatus } from './services/world.mts';
+export { baseSeedNames, hookSeedNames, readStamp, resetWorld, type ResetOptions, seedWorld, STAMP_FILE, type WorldStamp, type WorldStatus, worldStatus } from './services/world.mts';
 export { cleanupWorktrees, copyName, copyPrefix, planWorktree, runWorktree, setEnvLine, type WorktreeDeps, type WorktreeOptions, type WorktreePlan } from './services/worktree.mts';

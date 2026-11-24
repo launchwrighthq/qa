@@ -1258,7 +1258,7 @@ function objectVocabulary(sf) {
       if (initializer && import_typescript2.default.isObjectLiteralExpression(initializer)) {
         const paths = /* @__PURE__ */ new Map();
         for (const member of initializer.properties) {
-          if (import_typescript2.default.isPropertyAssignment(member) && import_typescript2.default.isIdentifier(member.name) && import_typescript2.default.isStringLiteral(member.initializer)) {
+          if (import_typescript2.default.isPropertyAssignment(member) && import_typescript2.default.isIdentifier(member.name) && (import_typescript2.default.isStringLiteral(member.initializer) || import_typescript2.default.isNoSubstitutionTemplateLiteral(member.initializer))) {
             paths.set(member.name.text, member.initializer.text);
           }
         }
@@ -1281,28 +1281,101 @@ function localConstants(sf) {
   visit(sf);
   return found;
 }
-function evaluatePath(node, vocabulary, constants, depth = 0) {
-  if (!node || depth > MAX_HOPS) return null;
+function fileScope(sf) {
+  return { vocabulary: objectVocabulary(sf), constants: localConstants(sf), imported: () => null };
+}
+function moduleLinks(sf) {
+  const named = /* @__PURE__ */ new Map();
+  const star = [];
+  for (const statement of sf.statements) {
+    if (import_typescript2.default.isImportDeclaration(statement) && statement.importClause && import_typescript2.default.isStringLiteral(statement.moduleSpecifier)) {
+      const specifier = statement.moduleSpecifier.text;
+      const clause = statement.importClause;
+      if (clause.name) named.set(clause.name.text, { specifier, name: "default" });
+      if (clause.namedBindings && import_typescript2.default.isNamedImports(clause.namedBindings)) {
+        for (const element of clause.namedBindings.elements) named.set(element.name.text, { specifier, name: (element.propertyName ?? element.name).text });
+      }
+    }
+    if (import_typescript2.default.isExportDeclaration(statement) && statement.moduleSpecifier && import_typescript2.default.isStringLiteral(statement.moduleSpecifier)) {
+      const specifier = statement.moduleSpecifier.text;
+      if (!statement.exportClause) star.push(specifier);
+      else if (import_typescript2.default.isNamedExports(statement.exportClause)) {
+        for (const element of statement.exportClause.elements) named.set(element.name.text, { specifier, name: (element.propertyName ?? element.name).text });
+      }
+    }
+  }
+  return { named, star };
+}
+function moduleScopes(parsed, resolve2) {
+  const made = /* @__PURE__ */ new Map();
+  const scopeOf = (file) => {
+    const held = made.get(file);
+    if (held) return held;
+    const sf = parsed.get(file);
+    if (!sf) return null;
+    const own = fileScope(sf);
+    let links = null;
+    const scope = {
+      vocabulary: own.vocabulary,
+      constants: own.constants,
+      imported(name) {
+        links ??= moduleLinks(sf);
+        const link = links.named.get(name);
+        if (link) {
+          const target = resolve2(file, link.specifier);
+          const targetScope = target === null ? null : scopeOf(target);
+          return targetScope ? { scope: targetScope, name: link.name } : null;
+        }
+        for (const specifier of links.star) {
+          const target = resolve2(file, specifier);
+          const targetScope = target === null ? null : scopeOf(target);
+          if (targetScope && (targetScope.constants.has(name) || targetScope.vocabulary.has(name))) return { scope: targetScope, name };
+        }
+        return null;
+      }
+    };
+    made.set(file, scope);
+    return scope;
+  };
+  return scopeOf;
+}
+function declarationOf(scope, name, depth = 0) {
+  if (depth > MAX_HOPS) return null;
+  const local = scope.constants.get(name);
+  if (local) return { expression: local, scope };
+  const link = scope.imported(name);
+  return link ? declarationOf(link.scope, link.name, depth + 1) : null;
+}
+function vocabularyOf(scope, name, depth = 0) {
+  if (depth > MAX_HOPS) return null;
+  const local = scope.vocabulary.get(name);
+  if (local) return local;
+  if (scope.constants.has(name)) return null;
+  const link = scope.imported(name);
+  return link ? vocabularyOf(link.scope, link.name, depth + 1) : null;
+}
+function evaluatePath(node, scope, depth = 0) {
+  if (!node || depth > MAX_HOPS * 2) return null;
   if (import_typescript2.default.isStringLiteral(node) || import_typescript2.default.isNoSubstitutionTemplateLiteral(node)) return node.text;
-  if (import_typescript2.default.isParenthesizedExpression(node) || import_typescript2.default.isAsExpression(node)) return evaluatePath(node.expression, vocabulary, constants, depth + 1);
+  if (import_typescript2.default.isParenthesizedExpression(node) || import_typescript2.default.isAsExpression(node) || import_typescript2.default.isSatisfiesExpression(node)) return evaluatePath(node.expression, scope, depth + 1);
   if (import_typescript2.default.isPropertyAccessExpression(node) && import_typescript2.default.isIdentifier(node.expression)) {
-    return vocabulary.get(node.expression.text)?.get(node.name.text) ?? null;
+    return vocabularyOf(scope, node.expression.text)?.get(node.name.text) ?? null;
   }
   if (import_typescript2.default.isIdentifier(node)) {
-    const declared = constants.get(node.text);
-    return declared ? evaluatePath(declared, vocabulary, constants, depth + 1) : null;
+    const declared = declarationOf(scope, node.text);
+    return declared ? evaluatePath(declared.expression, declared.scope, depth + 1) : null;
   }
   if (import_typescript2.default.isTemplateExpression(node)) {
     let out = node.head.text;
     for (const span of node.templateSpans) {
-      const part = evaluatePath(span.expression, vocabulary, constants, depth + 1);
+      const part = evaluatePath(span.expression, scope, depth + 1);
       if (part === null) return null;
       out += part + span.literal.text;
     }
     return out;
   }
   if (import_typescript2.default.isCallExpression(node) && node.arguments.length === 1) {
-    const inner = evaluatePath(node.arguments[0], vocabulary, constants, depth + 1);
+    const inner = evaluatePath(node.arguments[0], scope, depth + 1);
     return inner !== null && inner.startsWith("/") ? inner : null;
   }
   return null;
@@ -1310,7 +1383,7 @@ function evaluatePath(node, vocabulary, constants, depth = 0) {
 function isDynamicPath(path) {
   return path.split("/").some((segment) => segment.startsWith(":"));
 }
-function groupPrefix(node, vocabulary, constants) {
+function groupPrefix(node, scope) {
   const prefixes = [];
   let at = node.parent;
   while (at) {
@@ -1319,7 +1392,7 @@ function groupPrefix(node, vocabulary, constants) {
       if (options && import_typescript2.default.isObjectLiteralExpression(options)) {
         for (const property of options.properties) {
           if (import_typescript2.default.isPropertyAssignment(property) && import_typescript2.default.isIdentifier(property.name) && property.name.text === "prefix") {
-            const value = evaluatePath(property.initializer, vocabulary, constants);
+            const value = evaluatePath(property.initializer, scope);
             if (value) prefixes.unshift(value.replace(/\/+$/, ""));
           }
         }
@@ -1333,20 +1406,19 @@ function joinPath(prefix, path) {
   if (prefix === "") return path;
   return path === "/" ? prefix : `${prefix}${path}`;
 }
-function routeRows(sf, vocabulary = objectVocabulary(sf)) {
-  const constants = localConstants(sf);
+function routeRows(sf, scope = fileScope(sf)) {
   const rows = [];
-  const push = (pathNode, component, pageName, prefix) => {
-    const raw = evaluatePath(pathNode, vocabulary, constants);
+  const push = (pathNode, component, pageName, prefix, at = scope) => {
+    const raw = evaluatePath(pathNode, at);
     if (raw === "*") return;
     const path = raw === null ? null : joinPath(prefix, raw);
-    rows.push({ path, component, pageName, source: pathNode ? pathNode.getText(sf) : "<no path>", dynamic: path === null ? false : isDynamicPath(path) });
+    rows.push({ path, component, pageName, source: pathNode ? pathNode.getText(pathNode.getSourceFile()) : "<no path>", dynamic: path === null ? false : isDynamicPath(path) });
   };
   const visit = (node) => {
     if (import_typescript2.default.isCallExpression(node) && import_typescript2.default.isPropertyAccessExpression(node.expression) && node.expression.name.text === "page" && node.arguments.length >= 2) {
       const [pathNode, nameNode] = node.arguments;
       const pageName = nameNode && (import_typescript2.default.isStringLiteral(nameNode) || import_typescript2.default.isNoSubstitutionTemplateLiteral(nameNode)) ? nameNode.text : null;
-      push(pathNode ?? null, null, pageName, groupPrefix(node, vocabulary, constants));
+      push(pathNode ?? null, null, pageName, groupPrefix(node, scope));
     }
     const opening = import_typescript2.default.isJsxSelfClosingElement(node) ? node : import_typescript2.default.isJsxElement(node) ? node.openingElement : null;
     if (opening && import_typescript2.default.isIdentifier(opening.tagName) && opening.tagName.text === "Route") {
@@ -1359,10 +1431,10 @@ function routeRows(sf, vocabulary = objectVocabulary(sf)) {
       const componentNode = attributes.get("component") ?? null;
       const component = componentNode && import_typescript2.default.isIdentifier(componentNode) ? componentNode.text : null;
       const pathNode = attributes.get("path") ?? null;
-      const declared = pathNode && import_typescript2.default.isIdentifier(pathNode) ? constants.get(pathNode.text) : void 0;
-      const list = declared && import_typescript2.default.isArrayLiteralExpression(declared) ? declared : pathNode;
-      const nodes = list && import_typescript2.default.isArrayLiteralExpression(list) ? [...list.elements] : [pathNode];
-      for (const one of nodes) push(one, component, null, "");
+      const declared = pathNode && import_typescript2.default.isIdentifier(pathNode) ? declarationOf(scope, pathNode.text) : null;
+      if (declared && import_typescript2.default.isArrayLiteralExpression(declared.expression)) for (const one of declared.expression.elements) push(one, component, null, "", declared.scope);
+      else if (pathNode && import_typescript2.default.isArrayLiteralExpression(pathNode)) for (const one of pathNode.elements) push(one, component, null, "");
+      else push(pathNode, component, null, "");
     }
     import_typescript2.default.forEachChild(node, visit);
   };
@@ -1395,6 +1467,22 @@ function jsxTagsIn(node) {
   visit(node);
   return found;
 }
+function localDeclarations(sf) {
+  const found = new Map(localConstants(sf));
+  for (const statement of sf.statements) {
+    if (import_typescript2.default.isFunctionDeclaration(statement) && statement.name && !found.has(statement.name.text)) found.set(statement.name.text, statement);
+  }
+  return found;
+}
+function localCalleesIn(node, locals) {
+  const found = /* @__PURE__ */ new Set();
+  const visit = (child) => {
+    if (import_typescript2.default.isCallExpression(child) && import_typescript2.default.isIdentifier(child.expression) && locals.has(child.expression.text)) found.add(child.expression.text);
+    import_typescript2.default.forEachChild(child, visit);
+  };
+  visit(node);
+  return found;
+}
 function componentPages(component, sf, resolve2, seen = /* @__PURE__ */ new Set(), depth = 0) {
   if (component === null || seen.has(component) || depth > MAX_HOPS) return [];
   seen.add(component);
@@ -1404,12 +1492,13 @@ function componentPages(component, sf, resolve2, seen = /* @__PURE__ */ new Set(
     const file = resolve2(specifier);
     return file === null ? [] : [file];
   }
-  const declaration = localConstants(sf).get(component);
+  const locals = localDeclarations(sf);
+  const declaration = locals.get(component);
   if (!declaration) return [];
   const pages = [];
-  for (const tag of jsxTagsIn(declaration)) {
-    if (tag === component) continue;
-    pages.push(...componentPages(tag, sf, resolve2, seen, depth + 1));
+  for (const name of /* @__PURE__ */ new Set([...jsxTagsIn(declaration), ...localCalleesIn(declaration, locals)])) {
+    if (name === component) continue;
+    pages.push(...componentPages(name, sf, resolve2, seen, depth + 1));
   }
   return [...new Set(pages)];
 }
@@ -1438,11 +1527,12 @@ function buildRouteMap(input) {
   const aliases = input.aliases ?? {};
   const { edges, parsed } = buildGraph(input.sources, aliases);
   const files = new Set(parsed.keys());
+  const scopeOf = moduleScopes(parsed, (from, specifier) => resolveSpecifier(from, specifier, files, aliases));
   const tables = input.tables.map((table) => {
     const sf = parsed.get(table.file);
     if (!sf) return { table, found: false, routes: [] };
     const resolve2 = (specifier) => resolveSpecifier(table.file, specifier, files, aliases);
-    const routes = routeRows(sf).map((row) => ({
+    const routes = routeRows(sf, scopeOf(table.file) ?? fileScope(sf)).map((row) => ({
       path: row.path,
       dynamic: row.dynamic,
       source: row.source,
@@ -1857,10 +1947,11 @@ function renderReport(args) {
   out.push(`${inventory.unions.length} union(s), ${totals.covered} of ${totals.planned} renderings.`);
   return out.join("\n");
 }
-function groupFor(union, captures, defaultLeg) {
+function groupFor(union, captures, defaultLeg, surface) {
   const delivery = union.delivery ?? null;
   const missing = [];
-  const route = typeof delivery?.route === "string" && delivery.route !== "" ? delivery.route : null;
+  const derived = (union.routes ?? []).find((r) => !r.dynamic && (surface === void 0 || r.surface === surface))?.route ?? null;
+  const route = typeof delivery?.route === "string" && delivery.route !== "" ? delivery.route : derived;
   if (!route) missing.push("route");
   const intercept = delivery?.intercept;
   if (typeof intercept?.url !== "string" || intercept.url === "") missing.push("intercept.url");
@@ -1898,16 +1989,16 @@ function groupFor(union, captures, defaultLeg) {
   };
   return { group, missing: null };
 }
-function groupsFor(inventory, captures, defaultLeg) {
+function groupsFor(inventory, captures, defaultLeg, surface) {
   const groups = [];
   const blocked = {};
   for (const union of inventory.unions) {
     const mine = captures.filter((capture) => capture.union === union.name && capture.mechanism === "solve");
     if (mine.length === 0) continue;
-    const built = groupFor(union, mine, defaultLeg);
+    const built = groupFor(union, mine, defaultLeg, surface);
     if (built.group) groups.push(built.group);
     else {
-      blocked[union.name] = `no capture group could be built. Missing: ${built.missing.join(", ")}. A delivery descriptor beside the union in the inventory gives the route, the intercept and the settle. The shape and the pivots come from the scan`;
+      blocked[union.name] = `no capture group could be built. Missing: ${built.missing.join(", ")}. A delivery descriptor beside the union in the inventory gives the intercept and the settle, and the route when the scan derives no static route. The shape and the pivots come from the scan`;
     }
   }
   return { groups, blocked };

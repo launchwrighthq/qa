@@ -47,6 +47,7 @@ __export(world_exports, {
   fixtureArming: () => fixtureArming,
   forkName: () => forkName,
   forkUndoFile: () => forkUndoFile,
+  hookSeedNames: () => hookSeedNames,
   idProblem: () => idProblem,
   importFromProject: () => importFromProject,
   importProjectJobs: () => importProjectJobs,
@@ -114,6 +115,13 @@ var LaunchwrightError = class extends Error {
     this.context = opts?.context ?? {};
   }
 };
+var DOTTED_CODE = /^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)+$/i;
+function isCodedError(e) {
+  if (e instanceof LaunchwrightError) return true;
+  if (typeof e !== "object" || e === null) return false;
+  const { code, message } = e;
+  return typeof message === "string" && typeof code === "string" && DOTTED_CODE.test(code);
+}
 function messageOf(err) {
   return err instanceof Error ? err.message : String(err);
 }
@@ -457,13 +465,28 @@ var projectConfigSchema = import_zod5.z.object({
 var import_zod6 = require("zod");
 
 // src/services/peers.mts
+function isViteMissingPeer(err, spec) {
+  if (!isCodedError(err) || err.code !== "kernel.peer.load") return false;
+  return messageOf(err.cause).startsWith(`Could not resolve "${spec}" imported by`);
+}
+async function peerOrUndefined(spec) {
+  try {
+    return await optionalPeer(spec, () => import(spec));
+  } catch (err) {
+    if (isViteMissingPeer(err, spec)) return void 0;
+    throw err;
+  }
+}
 async function loadPeer(spec, module2) {
-  const mod = await optionalPeer(spec, () => import(spec));
+  const mod = await peerOrUndefined(spec);
   if (!mod) throw new LaunchwrightError(`qa.${module2}.module`, `This lw qa command needs the ${module2} module. Run lw add ${module2}.`);
   return mod;
 }
-var loadDb = () => loadPeer("@launchwrighthq/db", "db");
-var loadHttp = () => loadPeer("@launchwrighthq/http", "http");
+var DB_PEER = "@launchwrighthq/db";
+var loadDb = () => loadPeer(DB_PEER, "db");
+var optionalDb = () => peerOrUndefined(DB_PEER);
+var HTTP_PEER = "@launchwrighthq/http";
+var optionalHttp = () => peerOrUndefined(HTTP_PEER);
 var loadAuth = () => loadPeer("@launchwrighthq/auth", "auth");
 
 // src/world/services/checkout.mts
@@ -616,11 +639,11 @@ function guard(allowed, name, what) {
 function quoted(name) {
   return `"${checkIdentifier(name)}"`;
 }
-async function pgAdmin(url, allowed) {
+var dbModuleConnect = async (url) => (await loadDb()).createDb({ driver: "pg", url });
+async function pgAdmin(url, allowed, connect = dbModuleConnect) {
   const remote = remoteHostProblem(url);
   if (remote) throw new LaunchwrightError("qa.stack.host", `Refusing: ${remote}.`, { context: { host: hostOfUrl(url) } });
-  const { createDb } = await loadDb();
-  const db = await createDb({ driver: "pg", url: urlWithDatabase(url, MAINTENANCE_DATABASE) });
+  const db = await connect(urlWithDatabase(url, MAINTENANCE_DATABASE));
   const names = async () => {
     const result = await db.execute("select datname from pg_database where not datistemplate");
     return result.rows.map((r) => r.datname);
@@ -681,13 +704,17 @@ function pgliteAdmin(root, allowed) {
     close: async () => void 0
   };
 }
-function dbAdmin(db, root, allowed) {
+function dbAdmin(db, root, allowed, connect) {
   if ((db.driver ?? "pg") === "pglite") return Promise.resolve(pgliteAdmin(root, allowed));
   if (typeof db.url !== "string" || db.url === "") throw new LaunchwrightError("qa.stack.url", "Config db.url is not set, so lw qa has no database server.");
-  return pgAdmin(db.url, allowed);
+  return pgAdmin(db.url, allowed, connect);
 }
 
 // src/world/services/app.mts
+function entryConnect(entry) {
+  const connect = entry.connect;
+  return connect === void 0 ? void 0 : (url) => connect.call(entry, url);
+}
 function qaDatabase(sections, checkout) {
   const qa = sections.qa;
   if (typeof qa?.database === "string" && qa.database !== "") return qa.database;
@@ -755,6 +782,7 @@ async function loadAppEntry(root, qa) {
 }
 async function openWorld(entry, sections, env, overlay) {
   const qa = qaSections(sections, overlay);
+  const tenantId = await entryTenant(entry);
   const app = await entry.create(qa, env);
   try {
     await app.boot();
@@ -766,8 +794,13 @@ async function openWorld(entry, sections, env, overlay) {
     }
     throw cause;
   }
-  const tenantId = entry.tenantId ?? (await loadDb()).DEFAULT_TENANT_ID;
   return { app, tenantId, database: overlay.database, sections: qa, close: () => app.shutdown() };
+}
+async function entryTenant(entry) {
+  if (entry.tenantId !== void 0) return entry.tenantId;
+  const db = await optionalDb();
+  if (db) return db.DEFAULT_TENANT_ID;
+  throw new LaunchwrightError("qa.world.tenant", "qaApp sets no tenantId, and the db module that has a default tenant is not installed. Set qaApp.tenantId.");
 }
 
 // src/kernel/services/args.mts
@@ -1100,7 +1133,7 @@ async function createFork(o) {
   const db = qaDbSection(o.sections.db ?? {}, o.database, o.root);
   assertQaTarget(db, o.database, o.root);
   const name = forkName(o.database, o.label);
-  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n));
+  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n), o.connect);
   try {
     const seeded = seededName(o.database);
     const template = await admin.exists(seeded) ? seeded : o.database;
@@ -1117,7 +1150,7 @@ async function dropFork(o) {
   }
   const db = qaDbSection(o.sections.db ?? {}, o.database, o.root);
   assertQaTarget(db, o.database, o.root);
-  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n));
+  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n), o.connect);
   try {
     await admin.drop(o.name);
     o.out(`dropped ${o.name}`);
@@ -1127,7 +1160,7 @@ async function dropFork(o) {
 }
 async function snapshotSeeded(o, action) {
   const seeded = seededName(o.database);
-  const admin = o.admin ?? await dbAdmin(o.db, o.root, (n) => n === seeded);
+  const admin = o.admin ?? await dbAdmin(o.db, o.root, (n) => n === seeded, o.connect);
   try {
     await admin.drop(seeded);
     if (action === "replace") await admin.create(seeded, o.database);
@@ -1173,15 +1206,33 @@ function baseSeedNames(command) {
   }
   return (match[1] ?? "").split(/\s+/).filter(Boolean);
 }
+function hookSeedNames(command) {
+  const text2 = (command ?? "").trim();
+  const words = (DB_SEED.exec(text2)?.[1] ?? text2).split(/\s+/);
+  return words.filter(Boolean);
+}
 async function recreate(o, db) {
   const database = o.overlay.database;
-  const admin = o.admin ?? await dbAdmin(db, o.root, (name) => name === database);
+  const admin = o.admin ?? await dbAdmin(db, o.root, (name) => name === database, entryConnect(o.entry));
   try {
     await admin.drop(database);
     await admin.create(database);
   } finally {
     await admin.close();
   }
+  const ctx = { root: o.root, database, sections: { ...o.sections, db }, out: o.out };
+  if (o.entry.migrate) {
+    await o.entry.migrate(ctx);
+    o.out(`migrated ${database} through qaApp.migrate`);
+  } else await migrateWithDbModule(o, db);
+  if (o.entry.seed) {
+    const names = hookSeedNames(o.seed);
+    await o.entry.seed(ctx, names);
+    o.out(`base seed through qaApp.seed: ${names.join(", ") || "default"}`);
+  }
+}
+async function migrateWithDbModule(o, db) {
+  const database = o.overlay.database;
   const { createDb, migrate } = await loadDb();
   const conn = await createDb({
     driver: db.driver ?? "pg",
@@ -1198,7 +1249,7 @@ async function recreate(o, db) {
     await conn.close();
   }
 }
-async function linkPersona(world, userId, persona, telegramId) {
+async function linkWithAuth(world, userId, persona, telegramId) {
   const auth = await loadAuth();
   if (!world.app.has(auth.USERS)) {
     throw new LaunchwrightError("qa.world.auth", "The QA app has no auth module, so no persona can sign in. Add the auth module to the project.");
@@ -1207,8 +1258,21 @@ async function linkPersona(world, userId, persona, telegramId) {
   await users.link(world.tenantId, userId, { provider: QA_PROVIDER, subject: persona });
   await users.link(world.tenantId, userId, { provider: "telegram", subject: String(telegramId) });
 }
+async function linkPersona(world, entry, persona, seededUserId) {
+  const ids = personaIds(persona);
+  const given = typeof seededUserId === "string" && seededUserId !== "" ? seededUserId : void 0;
+  if (entry?.linkPersona) {
+    const linked = await entry.linkPersona(world, { persona, accountId: ids.accountId, telegramId: ids.telegramId, ...given ? { userId: given } : {} });
+    const userId = typeof linked === "string" && linked !== "" ? linked : given;
+    if (userId === void 0) throw new LaunchwrightError("qa.world.handles", "Its seed returned no userId, and qaApp.linkPersona returned none.");
+    return userId;
+  }
+  if (given === void 0) throw new LaunchwrightError("qa.world.handles", "Its seed returned no userId.");
+  await linkWithAuth(world, given, persona, ids.telegramId);
+  return given;
+}
 async function seedWorld(world, registry, o) {
-  const names = baseSeedNames(o.seed);
+  const names = o.entry?.seed ? null : baseSeedNames(o.seed);
   if (names !== null) {
     const { DB, runSeeds, seedNames } = await loadDb();
     const dir = (0, import_node_path8.join)(o.root, "packages/db/seeds");
@@ -1232,9 +1296,8 @@ async function seedWorld(world, registry, o) {
     const ids = personaIds(persona.id);
     try {
       const handles = await persona.seed(world, ids);
-      if (typeof handles?.userId !== "string" || handles.userId === "") throw new LaunchwrightError("qa.world.handles", "Its seed returned no userId.");
-      await linkPersona(world, handles.userId, persona.id, ids.telegramId);
-      seeded.push({ kind: "persona", id: persona.id, summary: persona.summary, feature: persona.feature, handles: { ...handles, telegramId: ids.telegramId } });
+      const userId = await linkPersona(world, o.entry, persona.id, handles?.userId);
+      seeded.push({ kind: "persona", id: persona.id, summary: persona.summary, feature: persona.feature, handles: { ...handles, userId, telegramId: ids.telegramId } });
     } catch (cause) {
       throw new LaunchwrightError("qa.world.seed", `Persona ${persona.id} (${persona.file}) could not be seeded: ${messageOf(cause)}`, {
         cause,
@@ -1250,7 +1313,8 @@ async function resetWorld(o) {
   const db = qaDbSection(o.sections.db ?? {}, o.overlay.database, o.root);
   o.out(`resetting ${o.overlay.database}`);
   await rmStamp(o.root);
-  const snapshot = { root: o.root, db, database: o.overlay.database };
+  const connect = entryConnect(o.entry);
+  const snapshot = { root: o.root, db, database: o.overlay.database, ...connect ? { connect } : {} };
   await snapshotSeeded(snapshot, "drop");
   await recreate(o, db);
   const world = await openWorld(o.entry, o.sections, o.env, { ...o.overlay, registryHash: hash });
@@ -1272,7 +1336,7 @@ async function rmStamp(root) {
 }
 async function worldStatus(o) {
   const db = qaDbSection(o.sections.db ?? {}, o.database, o.root);
-  const admin = o.admin ?? await dbAdmin(db, o.root, (name) => name === o.database);
+  const admin = o.admin ?? await dbAdmin(db, o.root, (name) => name === o.database, o.connect);
   let exists;
   try {
     exists = await admin.exists(o.database);
@@ -1384,9 +1448,56 @@ async function fixtureArming(opts) {
   };
 }
 
+// src/world/services/node-listen.mts
+var import_node_http = require("http");
+async function bodyOf(req) {
+  if (req.method === "GET" || req.method === "HEAD") return void 0;
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return new Uint8Array(Buffer.concat(chunks));
+}
+function requestOf(req, body) {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (typeof value === "string") headers.set(name, value);
+    else if (Array.isArray(value)) for (const one of value) headers.append(name, one);
+  }
+  return new Request(`http://${req.headers.host ?? "127.0.0.1"}${req.url ?? "/"}`, { method: req.method ?? "GET", headers, ...body ? { body } : {} });
+}
+async function answer(handler, req, res) {
+  const response = await handler.fetch(requestOf(req, await bodyOf(req)));
+  const headers = {};
+  for (const [name, value] of response.headers) if (name !== "set-cookie") headers[name] = value;
+  const cookies = response.headers.getSetCookie();
+  if (cookies.length > 0) headers["set-cookie"] = cookies;
+  res.writeHead(response.status, headers);
+  res.end(Buffer.from(await response.arrayBuffer()));
+}
+async function nodeListen(handler, port) {
+  const server = (0, import_node_http.createServer)((req, res) => {
+    answer(handler, req, res).catch((err) => {
+      if (!res.headersSent) res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+      res.end(`QA app error: ${messageOf(err)}`);
+    });
+  });
+  await new Promise((resolve6, reject) => {
+    server.once("error", (cause) => reject(new LaunchwrightError("qa.world.listen", `Cannot listen on 127.0.0.1:${port}: ${cause.message}`, { cause })));
+    server.listen(port, "127.0.0.1", resolve6);
+  });
+  return {
+    port: server.address().port,
+    close: () => new Promise((resolve6, reject) => {
+      server.close((err) => err ? reject(new LaunchwrightError("qa.world.close", `Cannot close the QA API server: ${err.message}`, { cause: err })) : resolve6());
+      server.closeAllConnections();
+    })
+  };
+}
+
 // src/world/services/api.mts
 var listenQaApp = async (handler, app, port) => {
-  const { serveNode } = await loadHttp();
+  const http = await optionalHttp();
+  if (http === void 0) return nodeListen(handler, port);
+  const { serveNode } = http;
   const { server } = serveNode(handler, port, { hostname: "127.0.0.1", app, signals: false });
   if (!server.listening) await new Promise((resolve6, reject) => {
     server.once("listening", resolve6);
@@ -1463,7 +1574,8 @@ async function openFork(o, label) {
   };
 }
 function worldForkRunner(o) {
-  const fork = { root: o.root, sections: o.sections, database: o.overlay.database, out: o.out };
+  const connect = entryConnect(o.entry);
+  const fork = { root: o.root, sections: o.sections, database: o.overlay.database, out: o.out, ...connect ? { connect } : {} };
   return {
     create: (label) => createFork({ ...fork, label }),
     drop: (name) => dropFork({ ...fork, name }),
@@ -1627,17 +1739,17 @@ var BotApi = class {
       if (opts.signal?.aborted) throw new LaunchwrightError("telegram.api.aborted", `Bot API ${method} was aborted.`, { cause, context: { method } });
       throw new TelegramApiError(method, { status: 0 }, cause);
     }
-    let answer;
+    let answer2;
     try {
-      answer = await response.json();
+      answer2 = await response.json();
     } catch (cause) {
       throw new TelegramApiError(method, { status: response.status, description: `the answer is not JSON (HTTP ${response.status})` }, cause);
     }
-    if (answer.ok === true) return answer.result;
+    if (answer2.ok === true) return answer2.result;
     throw new TelegramApiError(method, {
       status: response.status,
-      ...answer.error_code !== void 0 ? { error_code: answer.error_code } : {},
-      ...answer.description !== void 0 ? { description: answer.description } : {}
+      ...answer2.error_code !== void 0 ? { error_code: answer2.error_code } : {},
+      ...answer2.description !== void 0 ? { description: answer2.description } : {}
     });
   }
   getMe() {
@@ -1831,6 +1943,7 @@ async function cleanupWorktrees(o) {
   fixtureArming,
   forkName,
   forkUndoFile,
+  hookSeedNames,
   idProblem,
   importFromProject,
   importProjectJobs,

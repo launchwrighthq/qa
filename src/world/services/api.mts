@@ -2,9 +2,10 @@
 // database, with the fake Bot API, no bot token and the /__qa routes on.
 import type { AddressInfo } from 'node:net';
 import { type App, LaunchwrightError } from '../../kernel/index.mts';
-import { loadHttp } from '../../services/peers.mts';
+import { optionalHttp } from '../../services/peers.mts';
 import { openWorld, type QaAppEntry, type QaHandler } from './app.mts';
 import type { WorldContext } from './context.mts';
+import { nodeListen } from './node-listen.mts';
 import { listWorld, registryHash } from './registry.mts';
 import type { WorldRegistry } from './types.mts';
 import { readStamp } from './world.mts';
@@ -18,9 +19,11 @@ export interface Listening {
 /** Serves a booted QA app on 127.0.0.1. Port 0 takes a free port. */
 export type ListenQaApp = (handler: QaHandler, app: App, port: number) => Promise<Listening>;
 
-/** The default `ListenQaApp`: `serveNode` of the http module. */
+/** The default `ListenQaApp`: `serveNode` of the http module, else a plain node:http server. */
 export const listenQaApp: ListenQaApp = async (handler, app, port) => {
-  const { serveNode } = await loadHttp();
+  const http = await optionalHttp();
+  if (http === undefined) return nodeListen(handler, port);
+  const { serveNode } = http;
   const { server } = serveNode(handler as unknown as Parameters<typeof serveNode>[0], port, { hostname: '127.0.0.1', app, signals: false });
   if (!server.listening) await new Promise<void>((resolve, reject) => {
     server.once('listening', resolve);

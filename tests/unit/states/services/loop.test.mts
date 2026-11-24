@@ -81,6 +81,17 @@ describe('state loop', () => {
     expect(groupFor(mark, captures.slice(0, 1), 'desktop').missing).toContain('contrast');
   });
 
+  it('takes the nearest static derived route of the leg surface when the descriptor names none', () => {
+    const captures = plannedCaptures({ unions: [mark] }).filter((c) => c.union === 'DotMark');
+    const at = (surface: 'web' | 'miniapp', route: string, dynamic = false) => ({ surface, route, page: null, distance: 1, dynamic, reaches: 1 });
+    const routes = [at('web', '/dots/:id', true), at('miniapp', '/m/dots'), at('web', '/dots')];
+    const descriptor = { intercept: { url: '**/api/dots*', container: 'items' }, settle: { selector: 'li' } };
+    expect(groupFor({ ...mark, routes, delivery: descriptor }, captures, 'desktop', 'web').group?.route).toBe('/dots');
+    expect(groupFor({ ...mark, routes, delivery: descriptor }, captures, 'desktop', 'miniapp').group?.route).toBe('/m/dots');
+    expect(groupFor({ ...mark, routes, delivery: { ...descriptor, route: '/given' } }, captures, 'desktop', 'web').group?.route).toBe('/given');
+    expect(groupFor({ ...mark, routes: [routes[0]!] }, captures, 'desktop', 'web').missing).toContain('route');
+  });
+
   it('turns silence into a failure and keeps an extra rendering', () => {
     const captures = plannedCaptures(inventory);
     const rows = mergeRows(captures, [ok('TileState.open', 'mounted'), ok('TileState.open#wide', 'mounted')], { blocked: { DotMark: 'no descriptor' } });

@@ -36,7 +36,7 @@ export function parseDeviceArgs(args: string[]): VerbArgs {
 }
 
 /** Runs `lw qa device` with explicit seams. The default export uses real processes. */
-export async function runDeviceCommand(args: string[], opts: QaCommandOptions, deps: DeviceDeps = systemDeviceDeps(opts.cwd)): Promise<number> {
+export async function runDeviceCommand(args: string[], opts: QaCommandOptions, deps: DeviceDeps = systemDeviceDeps(opts.cwd, opts.processEnv)): Promise<number> {
   const [verb, ...rest] = args;
   if (!verb || verb === '--help' || verb === '-h' || !(VERBS as readonly string[]).includes(verb)) {
     if (verb && verb !== '--help' && verb !== '-h') opts.err(`lw qa device: unknown verb ${verb}`);

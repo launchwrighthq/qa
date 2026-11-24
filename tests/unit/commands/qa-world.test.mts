@@ -59,6 +59,16 @@ describe('lw qa world', () => {
     expect(err.join('\n')).toMatch(/host db\.example\.com is not this machine.+\(qa\.stack\.target\)$/);
   });
 
+  it('asks for qaApp.connect when a Postgres world has no db module', async () => {
+    const root = await projectWithWorld();
+    await writeFile(join(root, 'qa/app.mts'), 'export const qaApp = { create() { throw new Error("not booted"); }, serve() { return { fetch: () => new Response() }; } };\n');
+    const config = { db: { url: 'postgres://lw:secret@127.0.0.1:5432/shop' }, qa: { database: 'shop_qa', app: 'qa/app.mts' } };
+    const { code, err } = await lw(['world', 'status'], root, config);
+    expect(code).toBe(1);
+    expect(err.join('\n')).toMatch(/qaApp of qa\/app\.mts has no connect\(url\).+\(qa\.world\.connect\)$/);
+    expect(err.join('\n')).not.toContain('secret');
+  });
+
   it('prints the usage with exit 2 for an unknown subcommand', async () => {
     const root = await tmpDir();
     expect((await lw(['world', 'grow'], root)).code).toBe(2);

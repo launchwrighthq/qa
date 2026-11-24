@@ -9,10 +9,10 @@ import { createHash } from 'node:crypto';
 import { isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { type App, LaunchwrightError, messageOf, resolveImport } from '../../kernel/index.mts';
-import { type Db, loadDb } from '../../services/peers.mts';
+import { type Db, optionalDb } from '../../services/peers.mts';
 import type { QaConfig } from '../../config.mts';
 import { type CheckoutFacts, devProjectName } from './checkout.mts';
-import { databaseName, type DbSection, qaDbSection } from './stack.mts';
+import { type ConnectDb, databaseName, type DbSection, qaDbSection } from './stack.mts';
 import type { WorldCtx } from './types.mts';
 
 /** A fetch handler, as `buildHonoApp` of `@launchwrighthq/http` gives it. */
@@ -30,6 +30,45 @@ export interface QaAppEntry {
   tenantId?: string;
   /** The connection a forged direct row write uses (spec 2.5). Default: token `DB` of the db module. */
   db?(app: App): Db;
+  // The hooks below let an app without the framework db and auth modules reset its QA world. Each
+  // one runs in place of the framework call that its comment names.
+  /** Brings the schema of the empty QA database up to date, before the app boots. In place of `migrate` of the db module. */
+  migrate?(ctx: QaDatabaseContext): Promise<void>;
+  /** The base seed, after `migrate` and before the app boots. `names` come from config `qa.seed`. In place of `runSeeds` of the db module. */
+  seed?(ctx: QaDatabaseContext, names: string[]): Promise<void>;
+  /**
+   * Creates or finds the user of a seeded persona, and records its sign-in identity so the app's
+   * `/__qa/session` route finds it. A returned id replaces the `userId` of the persona seed. In place of `USERS` of the auth module.
+   */
+  linkPersona?(world: QaWorld, persona: QaPersonaLink): Promise<string | void>;
+  /** Opens a connection to a Postgres URL on this machine, for the create, copy and drop statements. In place of `createDb` of the db module. */
+  connect?(url: string): Promise<Db>;
+}
+
+/** What `QaAppEntry.migrate` and `seed` get. */
+export interface QaDatabaseContext {
+  root: string;
+  /** The QA database name. */
+  database: string;
+  /** The config sections of the QA app: section `db` points at the QA database. */
+  sections: Record<string, unknown>;
+  out: (line: string) => void;
+}
+
+/** What `QaAppEntry.linkPersona` gets for one persona. */
+export interface QaPersonaLink {
+  persona: string;
+  /** `qa:<persona>`: the account id of the persona. */
+  accountId: string;
+  telegramId: number;
+  /** The user id that the persona seed returned, if any. */
+  userId?: string;
+}
+
+/** The `ConnectDb` of `entry`: its `connect` hook, else undefined for the db module. */
+export function entryConnect(entry: Pick<QaAppEntry, 'connect'>): ConnectDb | undefined {
+  const connect = entry.connect;
+  return connect === undefined ? undefined : (url) => connect.call(entry, url);
 }
 
 /** The QA database name: config `qa.database`, else `<dev.project>_qa`. */
@@ -149,6 +188,7 @@ export interface QaWorld extends WorldCtx {
 /** Builds the QA app from the factory on the overlaid sections and boots it. */
 export async function openWorld(entry: QaAppEntry, sections: Record<string, unknown>, env: string, overlay: QaOverlay): Promise<QaWorld> {
   const qa = qaSections(sections, overlay);
+  const tenantId = await entryTenant(entry);
   const app = await entry.create(qa, env);
   try {
     await app.boot();
@@ -160,6 +200,13 @@ export async function openWorld(entry: QaAppEntry, sections: Record<string, unkn
     }
     throw cause;
   }
-  const tenantId = entry.tenantId ?? (await loadDb()).DEFAULT_TENANT_ID;
   return { app, tenantId, database: overlay.database, sections: qa, close: () => app.shutdown() };
+}
+
+/** `entry.tenantId`, else `DEFAULT_TENANT_ID` of the db module. Throws `qa.world.tenant` when neither exists. */
+async function entryTenant(entry: QaAppEntry): Promise<string> {
+  if (entry.tenantId !== undefined) return entry.tenantId;
+  const db = await optionalDb();
+  if (db) return db.DEFAULT_TENANT_ID;
+  throw new LaunchwrightError('qa.world.tenant', 'qaApp sets no tenantId, and the db module that has a default tenant is not installed. Set qaApp.tenantId.');
 }

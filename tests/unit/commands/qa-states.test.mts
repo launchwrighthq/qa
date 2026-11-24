@@ -137,7 +137,7 @@ describe('lw qa states', () => {
     const command = createStatesCommand({ clock: fakeClock(), targets: registryOf({ playwright: scriptedTarget(session) }), revision: () => ({ commit: 'c', dirty: true }) });
     const { out, opts } = io();
     expect(await command.run(['run', '--base', 'http://127.0.0.1:5173'], opts(root))).toBe(1);
-    expect(out.join('\n')).toContain('InviteState.open: no capture group could be built. Missing: route, intercept.url, intercept.container, settle.');
+    expect(out.join('\n')).toContain('InviteState.open: no capture group could be built. Missing: intercept.url, intercept.container, settle.');
   });
 
   it('run marks every capture not run when the target is not ready, and needs --base', async () => {

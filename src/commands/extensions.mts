@@ -13,8 +13,8 @@ export interface QaExtension {
   name: string;
   /** The `lw qa <sub>` subcommands of the module, by name. Each loads on first use. */
   subcommands?: Readonly<Record<string, () => Promise<QaSubcommand>>>;
-  /** The `qa.target` drivers of the module, built from config section `qa` and the project root. */
-  targets?(config: QaConfig, root: string): Record<string, QaTarget>;
+  /** The `qa.target` drivers of the module, built from config section `qa`, the project root and the process env. */
+  targets?(config: QaConfig, root: string, env?: Readonly<Record<string, string | undefined>>): Record<string, QaTarget>;
 }
 
 /** The prefix of an extension module name. */
@@ -57,6 +57,11 @@ export async function loadExtensions(root: string, sections: Record<string, unkn
 }
 
 /** The targets of every extension, later extensions over earlier ones. */
-export function extensionTargets(extensions: readonly QaExtension[], config: QaConfig, root: string): Record<string, QaTarget> {
-  return Object.assign({}, ...extensions.map((e) => e.targets?.(config, root) ?? {})) as Record<string, QaTarget>;
+export function extensionTargets(
+  extensions: readonly QaExtension[],
+  config: QaConfig,
+  root: string,
+  env?: Readonly<Record<string, string | undefined>>,
+): Record<string, QaTarget> {
+  return Object.assign({}, ...extensions.map((e) => e.targets?.(config, root, env) ?? {})) as Record<string, QaTarget>;
 }

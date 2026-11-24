@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { LaunchwrightError } from '../../kernel/index.mts';
 import { sha256 } from '../../kernel/services/fs.mts';
 import { shq } from '../../kernel/services/text.mts';
-import type { DeviceConfig, QaConfig, RigConfig } from '../config.mts';
+import { type DeviceConfig, type QaConfig, type RigConfig, withBrowserstackEnv } from '../config.mts';
 import { type DeviceDeps, orFail, type ProcessResult, type RunOptions, said } from './process.mts';
 
 /** The folder of device state under the project root. */
@@ -277,8 +277,10 @@ export interface DeviceContext {
   rigs: RigPool;
 }
 
+/** The context of one run. A BrowserStack key that the config leaves unset comes from `deps.env`. */
 export function createDeviceContext(config: QaConfig, deps: DeviceDeps): DeviceContext {
-  return { config, deps, rigs: createRigPool(config, deps) };
+  const resolved = withBrowserstackEnv(config, deps.env);
+  return { config: resolved, deps, rigs: createRigPool(resolved, deps) };
 }
 
 /** One rig per name for the whole process, so each ssh rig has exactly one master. */

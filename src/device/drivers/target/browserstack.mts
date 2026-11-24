@@ -29,7 +29,10 @@ class BrowserstackTarget implements QaTarget {
       if (deviceKind(resolved.device.kind).access !== 'webdriver') return { ready: false, reason: `Device ${resolved.name} is ${resolved.device.kind}, not a cloud device.` };
       deviceKeys(resolved.name, resolved.device, cloudDeviceKeys);
       if (!cfg.username || !cfg.accessKey) {
-        return { ready: false, reason: 'qa.device.browserstack.username and accessKey are not set. Map BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY from the secret store.' };
+        return {
+          ready: false,
+          reason: 'The BrowserStack keys are not set. Set BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY in the process env, or qa.device.browserstack.username and accessKey in the config.',
+        };
       }
       if (this.budget.startedAt !== null) checkBudget(this.budget.startedAt, this.ctx.deps.clock.now(), cfg);
       return { ready: true };
@@ -43,7 +46,7 @@ class BrowserstackTarget implements QaTarget {
     return CloudSession.open(this.ctx, opts, this.budget, this.name);
   }
 
-  /** The two secret store keys that the config maps into `qa.device.browserstack` (spec 2.6). */
+  /** The two keys of `qa.device.browserstack`, or of the env when the config names none (spec 2.6). Set or empty only. */
   needs(leg: Leg): TargetNeeds {
     const cfg = this.ctx.config.device.browserstack;
     return { credentials: [credentialNeed('BROWSERSTACK_USERNAME', cfg.username, [leg.name]), credentialNeed('BROWSERSTACK_ACCESS_KEY', cfg.accessKey, [leg.name])] };

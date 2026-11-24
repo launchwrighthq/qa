@@ -8,5 +8,5 @@ import { deviceTargets } from './targets.mts';
 export const qaExtension: QaExtension = {
   name: 'qa-device',
   subcommands: { device: async () => (await import('../commands/qa-device.mts')).default },
-  targets: (config, root) => deviceTargets(withDevice(config), systemDeviceDeps(root)),
+  targets: (config, root, env) => deviceTargets(withDevice(config), systemDeviceDeps(root, env)),
 };

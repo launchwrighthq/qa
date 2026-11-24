@@ -230,11 +230,12 @@ interface DeliveryRoute {
     reaches: number;
 }
 /**
- * What a mechanism B capture group needs that no scan can know: the route, the response that
- * carries the subjects, and the settle rule. It sits beside a union in the inventory file.
+ * What a mechanism B capture group needs that no scan can know: the response that carries the
+ * subjects and the settle rule, and the route when the scan derives none. It sits beside a union in the inventory file.
  */
 interface DeliveryDescriptor {
-    route: string;
+    /** Default: the nearest derived route without a `:param` on the surface of the leg. */
+    route?: string;
     leg?: string;
     intercept: {
         url: string;
@@ -425,7 +426,7 @@ interface CaptureGroup {
     maxSubjectAreaRatio?: number;
 }
 /** Every group the intercepted runner can take, and every union it cannot take, with the reason. */
-declare function groupsFor(inventory: Pick<Inventory, 'unions'>, captures: readonly PlannedCapture[], defaultLeg: string): {
+declare function groupsFor(inventory: Pick<Inventory, 'unions'>, captures: readonly PlannedCapture[], defaultLeg: string, surface?: Surface): {
     groups: CaptureGroup[];
     blocked: Record<string, string>;
 };

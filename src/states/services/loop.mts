@@ -6,7 +6,7 @@
 // A result line that carries no `reason` is `crashed`, never a code guessed from its text. A
 // planned capture with no result line fails as `crashed`: a missing picture is never silent.
 import { LaunchwrightError } from '../../kernel/index.mts';
-import type { Provenance } from '../../services/types.mts';
+import type { Provenance, Surface } from '../../services/types.mts';
 import {
   coverageFor,
   type DeliveryDescriptor,
@@ -344,16 +344,24 @@ export interface CaptureGroup {
 }
 
 /**
- * One union's capture group, or the list of what is missing. The route, the response and the settle
- * come from `union.delivery`, because no scan can know them. The shape and the pivots come from
- * the scan, and the subjects are solved in the page.
+ * One union's capture group, or the list of what is missing. The response and the settle come
+ * from `union.delivery`, because no scan can know them. The route comes from `union.delivery`, else
+ * from the nearest derived route without a `:param` on `surface`. The shape and the pivots come
+ * from the scan, and the subjects are solved in the page.
  *
  * @param defaultLeg the leg a descriptor without `leg` runs on
+ * @param surface the surface of that leg; a derived route of another surface is not used
  */
-export function groupFor(union: UnionEntry, captures: readonly Pick<PlannedCapture, 'id' | 'member'>[], defaultLeg: string): { group: CaptureGroup; missing: null } | { group: null; missing: string[] } {
+export function groupFor(
+  union: UnionEntry,
+  captures: readonly Pick<PlannedCapture, 'id' | 'member'>[],
+  defaultLeg: string,
+  surface?: Surface,
+): { group: CaptureGroup; missing: null } | { group: null; missing: string[] } {
   const delivery = union.delivery ?? null;
   const missing: string[] = [];
-  const route = typeof delivery?.route === 'string' && delivery.route !== '' ? delivery.route : null;
+  const derived = (union.routes ?? []).find((r) => !r.dynamic && (surface === undefined || r.surface === surface))?.route ?? null;
+  const route = typeof delivery?.route === 'string' && delivery.route !== '' ? delivery.route : derived;
   if (!route) missing.push('route');
   const intercept = delivery?.intercept;
   if (typeof intercept?.url !== 'string' || intercept.url === '') missing.push('intercept.url');
@@ -395,18 +403,23 @@ export function groupFor(union: UnionEntry, captures: readonly Pick<PlannedCaptu
 }
 
 /** Every group the intercepted runner can take, and every union it cannot take, with the reason. */
-export function groupsFor(inventory: Pick<Inventory, 'unions'>, captures: readonly PlannedCapture[], defaultLeg: string): { groups: CaptureGroup[]; blocked: Record<string, string> } {
+export function groupsFor(
+  inventory: Pick<Inventory, 'unions'>,
+  captures: readonly PlannedCapture[],
+  defaultLeg: string,
+  surface?: Surface,
+): { groups: CaptureGroup[]; blocked: Record<string, string> } {
   const groups: CaptureGroup[] = [];
   const blocked: Record<string, string> = {};
   for (const union of inventory.unions) {
     const mine = captures.filter((capture) => capture.union === union.name && capture.mechanism === 'solve');
     if (mine.length === 0) continue;
-    const built = groupFor(union, mine, defaultLeg);
+    const built = groupFor(union, mine, defaultLeg, surface);
     if (built.group) groups.push(built.group);
     else {
       blocked[union.name] =
         `no capture group could be built. Missing: ${built.missing.join(', ')}. A delivery descriptor beside the union in ` +
-        'the inventory gives the route, the intercept and the settle. The shape and the pivots come from the scan';
+        'the inventory gives the intercept and the settle, and the route when the scan derives no static route. The shape and the pivots come from the scan';
     }
   }
   return { groups, blocked };

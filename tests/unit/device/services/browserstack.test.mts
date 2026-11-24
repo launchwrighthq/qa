@@ -86,6 +86,31 @@ describe('BrowserStack minutes and keys', () => {
     const empty = createBrowserstackTarget(createDeviceContext(deviceConfig({ devices }), fakeDeps({ root }))).needs?.(leg('bs-iphone'));
     expect(empty?.credentials?.map((c) => c.present)).toEqual([false, false]);
   });
+
+  it('takes the keys from the injected env when the config names none', async () => {
+    const root = await tmpDir();
+    const env = { BROWSERSTACK_USERNAME: BS_USER, BROWSERSTACK_ACCESS_KEY: BS_KEY };
+    const ctx = createDeviceContext(deviceConfig({ rigs: { browserstack: { transport: 'cloud' } }, devices }), fakeDeps({ root, env }));
+    expect(ctx.config.device.browserstack).toMatchObject({ username: BS_USER, accessKey: BS_KEY });
+    const target = createBrowserstackTarget(ctx);
+    expect(await target.ready(leg('bs-iphone'))).toEqual({ ready: true });
+    const needs = target.needs?.(leg('bs-iphone'));
+    expect(needs?.credentials?.map((c) => [c.key, c.present])).toEqual([
+      ['BROWSERSTACK_USERNAME', true],
+      ['BROWSERSTACK_ACCESS_KEY', true],
+    ]);
+    expect(JSON.stringify(needs)).not.toContain(BS_KEY);
+  });
+
+  it('keeps the config keys over the env keys, and an empty env key stays empty', async () => {
+    const root = await tmpDir();
+    const over = createDeviceContext(config(), fakeDeps({ root, env: { BROWSERSTACK_USERNAME: 'env-user', BROWSERSTACK_ACCESS_KEY: 'env-key' } }));
+    expect(over.config.device.browserstack).toMatchObject({ username: BS_USER, accessKey: BS_KEY });
+    const blank = createDeviceContext(deviceConfig({ rigs: { browserstack: { transport: 'cloud' } }, devices }), fakeDeps({ root, env: { BROWSERSTACK_USERNAME: '', BROWSERSTACK_ACCESS_KEY: '' } }));
+    const target = createBrowserstackTarget(blank);
+    expect(target.needs?.(leg('bs-iphone'))?.credentials?.map((c) => c.present)).toEqual([false, false]);
+    expect((await target.ready(leg('bs-iphone'))).reason).toMatch(/BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY in the process env/);
+  });
 });
 
 describe('the per-run minute budget', () => {

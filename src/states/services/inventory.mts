@@ -118,11 +118,12 @@ export interface DeliveryRoute {
 }
 
 /**
- * What a mechanism B capture group needs that no scan can know: the route, the response that
- * carries the subjects, and the settle rule. It sits beside a union in the inventory file.
+ * What a mechanism B capture group needs that no scan can know: the response that carries the
+ * subjects and the settle rule, and the route when the scan derives none. It sits beside a union in the inventory file.
  */
 export interface DeliveryDescriptor {
-  route: string;
+  /** Default: the nearest derived route without a `:param` on the surface of the leg. */
+  route?: string;
   leg?: string;
   intercept: { url: string; container: string };
   settle: { selector?: string; artwork?: boolean; video?: boolean; busy?: boolean; timeout?: number };

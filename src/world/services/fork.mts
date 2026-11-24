@@ -5,7 +5,7 @@
 // the `_qa` database. The fork name derives from that database name, so a fork never touches the dev
 // database.
 import { LaunchwrightError } from '../../kernel/index.mts';
-import { assertQaTarget, checkIdentifier, databaseName, dbAdmin, type DbAdmin, type DbSection, qaDbSection } from './stack.mts';
+import { assertQaTarget, checkIdentifier, type ConnectDb, databaseName, dbAdmin, type DbAdmin, type DbSection, qaDbSection } from './stack.mts';
 
 /** The part of a fork name between the QA database and the label: `<database>_fork_<label>`. */
 export const FORK_MARK = '_fork_';
@@ -39,6 +39,8 @@ export interface ForkOptions {
   /** The QA database name, the fork's template. */
   database: string;
   out: (line: string) => void;
+  /** Opens the maintenance connection of a Postgres server. Default: the db module. */
+  connect?: ConnectDb;
 }
 
 /**
@@ -49,7 +51,7 @@ export async function createFork(o: ForkOptions & { label: string }): Promise<st
   const db = qaDbSection((o.sections.db ?? {}) as DbSection, o.database, o.root);
   assertQaTarget(db, o.database, o.root);
   const name = forkName(o.database, o.label);
-  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n));
+  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n), o.connect);
   try {
     const seeded = seededName(o.database);
     const template = (await admin.exists(seeded)) ? seeded : o.database;
@@ -68,7 +70,7 @@ export async function dropFork(o: ForkOptions & { name: string }): Promise<void>
   }
   const db = qaDbSection((o.sections.db ?? {}) as DbSection, o.database, o.root);
   assertQaTarget(db, o.database, o.root);
-  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n));
+  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n), o.connect);
   try {
     await admin.drop(o.name);
     o.out(`dropped ${o.name}`);
@@ -82,9 +84,12 @@ export async function dropFork(o: ForkOptions & { name: string }): Promise<void>
  * reset` drops it first and copies the seeded QA database last, so a reset that stops half way
  * leaves no stale snapshot. `admin` defaults to the admin of section `db`, limited to the snapshot.
  */
-export async function snapshotSeeded(o: { root: string; db: DbSection; database: string; admin?: DbAdmin }, action: 'replace' | 'drop'): Promise<void> {
+export async function snapshotSeeded(
+  o: { root: string; db: DbSection; database: string; admin?: DbAdmin; connect?: ConnectDb },
+  action: 'replace' | 'drop',
+): Promise<void> {
   const seeded = seededName(o.database);
-  const admin = o.admin ?? (await dbAdmin(o.db, o.root, (n) => n === seeded));
+  const admin = o.admin ?? (await dbAdmin(o.db, o.root, (n) => n === seeded, o.connect));
   try {
     await admin.drop(seeded);
     if (action === 'replace') await admin.create(seeded, o.database);

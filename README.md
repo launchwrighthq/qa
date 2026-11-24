@@ -72,6 +72,26 @@ The `fake` target opens no connection, so any loopback URL works. A pass also ne
 A leg may have any name, for example `[legs.fake-web]`. Every command that reads a plan accepts the
 legs of the config.
 
+### Env values
+
+A string value of `qa.toml` can name a process env key, so a password stays out of the file:
+
+```toml
+[db]
+url = "${QA_DATABASE_URL}"
+
+[qa]
+database = "${QA_DATABASE:-shop_qa}"
+```
+
+`${NAME}` takes the value of `NAME`. `${NAME:-default}` takes `default` when `NAME` is unset or
+empty. `$${` writes a literal `${`. A key that names an unset env key with no default stops
+`lw-qa` with exit 2 and `qa.config.env`. The message names the key and the file, never a value.
+
+The BrowserStack keys come from `[qa.device.browserstack]` (`username`, `accessKey`). When the config
+names none, `lw-qa` reads the env keys `BROWSERSTACK_USERNAME` and `BROWSERSTACK_ACCESS_KEY`. The run
+contract lists both keys as set or empty and never prints a value.
+
 ### The score
 
 `lw-qa report render` and `lw-qa report viewer` draw a 0-100 score as a circular gauge, with a
@@ -150,6 +170,29 @@ lw-qa consent reset [<hash>]            # every record, or one manifest hash
 ```
 
 `lw-qa consent grant` grants only an item that a printed contract listed.
+
+## The QA world
+
+`lw-qa world reset` drops and creates the QA database (`qa.database`), migrates it, runs the base
+seed, then every fact and persona seed of the `*.world.mts` files, and copies the seeded database
+to the snapshot that each fork copies. The module of config `qa.app` exports `qaApp`, the
+`QaAppEntry` of `@launchwrighthq/qa/world`. The world boots that app on the QA database.
+
+An app without the framework db and auth modules gives these hooks on `qaApp`. Each hook runs in
+place of the framework module that it names:
+
+| Hook | Runs | In place of |
+|---|---|---|
+| `migrate(ctx)` | Before the app boots, on the empty QA database. `ctx.sections.db` points at it. | `migrate` of the db module |
+| `seed(ctx, names)` | After `migrate`, before the app boots. `names` are the words of `qa.seed`. | `runSeeds` of the db module |
+| `linkPersona(world, link)` | After each persona seed. It creates or finds the user and records the sign-in identity `link.accountId` (`qa:<persona>`). A returned id is the persona's `userId`. | `USERS` of the auth module |
+| `connect(url)` | For the create, copy and drop statements on a Postgres server of this machine. It gives an object with `execute(sql)` and `close()`. | `createDb` of the db module |
+| `tenantId` | The tenant of every seeded row. | `DEFAULT_TENANT_ID` of the db module |
+
+A PGlite world (`[db] driver = "pglite"`) needs no `connect`. Without the http module, `lw-qa world
+api` and each fork group serve the app on a plain `node:http` server. The app then serves its own
+`POST /__qa/session {persona}` route: it finds the user of identity `qa:<persona>`, sets the session
+cookie and answers `{ userId }`.
 
 ## Agent assets
 

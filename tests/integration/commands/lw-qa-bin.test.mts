@@ -1,6 +1,8 @@
 // The `lw-qa` launcher as a child process: a large output reaches a pipe in full, and a
 // long-running command stops on SIGINT with exit code 0.
 import { spawn } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { tmpDir } from '../../../src/kernel/testing/index.mts';
@@ -19,9 +21,9 @@ interface Run {
 }
 
 /** Runs the bin with piped stdio. `onStderr` sees each stderr chunk, so a test can signal the child. */
-function runBin(args: string[], onStderr?: (text: string, child: ReturnType<typeof spawn>) => void): Promise<Run> {
+function runBin(args: string[], onStderr?: (text: string, child: ReturnType<typeof spawn>) => void, cwd = repo): Promise<Run> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [BIN, ...args], { cwd: repo, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [BIN, ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     const out: Buffer[] = [];
     let err = '';
     child.stdout.on('data', (chunk: Buffer) => out.push(chunk));
@@ -62,5 +64,14 @@ describe('lw-qa bin', () => {
     expect(sent).toBe(true);
     expect(run.code).toBe(0);
     expect(run.stderr).toContain('requests recorded in');
+  });
+
+  it('refuses a qa.toml that names an unset env key, with the key and the file', async () => {
+    const dir = await tmpDir();
+    await writeFile(join(dir, 'qa.toml'), '[world]\nurl = "${LW_QA_TEST_UNSET_KEY}"\n');
+    const run = await runBin(['states', 'list'], undefined, dir);
+    expect(run.code).toBe(2);
+    expect(run.stderr).toContain('qa.toml: key qa.world.url names the env key LW_QA_TEST_UNSET_KEY');
+    expect(run.stderr).toContain('[qa.config.env]');
   });
 });

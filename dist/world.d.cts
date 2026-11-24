@@ -1,10 +1,53 @@
-import { Q as QaAppEntry, W as WorldRegistry, a as QaWorld, b as QaOverlay, L as ListenQaApp, F as FeatureWorld, O as Owned, c as Fact, d as WorldEntry, P as Persona, e as PersonaIds, R as RunRecord, C as CheckoutFacts } from './api-DIr60smW.cjs';
-export { A as ArmCtx, f as FactHandles, g as Listening, h as PersonaHandles, i as QA_TELEGRAM_PORT, j as QaFakeBot, k as QaHandler, l as WorldCtx, m as devProjectName, n as importFromProject, o as listenQaApp, p as loadAppEntry, q as openWorld, r as qaDatabase, s as qaFakeBots, t as qaFakeToken, u as qaSections, v as readCheckout } from './api-DIr60smW.cjs';
+import { D as Db, Q as QaAppEntry, W as WorldRegistry, a as QaWorld, b as QaOverlay, L as ListenQaApp, F as FeatureWorld, O as Owned, c as Fact, d as WorldEntry, P as Persona, e as PersonaIds, R as RunRecord, C as CheckoutFacts } from './api-BKuIXotd.cjs';
+export { A as ArmCtx, f as FactHandles, g as Listening, h as PersonaHandles, i as QA_TELEGRAM_PORT, j as QaDatabaseContext, k as QaFakeBot, l as QaHandler, m as QaPersonaLink, n as WorldCtx, o as devProjectName, p as importFromProject, q as listenQaApp, r as loadAppEntry, s as openWorld, t as qaDatabase, u as qaFakeBots, v as qaFakeToken, w as qaSections, x as readCheckout } from './api-BKuIXotd.cjs';
 import { C as Clock } from './clock-BUdCJ9bN.cjs';
 import { F as FetchFn } from './bot-api-BiC2rPPD.cjs';
 import './app-KXgbRXYO.cjs';
 import './config-Z7lJ4xeJ.cjs';
 import 'zod';
+
+/** The fields of config section `db` that the stack reads. */
+interface DbSection {
+    driver?: 'pg' | 'pglite';
+    url?: string;
+    dataDir?: string;
+    [key: string]: unknown;
+}
+/** True for `localhost`, `127.0.0.1` and `::1`, also in brackets. */
+declare function isLoopbackHost(host: string): boolean;
+/** A database name from free text: lower case letters, digits and `_`, a letter first, 63 characters at most. */
+declare function databaseName(text: string): string;
+/** The same server, role, password and query, with another database. */
+declare function urlWithDatabase(url: string, name: string): string;
+/**
+ * Why `db` is not the QA database `database` of the project at `root`, or null. Two refusals: a
+ * host that is not this machine, and a database whose name is not `database`. The developer's
+ * database is on the same server and differs by its name alone.
+ */
+declare function qaTargetProblem(db: DbSection, database: string, root: string): string | null;
+/** Throws `qa.stack.target` unless `db` is the QA database. Called before anything destructive. */
+declare function assertQaTarget(db: DbSection, database: string, root: string): void;
+/** Section `db` pointed at the QA database: the same server with another name, or a PGlite folder of its own. */
+declare function qaDbSection(db: DbSection, database: string, root: string): DbSection;
+/** Create, copy, list and drop databases. `allowed` guards each name that a create or drop touches. */
+interface DbAdmin {
+    exists(name: string): Promise<boolean>;
+    /** Creates `name`, empty or as a copy of `template`. A template with open sessions fails with `qa.stack.copy`. */
+    create(name: string, template?: string): Promise<void>;
+    /** Drops `name` when it exists. It ends the open sessions of its own role first; a session of another role fails the drop after 5 s. */
+    drop(name: string): Promise<void>;
+    /** The databases whose names start with `prefix`. */
+    list(prefix: string): Promise<string[]>;
+    close(): Promise<void>;
+}
+/** Opens a connection to a Postgres URL on this machine. `QaAppEntry.connect` gives one. */
+type ConnectDb = (url: string) => Promise<Db>;
+/** The admin of a Postgres server on this machine, through its maintenance database. */
+declare function pgAdmin(url: string, allowed: (name: string) => boolean, connect?: ConnectDb): Promise<DbAdmin>;
+/** The admin of the PGlite QA databases: one folder each under `.lw/qa/pglite/`. */
+declare function pgliteAdmin(root: string, allowed: (name: string) => boolean): DbAdmin;
+/** The admin for section `db`: Postgres through its URL and `connect`, or the PGlite folders of the project. */
+declare function dbAdmin(db: DbSection, root: string, allowed: (name: string) => boolean, connect?: ConnectDb): Promise<DbAdmin>;
 
 /** The options that a `lw qa` subcommand gets (the fields of `QaCommandOptions` that the world reads). */
 interface WorldCommandOptions {
@@ -44,47 +87,6 @@ interface FixtureArmingOptions extends WorldCommandOptions {
  */
 declare function fixtureArming(opts: FixtureArmingOptions): Promise<FixtureArming$1>;
 
-/** The fields of config section `db` that the stack reads. */
-interface DbSection {
-    driver?: 'pg' | 'pglite';
-    url?: string;
-    dataDir?: string;
-    [key: string]: unknown;
-}
-/** True for `localhost`, `127.0.0.1` and `::1`, also in brackets. */
-declare function isLoopbackHost(host: string): boolean;
-/** A database name from free text: lower case letters, digits and `_`, a letter first, 63 characters at most. */
-declare function databaseName(text: string): string;
-/** The same server, role, password and query, with another database. */
-declare function urlWithDatabase(url: string, name: string): string;
-/**
- * Why `db` is not the QA database `database` of the project at `root`, or null. Two refusals: a
- * host that is not this machine, and a database whose name is not `database`. The developer's
- * database is on the same server and differs by its name alone.
- */
-declare function qaTargetProblem(db: DbSection, database: string, root: string): string | null;
-/** Throws `qa.stack.target` unless `db` is the QA database. Called before anything destructive. */
-declare function assertQaTarget(db: DbSection, database: string, root: string): void;
-/** Section `db` pointed at the QA database: the same server with another name, or a PGlite folder of its own. */
-declare function qaDbSection(db: DbSection, database: string, root: string): DbSection;
-/** Create, copy, list and drop databases. `allowed` guards each name that a create or drop touches. */
-interface DbAdmin {
-    exists(name: string): Promise<boolean>;
-    /** Creates `name`, empty or as a copy of `template`. A template with open sessions fails with `qa.stack.copy`. */
-    create(name: string, template?: string): Promise<void>;
-    /** Drops `name` when it exists. It ends the open sessions of its own role first; a session of another role fails the drop after 5 s. */
-    drop(name: string): Promise<void>;
-    /** The databases whose names start with `prefix`. */
-    list(prefix: string): Promise<string[]>;
-    close(): Promise<void>;
-}
-/** The admin of a Postgres server on this machine, through its maintenance database. */
-declare function pgAdmin(url: string, allowed: (name: string) => boolean): Promise<DbAdmin>;
-/** The admin of the PGlite QA databases: one folder each under `.lw/qa/pglite/`. */
-declare function pgliteAdmin(root: string, allowed: (name: string) => boolean): DbAdmin;
-/** The admin for section `db`: Postgres through its URL, or the PGlite folders of the project. */
-declare function dbAdmin(db: DbSection, root: string, allowed: (name: string) => boolean): Promise<DbAdmin>;
-
 /** The name of a fork of the QA `database` for `label`: `<database>_fork_<label>`, 63 characters at most. */
 declare function forkName(database: string, label: string): string;
 /**
@@ -101,6 +103,8 @@ interface ForkOptions {
     /** The QA database name, the fork's template. */
     database: string;
     out: (line: string) => void;
+    /** Opens the maintenance connection of a Postgres server. Default: the db module. */
+    connect?: ConnectDb;
 }
 /**
  * Creates a fork of the QA database and gives the fork name. The template is the seeded snapshot when
@@ -158,7 +162,7 @@ interface ForkWorldOptions {
     entry: QaAppEntry;
     registry: WorldRegistry;
     out: (line: string) => void;
-    /** Default: `listenQaApp`, the `serveNode` of the http module. */
+    /** Default: `listenQaApp`, the `serveNode` of the http module, else a plain node:http server. */
     listen?: ListenQaApp;
 }
 /** A fork server with the booted world, so a forged seed writes through the same app. */
@@ -362,6 +366,8 @@ interface WorldStamp {
 declare function readStamp(root: string): Promise<WorldStamp | null | 'unreadable'>;
 /** The seed names of config `qa.seed`: `[]` for every seed, null without a base seed. Throws `qa.world.seed` for another command. */
 declare function baseSeedNames(command: string | undefined): string[] | null;
+/** The seed names that `QaAppEntry.seed` gets from config `qa.seed`: the words after `lw db seed`, else every word. */
+declare function hookSeedNames(command: string | undefined): string[];
 /** What a reset needs. */
 interface ResetOptions {
     root: string;
@@ -379,8 +385,13 @@ interface ResetOptions {
     /** Default: the admin of section `db`, limited to the QA database. */
     admin?: DbAdmin;
 }
-/** Runs the base seed, then each fact and persona seed. A seed that fails names its id and its file. */
-declare function seedWorld(world: QaWorld, registry: WorldRegistry, o: Pick<ResetOptions, 'root' | 'seed' | 'out'>): Promise<WorldEntry[]>;
+/**
+ * Runs the base seed, then each fact and persona seed. A seed that fails names its id and its file.
+ * With `entry.seed`, the base seed ran before the boot, so the seed of the db module does not run here.
+ */
+declare function seedWorld(world: QaWorld, registry: WorldRegistry, o: Pick<ResetOptions, 'root' | 'seed' | 'out'> & {
+    entry?: Pick<QaAppEntry, 'seed' | 'linkPersona'>;
+}): Promise<WorldEntry[]>;
 /**
  * Drops, creates and migrates the QA database, seeds it through the QA app, and writes the stamp
  * last. A reset that stops half way leaves no stamp, so `status` calls the world unseeded.
@@ -402,6 +413,8 @@ declare function worldStatus(o: {
     database: string;
     registry: WorldRegistry;
     admin?: DbAdmin;
+    /** Opens the maintenance connection of a Postgres server. Default: the db module. */
+    connect?: ConnectDb;
 }): Promise<WorldStatus>;
 
 /** The outside effects of a worktree run. Tests replace each one. */
@@ -465,4 +478,4 @@ declare function runWorktree(o: WorktreeOptions): Promise<number>;
 /** `--cleanup`: drops each copy of this project whose worktree has no live `lw dev` run. Gives the dropped names. */
 declare function cleanupWorktrees(o: Pick<WorktreeOptions, 'root' | 'sections' | 'out' | 'deps'>): Promise<string[]>;
 
-export { type ArmedFact, CheckoutFacts, type DbAdmin, type DbSection, Fact, FeatureWorld, type FixtureArming$1 as FixtureArming, type FixtureArmingOptions, type ForkInstance, type ForkWorldOptions, JOBS_DIR, type JobRegistry, ListenQaApp, type LoadedWorld, type MenuOptions, type OpenFork, Owned, Persona, PersonaIds, QA_PROVIDER, QaAppEntry, QaOverlay, QaWorld, type ResetOptions, type RunJobOptions, STAMP_FILE, ShiftClock, UNDO_FILE, type UndoRecord, WORLD_SUFFIX, type WorktreeDeps, type WorktreeOptions, type WorktreePlan, WorldEntry, type WorldFinding, WorldRegistry, type WorldStamp, type WorldStatus, armFact, assertQaTarget, assertRegistry, baseSeedNames, buildRegistry, cleanupWorktrees, copyName, copyPrefix, createFork, databaseName, dbAdmin, defineWorld, disarmFact, dropFork, factById, featuresWithoutWorld, fixtureArming, forkName, forkUndoFile, idProblem, importProjectJobs, isLoopbackHost, listJobs, listWorld, loadRegistry, loadWorlds, openFork, parseShift, personaById, personaIds, pgAdmin, pgliteAdmin, planWorktree, qaAccountId, qaDbSection, qaTargetProblem, qaTelegramId, rawSqlFindings, readStamp, readUndo, registryHash, registryProblem, resetWorld, runJob, runWorktree, seedWorld, seededName, serveFork, setEnvLine, setMenuButton, urlWithDatabase, worldFiles, worldForkRunner, worldLintFindings, worldStatus };
+export { type ArmedFact, CheckoutFacts, type ConnectDb, type DbAdmin, type DbSection, Fact, FeatureWorld, type FixtureArming$1 as FixtureArming, type FixtureArmingOptions, type ForkInstance, type ForkWorldOptions, JOBS_DIR, type JobRegistry, ListenQaApp, type LoadedWorld, type MenuOptions, type OpenFork, Owned, Persona, PersonaIds, QA_PROVIDER, QaAppEntry, QaOverlay, QaWorld, type ResetOptions, type RunJobOptions, STAMP_FILE, ShiftClock, UNDO_FILE, type UndoRecord, WORLD_SUFFIX, type WorktreeDeps, type WorktreeOptions, type WorktreePlan, WorldEntry, type WorldFinding, WorldRegistry, type WorldStamp, type WorldStatus, armFact, assertQaTarget, assertRegistry, baseSeedNames, buildRegistry, cleanupWorktrees, copyName, copyPrefix, createFork, databaseName, dbAdmin, defineWorld, disarmFact, dropFork, factById, featuresWithoutWorld, fixtureArming, forkName, forkUndoFile, hookSeedNames, idProblem, importProjectJobs, isLoopbackHost, listJobs, listWorld, loadRegistry, loadWorlds, openFork, parseShift, personaById, personaIds, pgAdmin, pgliteAdmin, planWorktree, qaAccountId, qaDbSection, qaTargetProblem, qaTelegramId, rawSqlFindings, readStamp, readUndo, registryHash, registryProblem, resetWorld, runJob, runWorktree, seedWorld, seededName, serveFork, setEnvLine, setMenuButton, urlWithDatabase, worldFiles, worldForkRunner, worldLintFindings, worldStatus };

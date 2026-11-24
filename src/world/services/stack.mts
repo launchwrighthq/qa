@@ -144,12 +144,17 @@ function quoted(name: string): string {
   return `"${checkIdentifier(name)}"`;
 }
 
+/** Opens a connection to a Postgres URL on this machine. `QaAppEntry.connect` gives one. */
+export type ConnectDb = (url: string) => Promise<Db>;
+
+/** The default `ConnectDb`: `createDb` of the db module. */
+export const dbModuleConnect: ConnectDb = async (url) => (await loadDb()).createDb({ driver: 'pg', url });
+
 /** The admin of a Postgres server on this machine, through its maintenance database. */
-export async function pgAdmin(url: string, allowed: (name: string) => boolean): Promise<DbAdmin> {
+export async function pgAdmin(url: string, allowed: (name: string) => boolean, connect: ConnectDb = dbModuleConnect): Promise<DbAdmin> {
   const remote = remoteHostProblem(url);
   if (remote) throw new LaunchwrightError('qa.stack.host', `Refusing: ${remote}.`, { context: { host: hostOfUrl(url) } });
-  const { createDb } = await loadDb();
-  const db: Db = await createDb({ driver: 'pg', url: urlWithDatabase(url, MAINTENANCE_DATABASE) });
+  const db: Db = await connect(urlWithDatabase(url, MAINTENANCE_DATABASE));
   const names = async (): Promise<string[]> => {
     const result = await db.execute('select datname from pg_database where not datistemplate');
     return (result.rows as Array<{ datname: string }>).map((r) => r.datname);
@@ -214,11 +219,11 @@ export function pgliteAdmin(root: string, allowed: (name: string) => boolean): D
   };
 }
 
-/** The admin for section `db`: Postgres through its URL, or the PGlite folders of the project. */
-export function dbAdmin(db: DbSection, root: string, allowed: (name: string) => boolean): Promise<DbAdmin> {
+/** The admin for section `db`: Postgres through its URL and `connect`, or the PGlite folders of the project. */
+export function dbAdmin(db: DbSection, root: string, allowed: (name: string) => boolean, connect?: ConnectDb): Promise<DbAdmin> {
   if ((db.driver ?? 'pg') === 'pglite') return Promise.resolve(pgliteAdmin(root, allowed));
   if (typeof db.url !== 'string' || db.url === '') throw new LaunchwrightError('qa.stack.url', 'Config db.url is not set, so lw qa has no database server.');
-  return pgAdmin(db.url, allowed);
+  return pgAdmin(db.url, allowed, connect);
 }
 
 /** The folder name of a path, as a database name part. */

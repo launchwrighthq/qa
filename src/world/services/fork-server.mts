@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { type Db, loadDb } from '../../services/peers.mts';
 import type { ForkRunner, ForkServer } from '../../services/runner.mts';
 import { type ListenQaApp, type Listening, listenQaApp } from './api.mts';
-import { openWorld, type QaAppEntry, type QaOverlay, type QaWorld } from './app.mts';
+import { entryConnect, openWorld, type QaAppEntry, type QaOverlay, type QaWorld } from './app.mts';
 import { armFact, forkUndoFile } from './fixture.mts';
 import { createFork, dropFork } from './fork.mts';
 import type { WorldRegistry } from './types.mts';
@@ -23,7 +23,7 @@ export interface ForkWorldOptions {
   entry: QaAppEntry;
   registry: WorldRegistry;
   out: (line: string) => void;
-  /** Default: `listenQaApp`, the `serveNode` of the http module. */
+  /** Default: `listenQaApp`, the `serveNode` of the http module, else a plain node:http server. */
   listen?: ListenQaApp;
 }
 
@@ -109,7 +109,8 @@ export async function openFork(o: ForkWorldOptions, label: string): Promise<Open
 
 /** The fork runner of `lw qa session run`: fork, serve, drop, on the QA database of `o.overlay`. */
 export function worldForkRunner(o: ForkWorldOptions): ForkRunner {
-  const fork = { root: o.root, sections: o.sections, database: o.overlay.database, out: o.out };
+  const connect = entryConnect(o.entry);
+  const fork = { root: o.root, sections: o.sections, database: o.overlay.database, out: o.out, ...(connect ? { connect } : {}) };
   return {
     create: (label) => createFork({ ...fork, label }),
     drop: (name) => dropFork({ ...fork, name }),

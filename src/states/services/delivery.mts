@@ -130,7 +130,7 @@ export function objectVocabulary(sf: ts.SourceFile): Map<string, Map<string, str
       if (initializer && ts.isObjectLiteralExpression(initializer)) {
         const paths = new Map<string, string>();
         for (const member of initializer.properties) {
-          if (ts.isPropertyAssignment(member) && ts.isIdentifier(member.name) && ts.isStringLiteral(member.initializer)) {
+          if (ts.isPropertyAssignment(member) && ts.isIdentifier(member.name) && (ts.isStringLiteral(member.initializer) || ts.isNoSubstitutionTemplateLiteral(member.initializer))) {
             paths.set(member.name.text, member.initializer.text);
           }
         }
@@ -156,38 +156,128 @@ function localConstants(sf: ts.SourceFile): Map<string, ts.Expression> {
   return found;
 }
 
+/** What a path expression of one file is read against: its vocabulary objects, its constants, and its imports. */
+export interface PathScope {
+  vocabulary: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  constants: ReadonlyMap<string, ts.Expression>;
+  /** The scope of the module that a name of this file comes from, and the name it has there. Null for a local or unknown name. */
+  imported(name: string): { scope: PathScope; name: string } | null;
+}
+
+/** The scope of one file alone: an imported name stays unknown. */
+export function fileScope(sf: ts.SourceFile): PathScope {
+  return { vocabulary: objectVocabulary(sf), constants: localConstants(sf), imported: () => null };
+}
+
+/** How each name of a file comes from another module: `import { a as b }`, `import b`, `export { a as b } from` and `export * from`. */
+function moduleLinks(sf: ts.SourceFile): { named: Map<string, { specifier: string; name: string }>; star: string[] } {
+  const named = new Map<string, { specifier: string; name: string }>();
+  const star: string[] = [];
+  for (const statement of sf.statements) {
+    if (ts.isImportDeclaration(statement) && statement.importClause && ts.isStringLiteral(statement.moduleSpecifier)) {
+      const specifier = statement.moduleSpecifier.text;
+      const clause = statement.importClause;
+      if (clause.name) named.set(clause.name.text, { specifier, name: 'default' });
+      if (clause.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+        for (const element of clause.namedBindings.elements) named.set(element.name.text, { specifier, name: (element.propertyName ?? element.name).text });
+      }
+    }
+    if (ts.isExportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
+      const specifier = statement.moduleSpecifier.text;
+      if (!statement.exportClause) star.push(specifier);
+      else if (ts.isNamedExports(statement.exportClause)) {
+        for (const element of statement.exportClause.elements) named.set(element.name.text, { specifier, name: (element.propertyName ?? element.name).text });
+      }
+    }
+  }
+  return { named, star };
+}
+
+/**
+ * The scope of each parsed file, made on first use. An imported name is followed into the file
+ * that the specifier resolves to, through a re-export and an `export *` of a barrel file too.
+ */
+export function moduleScopes(parsed: ReadonlyMap<string, ts.SourceFile>, resolve: (from: string, specifier: string) => string | null): (file: string) => PathScope | null {
+  const made = new Map<string, PathScope>();
+  const scopeOf = (file: string): PathScope | null => {
+    const held = made.get(file);
+    if (held) return held;
+    const sf = parsed.get(file);
+    if (!sf) return null;
+    const own = fileScope(sf);
+    let links: ReturnType<typeof moduleLinks> | null = null;
+    const scope: PathScope = {
+      vocabulary: own.vocabulary,
+      constants: own.constants,
+      imported(name) {
+        links ??= moduleLinks(sf);
+        const link = links.named.get(name);
+        if (link) {
+          const target = resolve(file, link.specifier);
+          const targetScope = target === null ? null : scopeOf(target);
+          return targetScope ? { scope: targetScope, name: link.name } : null;
+        }
+        for (const specifier of links.star) {
+          const target = resolve(file, specifier);
+          const targetScope = target === null ? null : scopeOf(target);
+          if (targetScope && (targetScope.constants.has(name) || targetScope.vocabulary.has(name))) return { scope: targetScope, name };
+        }
+        return null;
+      },
+    };
+    made.set(file, scope);
+    return scope;
+  };
+  return scopeOf;
+}
+
+/** The expression that declares `name` and the scope it is read in, following imports. */
+export function declarationOf(scope: PathScope, name: string, depth = 0): { expression: ts.Expression; scope: PathScope } | null {
+  if (depth > MAX_HOPS) return null;
+  const local = scope.constants.get(name);
+  if (local) return { expression: local, scope };
+  const link = scope.imported(name);
+  return link ? declarationOf(link.scope, link.name, depth + 1) : null;
+}
+
+/** The string members of the vocabulary object `name`, following imports. */
+function vocabularyOf(scope: PathScope, name: string, depth = 0): ReadonlyMap<string, string> | null {
+  if (depth > MAX_HOPS) return null;
+  const local = scope.vocabulary.get(name);
+  if (local) return local;
+  if (scope.constants.has(name)) return null;
+  const link = scope.imported(name);
+  return link ? vocabularyOf(link.scope, link.name, depth + 1) : null;
+}
+
 /**
  * A path expression as the address it serves, or null. It reads a literal, `PATHS.key` of a
- * vocabulary object, a local constant, a template, and a one-argument wrapper call such as
- * `localized('/hot')`. A wrapper is unwrapped only when its argument is an address (starts with `/`).
+ * vocabulary object, a constant, a template, and a one-argument wrapper call such as
+ * `localized('/hot')`, in this file or in the module that a name is imported from. A wrapper is
+ * unwrapped only when its argument is an address (starts with `/`).
  */
-export function evaluatePath(
-  node: ts.Node | null | undefined,
-  vocabulary: ReadonlyMap<string, ReadonlyMap<string, string>>,
-  constants: ReadonlyMap<string, ts.Expression>,
-  depth = 0,
-): string | null {
-  if (!node || depth > MAX_HOPS) return null;
+export function evaluatePath(node: ts.Node | null | undefined, scope: PathScope, depth = 0): string | null {
+  if (!node || depth > MAX_HOPS * 2) return null;
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
-  if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node)) return evaluatePath(node.expression, vocabulary, constants, depth + 1);
+  if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) return evaluatePath(node.expression, scope, depth + 1);
   if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression)) {
-    return vocabulary.get(node.expression.text)?.get(node.name.text) ?? null;
+    return vocabularyOf(scope, node.expression.text)?.get(node.name.text) ?? null;
   }
   if (ts.isIdentifier(node)) {
-    const declared = constants.get(node.text);
-    return declared ? evaluatePath(declared, vocabulary, constants, depth + 1) : null;
+    const declared = declarationOf(scope, node.text);
+    return declared ? evaluatePath(declared.expression, declared.scope, depth + 1) : null;
   }
   if (ts.isTemplateExpression(node)) {
     let out = node.head.text;
     for (const span of node.templateSpans) {
-      const part = evaluatePath(span.expression, vocabulary, constants, depth + 1);
+      const part = evaluatePath(span.expression, scope, depth + 1);
       if (part === null) return null;
       out += part + span.literal.text;
     }
     return out;
   }
   if (ts.isCallExpression(node) && node.arguments.length === 1) {
-    const inner = evaluatePath(node.arguments[0], vocabulary, constants, depth + 1);
+    const inner = evaluatePath(node.arguments[0], scope, depth + 1);
     return inner !== null && inner.startsWith('/') ? inner : null;
   }
   return null;
@@ -211,7 +301,7 @@ export interface RouteRow {
 }
 
 /** The `prefix` of every enclosing `group({ prefix })` call, outermost first. */
-function groupPrefix(node: ts.Node, vocabulary: ReadonlyMap<string, ReadonlyMap<string, string>>, constants: ReadonlyMap<string, ts.Expression>): string {
+function groupPrefix(node: ts.Node, scope: PathScope): string {
   const prefixes: string[] = [];
   let at: ts.Node | undefined = node.parent;
   while (at) {
@@ -220,7 +310,7 @@ function groupPrefix(node: ts.Node, vocabulary: ReadonlyMap<string, ReadonlyMap<
       if (options && ts.isObjectLiteralExpression(options)) {
         for (const property of options.properties) {
           if (ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) && property.name.text === 'prefix') {
-            const value = evaluatePath(property.initializer, vocabulary, constants);
+            const value = evaluatePath(property.initializer, scope);
             if (value) prefixes.unshift(value.replace(/\/+$/, ''));
           }
         }
@@ -238,23 +328,23 @@ function joinPath(prefix: string, path: string): string {
 
 /**
  * Every page row of a route table. A catch-all `*` is left out: it answers every address, and a
- * route list that began with it would rank the one screen nobody can ask for first.
+ * route list that began with it would rank the one screen nobody can ask for first. `scope` reads
+ * the path names; the default reads the file alone, so a name imported from another module stays unresolved.
  */
-export function routeRows(sf: ts.SourceFile, vocabulary: ReadonlyMap<string, ReadonlyMap<string, string>> = objectVocabulary(sf)): RouteRow[] {
-  const constants = localConstants(sf);
+export function routeRows(sf: ts.SourceFile, scope: PathScope = fileScope(sf)): RouteRow[] {
   const rows: RouteRow[] = [];
-  const push = (pathNode: ts.Node | null, component: string | null, pageName: string | null, prefix: string): void => {
-    const raw = evaluatePath(pathNode, vocabulary, constants);
+  const push = (pathNode: ts.Node | null, component: string | null, pageName: string | null, prefix: string, at: PathScope = scope): void => {
+    const raw = evaluatePath(pathNode, at);
     if (raw === '*') return;
     const path = raw === null ? null : joinPath(prefix, raw);
-    rows.push({ path, component, pageName, source: pathNode ? pathNode.getText(sf) : '<no path>', dynamic: path === null ? false : isDynamicPath(path) });
+    rows.push({ path, component, pageName, source: pathNode ? pathNode.getText(pathNode.getSourceFile()) : '<no path>', dynamic: path === null ? false : isDynamicPath(path) });
   };
   const visit = (node: ts.Node): void => {
     // The framework form: `<group>.page(path, 'page/name')`.
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'page' && node.arguments.length >= 2) {
       const [pathNode, nameNode] = node.arguments;
       const pageName = nameNode && (ts.isStringLiteral(nameNode) || ts.isNoSubstitutionTemplateLiteral(nameNode)) ? nameNode.text : null;
-      push(pathNode ?? null, null, pageName, groupPrefix(node, vocabulary, constants));
+      push(pathNode ?? null, null, pageName, groupPrefix(node, scope));
     }
     // The JSX form: `<Route path={...} component={X} />`.
     const opening = ts.isJsxSelfClosingElement(node) ? node : ts.isJsxElement(node) ? node.openingElement : null;
@@ -268,11 +358,11 @@ export function routeRows(sf: ts.SourceFile, vocabulary: ReadonlyMap<string, Rea
       const componentNode = attributes.get('component') ?? null;
       const component = componentNode && ts.isIdentifier(componentNode) ? componentNode.text : null;
       const pathNode = attributes.get('path') ?? null;
-      const declared = pathNode && ts.isIdentifier(pathNode) ? constants.get(pathNode.text) : undefined;
-      const list = declared && ts.isArrayLiteralExpression(declared) ? declared : pathNode;
-      // A router takes an array of paths too: one row per element.
-      const nodes = list && ts.isArrayLiteralExpression(list) ? [...list.elements] : [pathNode];
-      for (const one of nodes) push(one, component, null, '');
+      const declared = pathNode && ts.isIdentifier(pathNode) ? declarationOf(scope, pathNode.text) : null;
+      // A router takes an array of paths too: one row per element, read in the file that declares the array.
+      if (declared && ts.isArrayLiteralExpression(declared.expression)) for (const one of declared.expression.elements) push(one, component, null, '', declared.scope);
+      else if (pathNode && ts.isArrayLiteralExpression(pathNode)) for (const one of pathNode.elements) push(one, component, null, '');
+      else push(pathNode, component, null, '');
     }
     ts.forEachChild(node, visit);
   };
@@ -310,9 +400,30 @@ function jsxTagsIn(node: ts.Node): Set<string> {
   return found;
 }
 
+/** The local constants and function declarations of one file, by name: what a row's component can be. */
+function localDeclarations(sf: ts.SourceFile): Map<string, ts.Node> {
+  const found = new Map<string, ts.Node>(localConstants(sf));
+  for (const statement of sf.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name && !found.has(statement.name.text)) found.set(statement.name.text, statement);
+  }
+  return found;
+}
+
+/** The names of the local helpers a node calls: `homeRoute('hot')` draws what `homeRoute` returns. */
+function localCalleesIn(node: ts.Node, locals: ReadonlyMap<string, ts.Node>): Set<string> {
+  const found = new Set<string>();
+  const visit = (child: ts.Node): void => {
+    if (ts.isCallExpression(child) && ts.isIdentifier(child.expression) && locals.has(child.expression.text)) found.add(child.expression.text);
+    ts.forEachChild(child, visit);
+  };
+  visit(node);
+  return found;
+}
+
 /**
  * The page modules a JSX row's component draws. An imported component is its file. A local
- * constant is followed to the imported components its JSX mounts, up to `MAX_HOPS` hops.
+ * constant or function is followed to the imported components its JSX mounts, and through the
+ * local helpers it calls, up to `MAX_HOPS` hops.
  */
 export function componentPages(component: string | null, sf: ts.SourceFile, resolve: (specifier: string) => string | null, seen = new Set<string>(), depth = 0): string[] {
   if (component === null || seen.has(component) || depth > MAX_HOPS) return [];
@@ -323,12 +434,13 @@ export function componentPages(component: string | null, sf: ts.SourceFile, reso
     const file = resolve(specifier);
     return file === null ? [] : [file];
   }
-  const declaration = localConstants(sf).get(component);
+  const locals = localDeclarations(sf);
+  const declaration = locals.get(component);
   if (!declaration) return [];
   const pages: string[] = [];
-  for (const tag of jsxTagsIn(declaration)) {
-    if (tag === component) continue;
-    pages.push(...componentPages(tag, sf, resolve, seen, depth + 1));
+  for (const name of new Set([...jsxTagsIn(declaration), ...localCalleesIn(declaration, locals)])) {
+    if (name === component) continue;
+    pages.push(...componentPages(name, sf, resolve, seen, depth + 1));
   }
   return [...new Set(pages)];
 }
@@ -409,12 +521,13 @@ export function buildRouteMap(input: {
   const aliases = input.aliases ?? {};
   const { edges, parsed } = buildGraph(input.sources, aliases);
   const files = new Set(parsed.keys());
+  const scopeOf = moduleScopes(parsed, (from, specifier) => resolveSpecifier(from, specifier, files, aliases));
 
   const tables = input.tables.map((table) => {
     const sf = parsed.get(table.file);
     if (!sf) return { table, found: false, routes: [] as { path: string | null; dynamic: boolean; source: string; pages: string[] }[] };
     const resolve = (specifier: string): string | null => resolveSpecifier(table.file, specifier, files, aliases);
-    const routes = routeRows(sf).map((row) => ({
+    const routes = routeRows(sf, scopeOf(table.file) ?? fileScope(sf)).map((row) => ({
       path: row.path,
       dynamic: row.dynamic,
       source: row.source,

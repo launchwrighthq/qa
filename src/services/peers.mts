@@ -2,11 +2,30 @@
 // framework package the engine always needs; every other one is an optional peer. A loader throws
 // qa.<module>.module when a leg runs without its peer installed. The specifier is a variable, so a
 // bundle that leaves a leg out leaves its peer out too.
-import { LaunchwrightError, optionalPeer, type Token } from '../kernel/index.mts';
+import { isCodedError, LaunchwrightError, messageOf, optionalPeer, type Token } from '../kernel/index.mts';
 import type { AddressInfo } from 'node:net';
 
+/**
+ * True for the stub module that Vite gives in place of an optional peer that is not installed. Its
+ * import throws `Could not resolve "<spec>" imported by ...`, not the `ERR_MODULE_NOT_FOUND` of Node.
+ */
+function isViteMissingPeer(err: unknown, spec: string): boolean {
+  if (!isCodedError(err) || err.code !== 'kernel.peer.load') return false;
+  return messageOf((err as { cause?: unknown }).cause).startsWith(`Could not resolve "${spec}" imported by`);
+}
+
+/** The peer `spec`, or undefined when it is not installed. `spec` is a parameter, so no bundler resolves it. */
+async function peerOrUndefined<T>(spec: string): Promise<T | undefined> {
+  try {
+    return await optionalPeer<T>(spec, () => import(spec) as Promise<T>);
+  } catch (err) {
+    if (isViteMissingPeer(err, spec)) return undefined;
+    throw err;
+  }
+}
+
 async function loadPeer<T>(spec: string, module: string): Promise<T> {
-  const mod = await optionalPeer<T>(spec, () => import(spec) as Promise<T>);
+  const mod = await peerOrUndefined<T>(spec);
   if (!mod) throw new LaunchwrightError(`qa.${module}.module`, `This lw qa command needs the ${module} module. Run lw add ${module}.`);
   return mod;
 }
@@ -36,7 +55,10 @@ interface DbPeer {
   tenantScope(tenantId: string): unknown;
 }
 
-export const loadDb = (): Promise<DbPeer> => loadPeer<DbPeer>('@launchwrighthq/db', 'db');
+const DB_PEER = '@launchwrighthq/db';
+export const loadDb = (): Promise<DbPeer> => loadPeer<DbPeer>(DB_PEER, 'db');
+/** The db module, or undefined when the project does not install it. */
+export const optionalDb = (): Promise<DbPeer | undefined> => peerOrUndefined<DbPeer>(DB_PEER);
 
 /** The request facts a QA route handler reads. A local copy of the http module's RequestContext. */
 export interface RequestContext {
@@ -68,7 +90,10 @@ interface HttpPeer {
   HttpError: new (status: number, code: string, message: string, options?: { cause?: unknown; context?: Record<string, unknown>; headers?: Record<string, string>; fields?: Record<string, unknown> }) => Error;
 }
 
-export const loadHttp = (): Promise<HttpPeer> => loadPeer<HttpPeer>('@launchwrighthq/http', 'http');
+const HTTP_PEER = '@launchwrighthq/http';
+export const loadHttp = (): Promise<HttpPeer> => loadPeer<HttpPeer>(HTTP_PEER, 'http');
+/** The http module, or undefined when the project does not install it. */
+export const optionalHttp = (): Promise<HttpPeer | undefined> => peerOrUndefined<HttpPeer>(HTTP_PEER);
 
 interface UsersService {
   link(tenantId: string, userId: string, identity: { provider: string; subject: string }): Promise<unknown>;

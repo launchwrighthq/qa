@@ -3,10 +3,12 @@
 import { type Clock, isCodedError, LaunchwrightError, systemClock } from '../../kernel/index.mts';
 import { parseCommandArgs } from '../../kernel/services/args.mts';
 import { qaConfig, type QaConfig, withAppPaths } from '../../config.mts';
-import { loadAppEntry, openWorld, qaDatabase, type QaOverlay, type QaWorld } from './app.mts';
+import { optionalDb } from '../../services/peers.mts';
+import { entryConnect, loadAppEntry, openWorld, qaDatabase, type QaOverlay, type QaWorld } from './app.mts';
 import { type CheckoutFacts, readCheckout } from './checkout.mts';
 import { loadRegistry } from './discover.mts';
 import { listWorld, registryHash } from './registry.mts';
+import type { ConnectDb } from './stack.mts';
 import type { WorldRegistry } from './types.mts';
 
 /** The options that a `lw qa` subcommand gets (the fields of `QaCommandOptions` that the world reads). */
@@ -52,6 +54,24 @@ export async function worldContext(opts: WorldCommandOptions, clock: Clock = sys
     overlay: { root: opts.cwd, database, telegramUrl: parsed.data.telegramUrl, registryHash: registryHash(listWorld(registry)) },
     registry,
     clock,
+  };
+}
+
+/**
+ * The Postgres maintenance connection of a command that has not loaded the QA app entry: the db
+ * module when the project installs it, else `qaApp.connect`. A PGlite world never calls it.
+ */
+export function worldConnect(ctx: Pick<WorldContext, 'root' | 'qa'>): ConnectDb {
+  return async (url) => {
+    const db = await optionalDb();
+    if (db) return db.createDb({ driver: 'pg', url });
+    const connect = entryConnect(await loadAppEntry(ctx.root, ctx.qa));
+    if (connect === undefined) {
+      throw new LaunchwrightError('qa.world.connect', `The db module is not installed, and qaApp of ${ctx.qa.app} has no connect(url). Add qaApp.connect, or install the db module.`, {
+        context: { app: ctx.qa.app },
+      });
+    }
+    return connect(url);
   };
 }
 

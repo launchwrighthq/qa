@@ -1,6 +1,6 @@
 import {
   fixtureArming
-} from "./chunk-ZWA26WMS.js";
+} from "./chunk-NLG4MDWO.js";
 import {
   cleanupWorktrees,
   copyName,
@@ -9,14 +9,14 @@ import {
   runWorktree,
   setEnvLine,
   setMenuButton
-} from "./chunk-OJTP4MB4.js";
+} from "./chunk-IQN6RF62.js";
 import "./chunk-RZYPGI2F.js";
 import {
   JOBS_DIR,
   importProjectJobs,
   listJobs,
   runJob
-} from "./chunk-MJTCKUN2.js";
+} from "./chunk-L7ICYOID.js";
 import {
   ShiftClock,
   parseShift
@@ -25,29 +25,30 @@ import {
   openFork,
   serveFork,
   worldForkRunner
-} from "./chunk-EUYLWYDS.js";
+} from "./chunk-6ULDPJIA.js";
 import {
   listenQaApp
-} from "./chunk-GJVA76MS.js";
+} from "./chunk-SECVQO4X.js";
 import {
   UNDO_FILE,
   armFact,
   disarmFact,
   forkUndoFile,
   readUndo
-} from "./chunk-ZMPWNSJU.js";
+} from "./chunk-NL3NSCEL.js";
 import {
   STAMP_FILE,
   baseSeedNames,
   createFork,
   dropFork,
   forkName,
+  hookSeedNames,
   readStamp,
   resetWorld,
   seedWorld,
   seededName,
   worldStatus
-} from "./chunk-K4LKBBDD.js";
+} from "./chunk-3EVFW7CC.js";
 import {
   QA_TELEGRAM_PORT,
   devProjectName,
@@ -59,7 +60,7 @@ import {
   qaFakeToken,
   qaSections,
   readCheckout
-} from "./chunk-RCXD64CA.js";
+} from "./chunk-NRYDNIVU.js";
 import {
   assertQaTarget,
   databaseName,
@@ -70,8 +71,8 @@ import {
   qaDbSection,
   qaTargetProblem,
   urlWithDatabase
-} from "./chunk-ZJ35OYFC.js";
-import "./chunk-CNY6SOD7.js";
+} from "./chunk-YKX37RJG.js";
+import "./chunk-I52564IV.js";
 import {
   QA_PROVIDER,
   WORLD_SUFFIX,
@@ -128,6 +129,7 @@ export {
   fixtureArming,
   forkName,
   forkUndoFile,
+  hookSeedNames,
   idProblem,
   importFromProject,
   importProjectJobs,

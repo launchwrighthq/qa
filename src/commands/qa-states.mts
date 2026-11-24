@@ -292,7 +292,7 @@ async function run(args: Flags, opts: QaCommandOptions, config: QaConfig, deps: 
   const notRun: Partial<Record<Mechanism, string>> = {};
   const target = deps.targets.get(leg.target);
   const ready = await target.ready(leg);
-  const { groups, blocked } = groupsFor(built.inventory, built.captures, leg.name);
+  const { groups, blocked } = groupsFor(built.inventory, built.captures, leg.name, leg.surface);
   const attempts: StateResult[] = [];
   const revision = deps.revision(opts.cwd);
   const now = (): number => deps.clock.now();

@@ -114,6 +114,82 @@ describe('delivery scan', () => {
     expect(attached.unions.find((u) => u.name === 'MenuPhase')?.why).toBe(menu?.why);
   });
 
+  it('reads a path vocabulary, an array and a constant that the table imports from other modules', () => {
+    const app: SourceText[] = [
+      { file: 'web/src/app/paths.ts', text: "export const PATHS = { home: '/', inbox: '/inbox', item: '/items/:id', extra: `/extra` } as const;" },
+      { file: 'web/src/app/index.ts', text: "export { PATHS as SHARED_PATHS } from './paths';\nexport * from './lists';" },
+      { file: 'web/src/app/lists.ts', text: "import { PATHS } from './paths';\nexport const LIST_PATHS = [PATHS.inbox, `${PATHS.inbox}/archive`];\nexport const ITEM_PATH = PATHS.item;" },
+      { file: 'web/src/pages/inbox/index.tsx', text: "import { Shelf } from '../../shelf';\nexport const InboxPage = () => <Shelf />;" },
+      { file: 'web/src/shelf.tsx', text: "export type ShelfMark = 'empty' | 'full';\nexport interface ShelfProps { mark: ShelfMark }\nexport const Shelf = (p: ShelfProps) => null;" },
+    ];
+    const table: SourceText = {
+      file: 'web/src/app/App.tsx',
+      text: `
+import { InboxPage } from '@pages/inbox';
+import { SHARED_PATHS, LIST_PATHS, ITEM_PATH } from './index';
+function localized(path: string): string { return path; }
+export const App = () => (
+  <Router>
+    <Route path={localized(SHARED_PATHS.home)} component={InboxPage} />
+    <Route path={LIST_PATHS} component={InboxPage} />
+    <Route path={ITEM_PATH} component={InboxPage} />
+    <Route path={\`\${SHARED_PATHS.extra}/more\`} component={InboxPage} />
+    <Route path={UNKNOWN.key} component={InboxPage} />
+  </Router>
+);
+`,
+    };
+    const sources = [...app, table];
+    const map = buildRouteMap({
+      inventory: analyzeSources({ sources, roots: ['web/src'], generated: GENERATED }).inventory,
+      sources,
+      tables: [{ file: table.file, surface: 'web' }],
+      pageRoots: ['web/src'],
+      aliases: { '@pages': 'web/src/pages' },
+      generated: GENERATED,
+    });
+    expect(map.tables[0]).toMatchObject({ rows: 6, resolved: 5, unresolved: ['UNKNOWN.key'], pageless: [] });
+    expect(map.unions.find((u) => u.union === 'ShelfMark')?.routes.map((r) => [r.route, r.dynamic])).toEqual([
+      ['/', false],
+      ['/extra/more', false],
+      ['/inbox', false],
+      ['/inbox/archive', false],
+      ['/items/:id', true],
+    ]);
+  });
+
+  it('follows a row component through the local helpers it calls to the page it draws', () => {
+    const sources: SourceText[] = [
+      { file: 'web/src/pages/menu/index.tsx', text: "import { Shelf } from '../../shelf';\nexport const MenuPage = (p: { section?: string }) => <Shelf />;" },
+      { file: 'web/src/shelf.tsx', text: "export type ShelfMark = 'empty' | 'full';\nexport interface ShelfProps { mark: ShelfMark }\nexport const Shelf = (p: ShelfProps) => null;" },
+      {
+        file: 'web/src/app/App.tsx',
+        text: `
+import { MenuPage } from '../pages/menu';
+function sectionRoute(section: string) { return <MenuPage section={section} />; }
+const pageFor = (name: string) => () => <MenuPage section={name} />;
+const MenuRoute = () => sectionRoute('all');
+const LegalRoute = pageFor('legal');
+export const App = () => (
+  <Router>
+    <Route path="/menu" component={MenuRoute} />
+    <Route path="/legal" component={LegalRoute} />
+  </Router>
+);
+`,
+      },
+    ];
+    const map = buildRouteMap({
+      inventory: analyzeSources({ sources, roots: ['web/src'], generated: GENERATED }).inventory,
+      sources,
+      tables: [{ file: 'web/src/app/App.tsx', surface: 'web' }],
+      pageRoots: ['web/src'],
+      generated: GENERATED,
+    });
+    expect(map.tables[0]?.pageless).toEqual([]);
+    expect(map.unions.find((u) => u.union === 'ShelfMark')?.routes.map((r) => r.route)).toEqual(['/legal', '/menu']);
+  });
+
   it('says that no route table could be read', () => {
     const map = buildRouteMap({ inventory: inventory(), sources: client, tables: normaliseTables(['apps/api/src/routes.mts']), pageRoots: ['apps/client/src'], generated: GENERATED });
     expect(map.tables[0]?.found).toBe(false);

@@ -2,7 +2,7 @@
 // the source tool also work.
 import { loadAppEntry } from '../world/services/app.mts';
 import { serveWorld } from '../world/services/api.mts';
-import { guarded, parseArgs, processSignal, worldContext } from '../world/services/context.mts';
+import { guarded, parseArgs, processSignal, worldConnect, worldContext } from '../world/services/context.mts';
 import { createFork, dropFork } from '../world/services/fork.mts';
 import { listWorld, registryHash, registryProblem } from '../world/services/registry.mts';
 import { resetWorld, worldStatus } from '../world/services/world.mts';
@@ -51,7 +51,7 @@ async function run(args: string[], opts: QaCommandOptions): Promise<number> {
       return 0;
     }
     case 'status': {
-      const status = await worldStatus({ root: ctx.root, sections: ctx.sections, database: ctx.overlay.database, registry: ctx.registry });
+      const status = await worldStatus({ root: ctx.root, sections: ctx.sections, database: ctx.overlay.database, registry: ctx.registry, connect: worldConnect(ctx) });
       if (json) opts.out(JSON.stringify(status, null, 2));
       else {
         opts.out(`database ${status.database}: ${status.exists ? 'exists' : 'missing'}`);
@@ -79,7 +79,7 @@ async function run(args: string[], opts: QaCommandOptions): Promise<number> {
           opts.err('usage: lw qa world fork drop <name>');
           return 2;
         }
-        await dropFork({ root: ctx.root, sections: ctx.sections, database: ctx.overlay.database, name, out: opts.out });
+        await dropFork({ root: ctx.root, sections: ctx.sections, database: ctx.overlay.database, name, out: opts.out, connect: worldConnect(ctx) });
         return 0;
       }
       const label = words[1];
@@ -87,7 +87,7 @@ async function run(args: string[], opts: QaCommandOptions): Promise<number> {
         opts.err('usage: lw qa world fork <label>');
         return 2;
       }
-      opts.out(await createFork({ root: ctx.root, sections: ctx.sections, database: ctx.overlay.database, label, out: opts.out }));
+      opts.out(await createFork({ root: ctx.root, sections: ctx.sections, database: ctx.overlay.database, label, out: opts.out, connect: worldConnect(ctx) }));
       return 0;
     }
     default:

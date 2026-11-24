@@ -88,6 +88,18 @@ export type QaDeviceConfig = z.infer<typeof qaDeviceConfig>;
 /** Config section `qa` with key `device` parsed by `qaDeviceConfig`. */
 export type QaConfig = Omit<CoreQaConfig, 'device'> & { device: QaDeviceConfig };
 
+/** The env keys that give the BrowserStack keys when `qa.device.browserstack` names none. */
+export const BROWSERSTACK_ENV = { username: 'BROWSERSTACK_USERNAME', accessKey: 'BROWSERSTACK_ACCESS_KEY' } as const;
+
+/** `cfg` with each BrowserStack key that the config leaves unset taken from `env`. */
+export function withBrowserstackEnv(cfg: QaConfig, env: Readonly<Record<string, string | undefined>> = {}): QaConfig {
+  const bs = cfg.device.browserstack;
+  const username = bs.username ?? (env[BROWSERSTACK_ENV.username] || undefined);
+  const accessKey = bs.accessKey ?? (env[BROWSERSTACK_ENV.accessKey] || undefined);
+  if (username === bs.username && accessKey === bs.accessKey) return cfg;
+  return { ...cfg, device: { ...cfg.device, browserstack: { ...bs, ...(username ? { username } : {}), ...(accessKey ? { accessKey } : {}) } } };
+}
+
 /** Every issue of a failed parse, as `path: message` joined with `; `. */
 function issuesOf(error: z.ZodError): string {
   return error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');

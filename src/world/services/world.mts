@@ -5,11 +5,11 @@ import { dirname, join, resolve } from 'node:path';
 import { type Clock, LaunchwrightError, messageOf } from '../../kernel/index.mts';
 import { readTextOrNull } from '../../kernel/services/fs.mts';
 import { loadAuth, loadDb } from '../../services/peers.mts';
-import { openWorld, type QaAppEntry, type QaOverlay, type QaWorld } from './app.mts';
+import { entryConnect, openWorld, type QaAppEntry, type QaDatabaseContext, type QaOverlay, type QaWorld } from './app.mts';
 import { seededName, snapshotSeeded } from './fork.mts';
 import { personaIds, QA_PROVIDER } from './ids.mts';
 import { assertRegistry, listWorld, registryHash } from './registry.mts';
-import { dbAdmin, type DbAdmin, type DbSection, qaDbSection } from './stack.mts';
+import { type ConnectDb, dbAdmin, type DbAdmin, type DbSection, qaDbSection } from './stack.mts';
 import type { WorldEntry, WorldRegistry } from './types.mts';
 
 /** The stamp of the last reset, relative to the project root. The `.lw/` folder is not in git. */
@@ -66,6 +66,13 @@ export function baseSeedNames(command: string | undefined): string[] | null {
   return (match[1] ?? '').split(/\s+/).filter(Boolean);
 }
 
+/** The seed names that `QaAppEntry.seed` gets from config `qa.seed`: the words after `lw db seed`, else every word. */
+export function hookSeedNames(command: string | undefined): string[] {
+  const text = (command ?? '').trim();
+  const words = (DB_SEED.exec(text)?.[1] ?? text).split(/\s+/);
+  return words.filter(Boolean);
+}
+
 /** What a reset needs. */
 export interface ResetOptions {
   root: string;
@@ -86,13 +93,27 @@ export interface ResetOptions {
 
 async function recreate(o: ResetOptions, db: DbSection): Promise<void> {
   const database = o.overlay.database;
-  const admin = o.admin ?? (await dbAdmin(db, o.root, (name) => name === database));
+  const admin = o.admin ?? (await dbAdmin(db, o.root, (name) => name === database, entryConnect(o.entry)));
   try {
     await admin.drop(database);
     await admin.create(database);
   } finally {
     await admin.close();
   }
+  const ctx: QaDatabaseContext = { root: o.root, database, sections: { ...o.sections, db }, out: o.out };
+  if (o.entry.migrate) {
+    await o.entry.migrate(ctx);
+    o.out(`migrated ${database} through qaApp.migrate`);
+  } else await migrateWithDbModule(o, db);
+  if (o.entry.seed) {
+    const names = hookSeedNames(o.seed);
+    await o.entry.seed(ctx, names);
+    o.out(`base seed through qaApp.seed: ${names.join(', ') || 'default'}`);
+  }
+}
+
+async function migrateWithDbModule(o: ResetOptions, db: DbSection): Promise<void> {
+  const database = o.overlay.database;
   const { createDb, migrate } = await loadDb();
   const conn = await createDb({
     driver: db.driver ?? 'pg',
@@ -110,7 +131,7 @@ async function recreate(o: ResetOptions, db: DbSection): Promise<void> {
   }
 }
 
-async function linkPersona(world: QaWorld, userId: string, persona: string, telegramId: number): Promise<void> {
+async function linkWithAuth(world: QaWorld, userId: string, persona: string, telegramId: number): Promise<void> {
   const auth = await loadAuth();
   if (!world.app.has(auth.USERS)) {
     throw new LaunchwrightError('qa.world.auth', 'The QA app has no auth module, so no persona can sign in. Add the auth module to the project.');
@@ -120,9 +141,31 @@ async function linkPersona(world: QaWorld, userId: string, persona: string, tele
   await users.link(world.tenantId, userId, { provider: 'telegram', subject: String(telegramId) });
 }
 
-/** Runs the base seed, then each fact and persona seed. A seed that fails names its id and its file. */
-export async function seedWorld(world: QaWorld, registry: WorldRegistry, o: Pick<ResetOptions, 'root' | 'seed' | 'out'>): Promise<WorldEntry[]> {
-  const names = baseSeedNames(o.seed);
+/** The user of a persona: through `entry.linkPersona` when the app has it, else through the auth module. */
+async function linkPersona(world: QaWorld, entry: Pick<QaAppEntry, 'linkPersona'> | undefined, persona: string, seededUserId: unknown): Promise<string> {
+  const ids = personaIds(persona);
+  const given = typeof seededUserId === 'string' && seededUserId !== '' ? seededUserId : undefined;
+  if (entry?.linkPersona) {
+    const linked = await entry.linkPersona(world, { persona, accountId: ids.accountId, telegramId: ids.telegramId, ...(given ? { userId: given } : {}) });
+    const userId = typeof linked === 'string' && linked !== '' ? linked : given;
+    if (userId === undefined) throw new LaunchwrightError('qa.world.handles', 'Its seed returned no userId, and qaApp.linkPersona returned none.');
+    return userId;
+  }
+  if (given === undefined) throw new LaunchwrightError('qa.world.handles', 'Its seed returned no userId.');
+  await linkWithAuth(world, given, persona, ids.telegramId);
+  return given;
+}
+
+/**
+ * Runs the base seed, then each fact and persona seed. A seed that fails names its id and its file.
+ * With `entry.seed`, the base seed ran before the boot, so the seed of the db module does not run here.
+ */
+export async function seedWorld(
+  world: QaWorld,
+  registry: WorldRegistry,
+  o: Pick<ResetOptions, 'root' | 'seed' | 'out'> & { entry?: Pick<QaAppEntry, 'seed' | 'linkPersona'> },
+): Promise<WorldEntry[]> {
+  const names = o.entry?.seed ? null : baseSeedNames(o.seed);
   if (names !== null) {
     const { DB, runSeeds, seedNames } = await loadDb();
     const dir = join(o.root, 'packages/db/seeds');
@@ -146,9 +189,8 @@ export async function seedWorld(world: QaWorld, registry: WorldRegistry, o: Pick
     const ids = personaIds(persona.id);
     try {
       const handles = await persona.seed(world, ids);
-      if (typeof handles?.userId !== 'string' || handles.userId === '') throw new LaunchwrightError('qa.world.handles', 'Its seed returned no userId.');
-      await linkPersona(world, handles.userId, persona.id, ids.telegramId);
-      seeded.push({ kind: 'persona', id: persona.id, summary: persona.summary, feature: persona.feature, handles: { ...handles, telegramId: ids.telegramId } });
+      const userId = await linkPersona(world, o.entry, persona.id, handles?.userId);
+      seeded.push({ kind: 'persona', id: persona.id, summary: persona.summary, feature: persona.feature, handles: { ...handles, userId, telegramId: ids.telegramId } });
     } catch (cause) {
       throw new LaunchwrightError('qa.world.seed', `Persona ${persona.id} (${persona.file}) could not be seeded: ${messageOf(cause)}`, {
         cause,
@@ -169,7 +211,8 @@ export async function resetWorld(o: ResetOptions): Promise<WorldStamp> {
   const db = qaDbSection((o.sections.db ?? {}) as DbSection, o.overlay.database, o.root);
   o.out(`resetting ${o.overlay.database}`);
   await rmStamp(o.root);
-  const snapshot = { root: o.root, db, database: o.overlay.database };
+  const connect = entryConnect(o.entry);
+  const snapshot = { root: o.root, db, database: o.overlay.database, ...(connect ? { connect } : {}) };
   await snapshotSeeded(snapshot, 'drop');
   await recreate(o, db);
   const world = await openWorld(o.entry, o.sections, o.env, { ...o.overlay, registryHash: hash });
@@ -202,9 +245,17 @@ export interface WorldStatus {
 }
 
 /** Compares the stamp with the live registry and checks that the QA database exists. */
-export async function worldStatus(o: { root: string; sections: Record<string, unknown>; database: string; registry: WorldRegistry; admin?: DbAdmin }): Promise<WorldStatus> {
+export async function worldStatus(o: {
+  root: string;
+  sections: Record<string, unknown>;
+  database: string;
+  registry: WorldRegistry;
+  admin?: DbAdmin;
+  /** Opens the maintenance connection of a Postgres server. Default: the db module. */
+  connect?: ConnectDb;
+}): Promise<WorldStatus> {
   const db = qaDbSection((o.sections.db ?? {}) as DbSection, o.database, o.root);
-  const admin = o.admin ?? (await dbAdmin(db, o.root, (name) => name === o.database));
+  const admin = o.admin ?? (await dbAdmin(db, o.root, (name) => name === o.database, o.connect));
   let exists: boolean;
   try {
     exists = await admin.exists(o.database);

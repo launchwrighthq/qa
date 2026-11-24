@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Q as QaConfig$1 } from './config-Z7lJ4xeJ.js';
-import { P as Provider, Q as QaExtension } from './extensions-C1-1OPnf.js';
+import { P as Provider, Q as QaExtension } from './extensions-ryHAO9S-.js';
 import { Q as QaTarget } from './contract-DSRjkOLo.js';
 import './app-KXgbRXYO.js';
 
@@ -246,9 +246,11 @@ interface DeviceDeps {
     clock: DeviceClock;
     /** A loopback TCP port that nothing listens on. */
     freePort(): Promise<number>;
+    /** The process env of the run. The BrowserStack keys fall back to it. Default: no env. */
+    env?: Readonly<Record<string, string | undefined>>;
 }
-/** The deps of a real run in the project at `root`. */
-declare function systemDeviceDeps(root: string): DeviceDeps;
+/** The deps of a real run in the project at `root`, with the process env `env`. */
+declare function systemDeviceDeps(root: string, env?: Readonly<Record<string, string | undefined>>): DeviceDeps;
 
 interface Rig {
     readonly name: string;
@@ -292,6 +294,7 @@ interface DeviceContext {
     deps: DeviceDeps;
     rigs: RigPool;
 }
+/** The context of one run. A BrowserStack key that the config leaves unset comes from `deps.env`. */
 declare function createDeviceContext(config: QaConfig, deps: DeviceDeps): DeviceContext;
 /** One rig per name for the whole process, so each ssh rig has exactly one master. */
 interface RigPool {

@@ -39,7 +39,7 @@ export function createBrowserstackClient(cfg: BrowserstackConfig, deps: DeviceDe
   if (!cfg.username || !cfg.accessKey) {
     throw new LaunchwrightError(
       'qa.device.browserstack.keys',
-      'BrowserStack needs qa.device.browserstack.username and accessKey. Store BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY in the secret store and map them into the qa config.',
+      'BrowserStack needs a username and an access key. Set BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY in the process env, or qa.device.browserstack.username and accessKey in the config.',
     );
   }
   const authorization = `Basic ${Buffer.from(`${cfg.username}:${cfg.accessKey}`).toString('base64')}`;

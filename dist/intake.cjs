@@ -1965,9 +1965,9 @@ async function evaluateBatch(page, projectRoot2, spec, batch) {
   return answers;
 }
 async function verifyInPage(page, projectRoot2, spec, subject) {
-  const [answer] = await evaluateBatch(page, projectRoot2, spec, [subject]);
-  if (!answer || answer.error !== null) throw new CaptureFailure("crashed", `${spec.export} threw on the injected subject: ${answer?.error ?? "no answer"}`);
-  return answer.state ?? "null";
+  const [answer2] = await evaluateBatch(page, projectRoot2, spec, [subject]);
+  if (!answer2 || answer2.error !== null) throw new CaptureFailure("crashed", `${spec.export} threw on the injected subject: ${answer2?.error ?? "no answer"}`);
+  return answer2.state ?? "null";
 }
 async function solveWithPage(page, projectRoot2, args) {
   const { verify, shape, members = null, union, limit, pivots } = args;
@@ -1981,11 +1981,11 @@ async function solveWithPage(page, projectRoot2, args) {
     const slice = plan2.slice(i, i + batchSize);
     const answers = await evaluateBatch(page, projectRoot2, verify, slice.map((step) => step.candidate));
     batches += 1;
-    for (const [j, answer] of answers.entries()) {
+    for (const [j, answer2] of answers.entries()) {
       const step = slice[j];
       if (!step) continue;
-      if (answer.error !== null) throw new CaptureFailure("crashed", `${verify.export} threw on a candidate its type admits (${step.text}): ${answer.error}`);
-      memo.set(canonical(step.candidate), answer.state);
+      if (answer2.error !== null) throw new CaptureFailure("crashed", `${verify.export} threw on a candidate its type admits (${step.text}): ${answer2.error}`);
+      memo.set(canonical(step.candidate), answer2.state);
     }
   }
   let memoMisses = 0;
@@ -1999,10 +1999,10 @@ async function solveWithPage(page, projectRoot2, args) {
       const key = canonical(candidate);
       if (memo.has(key)) return memo.get(key) ?? null;
       memoMisses += 1;
-      const [answer] = await evaluateBatch(page, projectRoot2, verify, [candidate]);
-      if (!answer || answer.error !== null) throw new CaptureFailure("crashed", `${verify.export} threw on a candidate: ${answer?.error ?? "no answer"}`);
-      memo.set(key, answer.state);
-      return answer.state;
+      const [answer2] = await evaluateBatch(page, projectRoot2, verify, [candidate]);
+      if (!answer2 || answer2.error !== null) throw new CaptureFailure("crashed", `${verify.export} threw on a candidate: ${answer2?.error ?? "no answer"}`);
+      memo.set(key, answer2.state);
+      return answer2.state;
     }
   });
   return { result, evaluated: plan2.length, batches, memoMisses };
@@ -2066,10 +2066,10 @@ async function resolvePivots(page, projectRoot2, hints, options = {}) {
     let fromModule = null;
     const importErrors = [];
     for (const rel of modules) {
-      const answer = await page.evaluate(exportedNumberExpression(moduleUrl(projectRoot2, rel), name));
-      if (answer.error !== void 0) importErrors.push(`${rel}: ${answer.error}`);
-      if (typeof answer.value === "number") {
-        fromModule = answer.value;
+      const answer2 = await page.evaluate(exportedNumberExpression(moduleUrl(projectRoot2, rel), name));
+      if (answer2.error !== void 0) importErrors.push(`${rel}: ${answer2.error}`);
+      if (typeof answer2.value === "number") {
+        fromModule = answer2.value;
         break;
       }
     }
@@ -2115,9 +2115,9 @@ async function solveGroupSubjects(page, projectRoot2, group, corpus, bodies) {
     covered: report2.result.covered,
     members,
     evaluate: async (candidate) => {
-      const [answer] = await evaluateBatch(page, projectRoot2, verify, [candidate]);
-      if (!answer || answer.error !== null) throw new CaptureFailure("crashed", `${verify.export} threw on an anchored candidate: ${answer?.error ?? "no answer"}`);
-      return answer.state;
+      const [answer2] = await evaluateBatch(page, projectRoot2, verify, [candidate]);
+      if (!answer2 || answer2.error !== null) throw new CaptureFailure("crashed", `${verify.export} threw on an anchored candidate: ${answer2?.error ?? "no answer"}`);
+      return answer2.state;
     }
   });
   const unresolvedNames = Object.values(pivots.unresolved);
@@ -2936,7 +2936,7 @@ function objectVocabulary(sf) {
       if (initializer && import_typescript2.default.isObjectLiteralExpression(initializer)) {
         const paths = /* @__PURE__ */ new Map();
         for (const member of initializer.properties) {
-          if (import_typescript2.default.isPropertyAssignment(member) && import_typescript2.default.isIdentifier(member.name) && import_typescript2.default.isStringLiteral(member.initializer)) {
+          if (import_typescript2.default.isPropertyAssignment(member) && import_typescript2.default.isIdentifier(member.name) && (import_typescript2.default.isStringLiteral(member.initializer) || import_typescript2.default.isNoSubstitutionTemplateLiteral(member.initializer))) {
             paths.set(member.name.text, member.initializer.text);
           }
         }
@@ -2959,28 +2959,101 @@ function localConstants(sf) {
   visit(sf);
   return found;
 }
-function evaluatePath(node, vocabulary, constants, depth = 0) {
-  if (!node || depth > MAX_HOPS) return null;
+function fileScope(sf) {
+  return { vocabulary: objectVocabulary(sf), constants: localConstants(sf), imported: () => null };
+}
+function moduleLinks(sf) {
+  const named = /* @__PURE__ */ new Map();
+  const star = [];
+  for (const statement of sf.statements) {
+    if (import_typescript2.default.isImportDeclaration(statement) && statement.importClause && import_typescript2.default.isStringLiteral(statement.moduleSpecifier)) {
+      const specifier = statement.moduleSpecifier.text;
+      const clause = statement.importClause;
+      if (clause.name) named.set(clause.name.text, { specifier, name: "default" });
+      if (clause.namedBindings && import_typescript2.default.isNamedImports(clause.namedBindings)) {
+        for (const element of clause.namedBindings.elements) named.set(element.name.text, { specifier, name: (element.propertyName ?? element.name).text });
+      }
+    }
+    if (import_typescript2.default.isExportDeclaration(statement) && statement.moduleSpecifier && import_typescript2.default.isStringLiteral(statement.moduleSpecifier)) {
+      const specifier = statement.moduleSpecifier.text;
+      if (!statement.exportClause) star.push(specifier);
+      else if (import_typescript2.default.isNamedExports(statement.exportClause)) {
+        for (const element of statement.exportClause.elements) named.set(element.name.text, { specifier, name: (element.propertyName ?? element.name).text });
+      }
+    }
+  }
+  return { named, star };
+}
+function moduleScopes(parsed, resolve9) {
+  const made = /* @__PURE__ */ new Map();
+  const scopeOf = (file) => {
+    const held = made.get(file);
+    if (held) return held;
+    const sf = parsed.get(file);
+    if (!sf) return null;
+    const own = fileScope(sf);
+    let links = null;
+    const scope = {
+      vocabulary: own.vocabulary,
+      constants: own.constants,
+      imported(name) {
+        links ??= moduleLinks(sf);
+        const link = links.named.get(name);
+        if (link) {
+          const target = resolve9(file, link.specifier);
+          const targetScope = target === null ? null : scopeOf(target);
+          return targetScope ? { scope: targetScope, name: link.name } : null;
+        }
+        for (const specifier of links.star) {
+          const target = resolve9(file, specifier);
+          const targetScope = target === null ? null : scopeOf(target);
+          if (targetScope && (targetScope.constants.has(name) || targetScope.vocabulary.has(name))) return { scope: targetScope, name };
+        }
+        return null;
+      }
+    };
+    made.set(file, scope);
+    return scope;
+  };
+  return scopeOf;
+}
+function declarationOf(scope, name, depth = 0) {
+  if (depth > MAX_HOPS) return null;
+  const local = scope.constants.get(name);
+  if (local) return { expression: local, scope };
+  const link = scope.imported(name);
+  return link ? declarationOf(link.scope, link.name, depth + 1) : null;
+}
+function vocabularyOf(scope, name, depth = 0) {
+  if (depth > MAX_HOPS) return null;
+  const local = scope.vocabulary.get(name);
+  if (local) return local;
+  if (scope.constants.has(name)) return null;
+  const link = scope.imported(name);
+  return link ? vocabularyOf(link.scope, link.name, depth + 1) : null;
+}
+function evaluatePath(node, scope, depth = 0) {
+  if (!node || depth > MAX_HOPS * 2) return null;
   if (import_typescript2.default.isStringLiteral(node) || import_typescript2.default.isNoSubstitutionTemplateLiteral(node)) return node.text;
-  if (import_typescript2.default.isParenthesizedExpression(node) || import_typescript2.default.isAsExpression(node)) return evaluatePath(node.expression, vocabulary, constants, depth + 1);
+  if (import_typescript2.default.isParenthesizedExpression(node) || import_typescript2.default.isAsExpression(node) || import_typescript2.default.isSatisfiesExpression(node)) return evaluatePath(node.expression, scope, depth + 1);
   if (import_typescript2.default.isPropertyAccessExpression(node) && import_typescript2.default.isIdentifier(node.expression)) {
-    return vocabulary.get(node.expression.text)?.get(node.name.text) ?? null;
+    return vocabularyOf(scope, node.expression.text)?.get(node.name.text) ?? null;
   }
   if (import_typescript2.default.isIdentifier(node)) {
-    const declared = constants.get(node.text);
-    return declared ? evaluatePath(declared, vocabulary, constants, depth + 1) : null;
+    const declared = declarationOf(scope, node.text);
+    return declared ? evaluatePath(declared.expression, declared.scope, depth + 1) : null;
   }
   if (import_typescript2.default.isTemplateExpression(node)) {
     let out = node.head.text;
     for (const span of node.templateSpans) {
-      const part = evaluatePath(span.expression, vocabulary, constants, depth + 1);
+      const part = evaluatePath(span.expression, scope, depth + 1);
       if (part === null) return null;
       out += part + span.literal.text;
     }
     return out;
   }
   if (import_typescript2.default.isCallExpression(node) && node.arguments.length === 1) {
-    const inner = evaluatePath(node.arguments[0], vocabulary, constants, depth + 1);
+    const inner = evaluatePath(node.arguments[0], scope, depth + 1);
     return inner !== null && inner.startsWith("/") ? inner : null;
   }
   return null;
@@ -2988,7 +3061,7 @@ function evaluatePath(node, vocabulary, constants, depth = 0) {
 function isDynamicPath(path) {
   return path.split("/").some((segment) => segment.startsWith(":"));
 }
-function groupPrefix(node, vocabulary, constants) {
+function groupPrefix(node, scope) {
   const prefixes = [];
   let at = node.parent;
   while (at) {
@@ -2997,7 +3070,7 @@ function groupPrefix(node, vocabulary, constants) {
       if (options && import_typescript2.default.isObjectLiteralExpression(options)) {
         for (const property of options.properties) {
           if (import_typescript2.default.isPropertyAssignment(property) && import_typescript2.default.isIdentifier(property.name) && property.name.text === "prefix") {
-            const value = evaluatePath(property.initializer, vocabulary, constants);
+            const value = evaluatePath(property.initializer, scope);
             if (value) prefixes.unshift(value.replace(/\/+$/, ""));
           }
         }
@@ -3011,20 +3084,19 @@ function joinPath(prefix, path) {
   if (prefix === "") return path;
   return path === "/" ? prefix : `${prefix}${path}`;
 }
-function routeRows(sf, vocabulary = objectVocabulary(sf)) {
-  const constants = localConstants(sf);
+function routeRows(sf, scope = fileScope(sf)) {
   const rows = [];
-  const push = (pathNode, component, pageName, prefix) => {
-    const raw = evaluatePath(pathNode, vocabulary, constants);
+  const push = (pathNode, component, pageName, prefix, at = scope) => {
+    const raw = evaluatePath(pathNode, at);
     if (raw === "*") return;
     const path = raw === null ? null : joinPath(prefix, raw);
-    rows.push({ path, component, pageName, source: pathNode ? pathNode.getText(sf) : "<no path>", dynamic: path === null ? false : isDynamicPath(path) });
+    rows.push({ path, component, pageName, source: pathNode ? pathNode.getText(pathNode.getSourceFile()) : "<no path>", dynamic: path === null ? false : isDynamicPath(path) });
   };
   const visit = (node) => {
     if (import_typescript2.default.isCallExpression(node) && import_typescript2.default.isPropertyAccessExpression(node.expression) && node.expression.name.text === "page" && node.arguments.length >= 2) {
       const [pathNode, nameNode] = node.arguments;
       const pageName = nameNode && (import_typescript2.default.isStringLiteral(nameNode) || import_typescript2.default.isNoSubstitutionTemplateLiteral(nameNode)) ? nameNode.text : null;
-      push(pathNode ?? null, null, pageName, groupPrefix(node, vocabulary, constants));
+      push(pathNode ?? null, null, pageName, groupPrefix(node, scope));
     }
     const opening = import_typescript2.default.isJsxSelfClosingElement(node) ? node : import_typescript2.default.isJsxElement(node) ? node.openingElement : null;
     if (opening && import_typescript2.default.isIdentifier(opening.tagName) && opening.tagName.text === "Route") {
@@ -3037,10 +3109,10 @@ function routeRows(sf, vocabulary = objectVocabulary(sf)) {
       const componentNode = attributes.get("component") ?? null;
       const component = componentNode && import_typescript2.default.isIdentifier(componentNode) ? componentNode.text : null;
       const pathNode = attributes.get("path") ?? null;
-      const declared = pathNode && import_typescript2.default.isIdentifier(pathNode) ? constants.get(pathNode.text) : void 0;
-      const list3 = declared && import_typescript2.default.isArrayLiteralExpression(declared) ? declared : pathNode;
-      const nodes = list3 && import_typescript2.default.isArrayLiteralExpression(list3) ? [...list3.elements] : [pathNode];
-      for (const one of nodes) push(one, component, null, "");
+      const declared = pathNode && import_typescript2.default.isIdentifier(pathNode) ? declarationOf(scope, pathNode.text) : null;
+      if (declared && import_typescript2.default.isArrayLiteralExpression(declared.expression)) for (const one of declared.expression.elements) push(one, component, null, "", declared.scope);
+      else if (pathNode && import_typescript2.default.isArrayLiteralExpression(pathNode)) for (const one of pathNode.elements) push(one, component, null, "");
+      else push(pathNode, component, null, "");
     }
     import_typescript2.default.forEachChild(node, visit);
   };
@@ -3073,6 +3145,22 @@ function jsxTagsIn(node) {
   visit(node);
   return found;
 }
+function localDeclarations(sf) {
+  const found = new Map(localConstants(sf));
+  for (const statement of sf.statements) {
+    if (import_typescript2.default.isFunctionDeclaration(statement) && statement.name && !found.has(statement.name.text)) found.set(statement.name.text, statement);
+  }
+  return found;
+}
+function localCalleesIn(node, locals) {
+  const found = /* @__PURE__ */ new Set();
+  const visit = (child) => {
+    if (import_typescript2.default.isCallExpression(child) && import_typescript2.default.isIdentifier(child.expression) && locals.has(child.expression.text)) found.add(child.expression.text);
+    import_typescript2.default.forEachChild(child, visit);
+  };
+  visit(node);
+  return found;
+}
 function componentPages(component, sf, resolve9, seen = /* @__PURE__ */ new Set(), depth = 0) {
   if (component === null || seen.has(component) || depth > MAX_HOPS) return [];
   seen.add(component);
@@ -3082,12 +3170,13 @@ function componentPages(component, sf, resolve9, seen = /* @__PURE__ */ new Set(
     const file = resolve9(specifier);
     return file === null ? [] : [file];
   }
-  const declaration = localConstants(sf).get(component);
+  const locals = localDeclarations(sf);
+  const declaration = locals.get(component);
   if (!declaration) return [];
   const pages = [];
-  for (const tag of jsxTagsIn(declaration)) {
-    if (tag === component) continue;
-    pages.push(...componentPages(tag, sf, resolve9, seen, depth + 1));
+  for (const name of /* @__PURE__ */ new Set([...jsxTagsIn(declaration), ...localCalleesIn(declaration, locals)])) {
+    if (name === component) continue;
+    pages.push(...componentPages(name, sf, resolve9, seen, depth + 1));
   }
   return [...new Set(pages)];
 }
@@ -3115,11 +3204,12 @@ function buildRouteMap(input) {
   const aliases = input.aliases ?? {};
   const { edges, parsed } = buildGraph(input.sources, aliases);
   const files = new Set(parsed.keys());
+  const scopeOf = moduleScopes(parsed, (from, specifier) => resolveSpecifier(from, specifier, files, aliases));
   const tables = input.tables.map((table) => {
     const sf = parsed.get(table.file);
     if (!sf) return { table, found: false, routes: [] };
     const resolve9 = (specifier) => resolveSpecifier(table.file, specifier, files, aliases);
-    const routes = routeRows(sf).map((row) => ({
+    const routes = routeRows(sf, scopeOf(table.file) ?? fileScope(sf)).map((row) => ({
       path: row.path,
       dynamic: row.dynamic,
       source: row.source,
@@ -3610,19 +3700,34 @@ var init_mount = __esm({
 });
 
 // src/services/peers.mts
+function isViteMissingPeer(err, spec) {
+  if (!isCodedError(err) || err.code !== "kernel.peer.load") return false;
+  return messageOf(err.cause).startsWith(`Could not resolve "${spec}" imported by`);
+}
+async function peerOrUndefined(spec) {
+  try {
+    return await optionalPeer(spec, () => import(spec));
+  } catch (err) {
+    if (isViteMissingPeer(err, spec)) return void 0;
+    throw err;
+  }
+}
 async function loadPeer(spec, module2) {
-  const mod = await optionalPeer(spec, () => import(spec));
+  const mod = await peerOrUndefined(spec);
   if (!mod) throw new LaunchwrightError(`qa.${module2}.module`, `This lw qa command needs the ${module2} module. Run lw add ${module2}.`);
   return mod;
 }
-var loadDb, loadHttp;
+var DB_PEER, loadDb, optionalDb, HTTP_PEER, optionalHttp;
 var init_peers2 = __esm({
   "src/services/peers.mts"() {
     "use strict";
     init_cjs_shims();
     init_kernel();
-    loadDb = () => loadPeer("@launchwrighthq/db", "db");
-    loadHttp = () => loadPeer("@launchwrighthq/http", "http");
+    DB_PEER = "@launchwrighthq/db";
+    loadDb = () => loadPeer(DB_PEER, "db");
+    optionalDb = () => peerOrUndefined(DB_PEER);
+    HTTP_PEER = "@launchwrighthq/http";
+    optionalHttp = () => peerOrUndefined(HTTP_PEER);
   }
 });
 
@@ -3704,11 +3809,10 @@ function guard(allowed, name, what) {
 function quoted(name) {
   return `"${checkIdentifier(name)}"`;
 }
-async function pgAdmin(url, allowed) {
+async function pgAdmin(url, allowed, connect = dbModuleConnect) {
   const remote = remoteHostProblem(url);
   if (remote) throw new LaunchwrightError("qa.stack.host", `Refusing: ${remote}.`, { context: { host: hostOfUrl(url) } });
-  const { createDb } = await loadDb();
-  const db = await createDb({ driver: "pg", url: urlWithDatabase(url, MAINTENANCE_DATABASE) });
+  const db = await connect(urlWithDatabase(url, MAINTENANCE_DATABASE));
   const names = async () => {
     const result = await db.execute("select datname from pg_database where not datistemplate");
     return result.rows.map((r) => r.datname);
@@ -3769,12 +3873,12 @@ function pgliteAdmin(root, allowed) {
     close: async () => void 0
   };
 }
-function dbAdmin(db, root, allowed) {
+function dbAdmin(db, root, allowed, connect) {
   if ((db.driver ?? "pg") === "pglite") return Promise.resolve(pgliteAdmin(root, allowed));
   if (typeof db.url !== "string" || db.url === "") throw new LaunchwrightError("qa.stack.url", "Config db.url is not set, so lw qa has no database server.");
-  return pgAdmin(db.url, allowed);
+  return pgAdmin(db.url, allowed, connect);
 }
-var import_promises5, import_node_path10, LOOPBACK_HOSTS, MAINTENANCE_DATABASE, PGLITE_DIR;
+var import_promises5, import_node_path10, LOOPBACK_HOSTS, MAINTENANCE_DATABASE, PGLITE_DIR, dbModuleConnect;
 var init_stack = __esm({
   "src/world/services/stack.mts"() {
     "use strict";
@@ -3787,6 +3891,7 @@ var init_stack = __esm({
     LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "::1"];
     MAINTENANCE_DATABASE = "postgres";
     PGLITE_DIR = ".lw/qa/pglite";
+    dbModuleConnect = async (url) => (await loadDb()).createDb({ driver: "pg", url });
   }
 });
 
@@ -4920,10 +5025,11 @@ function renderReport(args) {
   out.push(`${inventory.unions.length} union(s), ${totals.covered} of ${totals.planned} renderings.`);
   return out.join("\n");
 }
-function groupFor(union, captures, defaultLeg) {
+function groupFor(union, captures, defaultLeg, surface) {
   const delivery = union.delivery ?? null;
   const missing = [];
-  const route = typeof delivery?.route === "string" && delivery.route !== "" ? delivery.route : null;
+  const derived = (union.routes ?? []).find((r) => !r.dynamic && (surface === void 0 || r.surface === surface))?.route ?? null;
+  const route = typeof delivery?.route === "string" && delivery.route !== "" ? delivery.route : derived;
   if (!route) missing.push("route");
   const intercept = delivery?.intercept;
   if (typeof intercept?.url !== "string" || intercept.url === "") missing.push("intercept.url");
@@ -4961,16 +5067,16 @@ function groupFor(union, captures, defaultLeg) {
   };
   return { group, missing: null };
 }
-function groupsFor(inventory, captures, defaultLeg) {
+function groupsFor(inventory, captures, defaultLeg, surface) {
   const groups = [];
   const blocked = {};
   for (const union of inventory.unions) {
     const mine = captures.filter((capture) => capture.union === union.name && capture.mechanism === "solve");
     if (mine.length === 0) continue;
-    const built = groupFor(union, mine, defaultLeg);
+    const built = groupFor(union, mine, defaultLeg, surface);
     if (built.group) groups.push(built.group);
     else {
-      blocked[union.name] = `no capture group could be built. Missing: ${built.missing.join(", ")}. A delivery descriptor beside the union in the inventory gives the route, the intercept and the settle. The shape and the pivots come from the scan`;
+      blocked[union.name] = `no capture group could be built. Missing: ${built.missing.join(", ")}. A delivery descriptor beside the union in the inventory gives the intercept and the settle, and the route when the scan derives no static route. The shape and the pivots come from the scan`;
     }
   }
   return { groups, blocked };
@@ -5105,6 +5211,10 @@ var init_checkout = __esm({
 });
 
 // src/world/services/app.mts
+function entryConnect(entry) {
+  const connect = entry.connect;
+  return connect === void 0 ? void 0 : (url) => connect.call(entry, url);
+}
 function qaDatabase(sections, checkout) {
   const qa = sections.qa;
   if (typeof qa?.database === "string" && qa.database !== "") return qa.database;
@@ -5152,6 +5262,7 @@ async function loadAppEntry(root, qa) {
 }
 async function openWorld(entry, sections, env, overlay) {
   const qa = qaSections(sections, overlay);
+  const tenantId = await entryTenant(entry);
   const app = await entry.create(qa, env);
   try {
     await app.boot();
@@ -5163,8 +5274,13 @@ async function openWorld(entry, sections, env, overlay) {
     }
     throw cause;
   }
-  const tenantId = entry.tenantId ?? (await loadDb()).DEFAULT_TENANT_ID;
   return { app, tenantId, database: overlay.database, sections: qa, close: () => app.shutdown() };
+}
+async function entryTenant(entry) {
+  if (entry.tenantId !== void 0) return entry.tenantId;
+  const db = await optionalDb();
+  if (db) return db.DEFAULT_TENANT_ID;
+  throw new LaunchwrightError("qa.world.tenant", "qaApp sets no tenantId, and the db module that has a default tenant is not installed. Set qaApp.tenantId.");
 }
 var import_node_crypto3, import_node_path19, import_node_url3;
 var init_app2 = __esm({
@@ -5339,10 +5455,64 @@ var init_context = __esm({
     init_kernel();
     init_args();
     init_config3();
+    init_peers2();
     init_app2();
     init_checkout();
     init_discover();
     init_registry();
+  }
+});
+
+// src/world/services/node-listen.mts
+async function bodyOf(req) {
+  if (req.method === "GET" || req.method === "HEAD") return void 0;
+  const chunks = [];
+  for await (const chunk2 of req) chunks.push(chunk2);
+  return new Uint8Array(Buffer.concat(chunks));
+}
+function requestOf(req, body) {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (typeof value === "string") headers.set(name, value);
+    else if (Array.isArray(value)) for (const one of value) headers.append(name, one);
+  }
+  return new Request(`http://${req.headers.host ?? "127.0.0.1"}${req.url ?? "/"}`, { method: req.method ?? "GET", headers, ...body ? { body } : {} });
+}
+async function answer(handler, req, res) {
+  const response = await handler.fetch(requestOf(req, await bodyOf(req)));
+  const headers = {};
+  for (const [name, value] of response.headers) if (name !== "set-cookie") headers[name] = value;
+  const cookies = response.headers.getSetCookie();
+  if (cookies.length > 0) headers["set-cookie"] = cookies;
+  res.writeHead(response.status, headers);
+  res.end(Buffer.from(await response.arrayBuffer()));
+}
+async function nodeListen(handler, port) {
+  const server = (0, import_node_http.createServer)((req, res) => {
+    answer(handler, req, res).catch((err) => {
+      if (!res.headersSent) res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+      res.end(`QA app error: ${messageOf(err)}`);
+    });
+  });
+  await new Promise((resolve9, reject) => {
+    server.once("error", (cause) => reject(new LaunchwrightError("qa.world.listen", `Cannot listen on 127.0.0.1:${port}: ${cause.message}`, { cause })));
+    server.listen(port, "127.0.0.1", resolve9);
+  });
+  return {
+    port: server.address().port,
+    close: () => new Promise((resolve9, reject) => {
+      server.close((err) => err ? reject(new LaunchwrightError("qa.world.close", `Cannot close the QA API server: ${err.message}`, { cause: err })) : resolve9());
+      server.closeAllConnections();
+    })
+  };
+}
+var import_node_http;
+var init_node_listen = __esm({
+  "src/world/services/node-listen.mts"() {
+    "use strict";
+    init_cjs_shims();
+    import_node_http = require("http");
+    init_kernel();
   }
 });
 
@@ -5362,7 +5532,7 @@ async function createFork(o) {
   const db = qaDbSection(o.sections.db ?? {}, o.database, o.root);
   assertQaTarget(db, o.database, o.root);
   const name = forkName(o.database, o.label);
-  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n));
+  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n), o.connect);
   try {
     const seeded = seededName(o.database);
     const template = await admin.exists(seeded) ? seeded : o.database;
@@ -5379,7 +5549,7 @@ async function dropFork(o) {
   }
   const db = qaDbSection(o.sections.db ?? {}, o.database, o.root);
   assertQaTarget(db, o.database, o.root);
-  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n));
+  const admin = await dbAdmin(db, o.root, (n) => isForkOf(o.database, n), o.connect);
   try {
     await admin.drop(o.name);
     o.out(`dropped ${o.name}`);
@@ -5433,10 +5603,13 @@ var init_api = __esm({
     init_kernel();
     init_peers2();
     init_app2();
+    init_node_listen();
     init_registry();
     init_world();
     listenQaApp = async (handler, app, port) => {
-      const { serveNode } = await loadHttp();
+      const http = await optionalHttp();
+      if (http === void 0) return nodeListen(handler, port);
+      const { serveNode } = http;
       const { server } = serveNode(handler, port, { hostname: "127.0.0.1", app, signals: false });
       if (!server.listening) await new Promise((resolve9, reject) => {
         server.once("listening", resolve9);
@@ -5578,7 +5751,8 @@ async function openFork(o, label) {
   };
 }
 function worldForkRunner(o) {
-  const fork = { root: o.root, sections: o.sections, database: o.overlay.database, out: o.out };
+  const connect = entryConnect(o.entry);
+  const fork = { root: o.root, sections: o.sections, database: o.overlay.database, out: o.out, ...connect ? { connect } : {} };
   return {
     create: (label) => createFork({ ...fork, label }),
     drop: (name) => dropFork({ ...fork, name }),
@@ -5793,7 +5967,7 @@ async function run(args, opts, config, deps) {
   const notRun = {};
   const target = deps.targets.get(leg.target);
   const ready = await target.ready(leg);
-  const { groups, blocked } = groupsFor(built.inventory, built.captures, leg.name);
+  const { groups, blocked } = groupsFor(built.inventory, built.captures, leg.name, leg.surface);
   const attempts = [];
   const revision = deps.revision(opts.cwd);
   const now = () => deps.clock.now();
@@ -6222,12 +6396,12 @@ var init_comment_export = __esm({
 });
 
 // src/services/comment-server.mts
-var import_node_http, import_promises16, import_node_path30, MAX_BODY;
+var import_node_http2, import_promises16, import_node_path30, MAX_BODY;
 var init_comment_server = __esm({
   "src/services/comment-server.mts"() {
     "use strict";
     init_cjs_shims();
-    import_node_http = require("http");
+    import_node_http2 = require("http");
     import_promises16 = require("fs/promises");
     import_node_path30 = require("path");
     init_kernel();
@@ -6903,17 +7077,17 @@ var init_bot_api = __esm({
           if (opts.signal?.aborted) throw new LaunchwrightError("telegram.api.aborted", `Bot API ${method} was aborted.`, { cause, context: { method } });
           throw new TelegramApiError(method, { status: 0 }, cause);
         }
-        let answer;
+        let answer2;
         try {
-          answer = await response.json();
+          answer2 = await response.json();
         } catch (cause) {
           throw new TelegramApiError(method, { status: response.status, description: `the answer is not JSON (HTTP ${response.status})` }, cause);
         }
-        if (answer.ok === true) return answer.result;
+        if (answer2.ok === true) return answer2.result;
         throw new TelegramApiError(method, {
           status: response.status,
-          ...answer.error_code !== void 0 ? { error_code: answer.error_code } : {},
-          ...answer.description !== void 0 ? { description: answer.description } : {}
+          ...answer2.error_code !== void 0 ? { error_code: answer2.error_code } : {},
+          ...answer2.description !== void 0 ? { description: answer2.description } : {}
         });
       }
       getMe() {

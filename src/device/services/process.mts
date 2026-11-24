@@ -71,6 +71,8 @@ export interface DeviceDeps {
   clock: DeviceClock;
   /** A loopback TCP port that nothing listens on. */
   freePort(): Promise<number>;
+  /** The process env of the run. The BrowserStack keys fall back to it. Default: no env. */
+  env?: Readonly<Record<string, string | undefined>>;
 }
 
 /** The text of stdout. */
@@ -155,8 +157,8 @@ export const globalSocket: SocketFactory = (url, opts) => {
   return new WebSocket(url, init) as unknown as SocketLike;
 };
 
-/** The deps of a real run in the project at `root`. */
-export function systemDeviceDeps(root: string): DeviceDeps {
+/** The deps of a real run in the project at `root`, with the process env `env`. */
+export function systemDeviceDeps(root: string, env: Readonly<Record<string, string | undefined>> = process.env): DeviceDeps {
   return {
     root,
     run: nodeRunner,
@@ -164,6 +166,7 @@ export function systemDeviceDeps(root: string): DeviceDeps {
     fetch: (input, init) => fetch(input, init),
     clock: { now: () => systemClock.now(), sleep: (ms) => systemClock.sleep(ms) },
     freePort: freeLoopbackPort,
+    env,
   };
 }
 
